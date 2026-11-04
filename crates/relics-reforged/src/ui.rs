@@ -67,6 +67,27 @@ impl RelicView {
     }
 }
 
+/// Aviso chico, abajo a la derecha, mientras Relic Rites está abierto.
+fn draw_hint(ui: &Ui) {
+    let [w, h] = ui.io().display_size;
+    ui.window("##relics_reforged_hint")
+        .position([w - 24.0, h - 24.0], Condition::Always)
+        .position_pivot([1.0, 1.0])
+        .bg_alpha(0.6)
+        .no_decoration()
+        .no_inputs()
+        .always_auto_resize(true)
+        .build(|| {
+            ui.text_colored(
+                GOLD,
+                format!(
+                    "[{TOGGLE_KEY_NAME}] {}",
+                    tr("Forjar reliquias", "Forge relics")
+                ),
+            );
+        });
+}
+
 /// Texto en color que baja de línea si no entra.
 fn colored_wrapped(ui: &Ui, color: [f32; 4], text: &str) {
     let _c = ui.push_style_color(imgui::StyleColor::Text, color);
@@ -581,6 +602,13 @@ impl Menu {
 
 impl ImguiRenderLoop for Menu {
     fn render(&mut self, ui: &mut Ui) {
+        // La forja vive dentro de Relic Rites: fuera de ese menú no se muestra nada.
+        if !self.game.relic_rites_open() {
+            if self.visible.swap(false, Ordering::Relaxed) {
+                self.reset_selection();
+            }
+            return;
+        }
         if ui.is_key_pressed(TOGGLE_KEY) {
             let now = !self.visible.load(Ordering::Relaxed);
             self.visible.store(now, Ordering::Relaxed);
@@ -590,6 +618,8 @@ impl ImguiRenderLoop for Menu {
         }
         if self.visible.load(Ordering::Relaxed) {
             self.draw(ui);
+        } else {
+            draw_hint(ui);
         }
     }
 

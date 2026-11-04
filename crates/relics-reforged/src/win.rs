@@ -357,6 +357,29 @@ pub fn module_path(module: usize) -> Option<std::path::PathBuf> {
     Some(std::path::PathBuf::from(s))
 }
 
+/// Secciones escribibles de un módulo cargado: (RVA, tamaño).
+pub fn writable_sections(base: usize) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let Some(e_lfanew) = read::<u32>(base + 0x3C) else {
+        return out;
+    };
+    let nt = base + e_lfanew as usize;
+    let count = read::<u16>(nt + 6).unwrap_or(0) as usize;
+    let opt_size = read::<u16>(nt + 20).unwrap_or(0) as usize;
+    for i in 0..count {
+        let s = nt + 24 + opt_size + i * 40;
+        let (Some(size), Some(rva), Some(flags)) =
+            (read::<u32>(s + 8), read::<u32>(s + 12), read::<u32>(s + 36))
+        else {
+            continue;
+        };
+        if flags & 0x8000_0000 != 0 {
+            out.push((rva as usize, size as usize));
+        }
+    }
+    out
+}
+
 /// Datos de la cabecera PE de un módulo: (TimeDateStamp, SizeOfImage).
 pub fn pe_info(base: usize) -> Option<(u32, u32)> {
     let e_lfanew: u32 = read(base + 0x3C)?;

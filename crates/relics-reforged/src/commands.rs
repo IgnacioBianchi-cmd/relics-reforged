@@ -23,6 +23,7 @@
 //! | `find <u32> ...` | busca esa secuencia de valores (hex, `*` = cualquiera) en toda la memoria |
 //! | `ptrs <dirección> [pgd\|gdm\|nr\|dir] [largo]` | punteros hacia esa dirección (o un objeto que la contiene) |
 //! | `mem <dirección> [largo]` | muestra memoria en hex; las direcciones aceptan `pgd+`, `gdm+`, `nr+` |
+//! | `dumpdata <nombre>` | guarda las variables globales del ejecutable en `data_<nombre>.bin` |
 //! | `dumpimage` | copia la imagen de `nightreign.exe` a `nightreign_dump.bin` para analizarla |
 //!
 //! Los handles van en hex (`C08000E6`), los efectos en decimal, como en el log.
@@ -92,6 +93,7 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
             ))
         }
         ["dumpimage"] => dump_image(ctx),
+        ["dumpdata", name] => dump_data(ctx, name),
         ["hook"] => hook(ctx),
         ["snap", name] => crate::snap::take(ctx.game, name),
         ["locks"] => locks(ctx),
@@ -390,6 +392,28 @@ fn inv(ctx: &Context, handle: u32) -> Result<String, String> {
         .inventory_entry(handle)
         .ok_or("el handle no está en el inventario")?;
     Ok(format!("inventario[{index}] = {entry:08X?}"))
+}
+
+/// Guarda las secciones escribibles del ejecutable (variables globales) en `data_<nombre>.bin`,
+/// para comparar fotos tomadas en distintos momentos. Cada sección va precedida de su RVA y su
+/// tamaño (u32 + u32).
+fn dump_data(ctx: &Context, name: &str) -> Result<String, String> {
+    let base = ctx.game.base();
+    let mut out = Vec::new();
+    let mut total = 0;
+    for (rva, size) in win::writable_sections(base) {
+        let (bytes, _) = win::read_bytes(base + rva, size);
+        out.extend_from_slice(&(rva as u32).to_le_bytes());
+        out.extend_from_slice(&(size as u32).to_le_bytes());
+        out.extend_from_slice(&bytes);
+        total += size;
+    }
+    let path = ctx.dll_dir.join(format!("data_{name}.bin"));
+    std::fs::write(&path, &out).map_err(|e| format!("no pude escribir {}: {e}", path.display()))?;
+    Ok(format!(
+        "{total:#X} bytes de globales en {}",
+        path.display()
+    ))
 }
 
 fn dump_image(ctx: &Context) -> Result<String, String> {
