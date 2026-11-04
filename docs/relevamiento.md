@@ -186,6 +186,25 @@ Rastreo de lecturas (`watchr`) al volver al título: el save se arma en `nr+69F5
 
 `forge C08000B9 3 C08000C9 3 C08000E0 C08000AA C0800054`: la Grand Burning Scene pasó de Giants' Flame · Fire Attack +1 · Frost Resistance a Giants' Flame · **Cooldown Reduction +3** · Fire Attack +1 (el juego reordena solo); 145 → 141 reliquias; murk 11.840 → 1.840. Después de volver al título, el save tiene exactamente eso en la sección principal y el perfil intacto. El save conserva además una copia vieja del bloque de reliquias en otra zona de USERDATA_00, que el juego ignora al cargar.
 
+### Reliquias bloqueadas (favoritas, equipadas, presets, recipientes) ✔
+
+Encontrado con `snap` (diferencias de memoria antes y después de cada acción en el menú), `find` y `ptrs`.
+
+| Qué | Dónde |
+|---|---|
+| Favorita | byte bajo de `+0x10` de la entrada de inventario (los bytes altos cambian entre sesiones: no usarlos) |
+| Equipada ahora | `pgd+0x2F4`: 6 handles del recipiente equipado (`+0x374`: sus tipos de reliquia) |
+| Contenedor de recipientes y presets | `[pgd+0x6F8]` → `+0x00` asignador (`nr+39B8008`), `+0x08` cabeza de un `std::map`, `+0x10` cantidad de recipientes; `+0x18` asignador, `+0x28` cantidad de presets, `+0x30…` presets de 0x50 bytes |
+| Nodo del `std::map` (0x40) | izquierda, padre, derecha, color, esNulo (`+0x19`), ID del recipiente (`+0x1C`), 6 handles desde `+0x24` |
+| Preset (0x50) | recipiente, 6 handles, FILETIME, marcas y nombre en UTF-16 |
+
+- **Trampa:** en dos sesiones el contenedor quedó en memoria justo después de PlayerGameData (`pgd+0x168E0`) y parecía parte de él. No lo es: siempre se llega por `[pgd+0x6F8]`.
+- **Trampa:** desde `pgd+0x8FC` hay una lista con **todas** las reliquias (registros de 20 bytes; ¿orden de adquisición o "nueva"?). No indica uso: no se mira.
+- **ASLR:** la base de `nightreign.exe` cambió por primera vez (de `0x7FF618470000` a `0x7FF6E63A0000`). Todo se calcula relativo a la base, así que no afecta, pero las búsquedas manuales tienen que usar la base del log.
+- Regla de `forge`: la donante y los sacrificios no pueden ser favoritos ni aparecer en esos lugares; la receptora sí. Si el contenedor no tiene la forma esperada o el árbol no tiene la cantidad de nodos que dice, la reliquia se da por bloqueada.
+- Probado el 2026-11-04: 66 de 141 reliquias bloqueadas; rechazos por favorita, por preset + recipiente y por recipiente solo.
+- En el save, recipientes y presets están en USERDATA_00 con otro formato (recipiente: ID + 6 handles, 0x1C bytes; desde ~`0x1c090`).
+
 ### Saves de prueba
 
 - Respaldos en `data/save/backups/` (no van a git). Para restaurar: con el juego cerrado, copiar sobre `NR_RelicsReforged.sl2` y `.bak`, y **ponerles la fecha actual** (la carpeta tiene `steam_autocloud.vdf`).
@@ -247,7 +266,7 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [x] **Hilo del juego**: gancho en `nr+DCB37F`; murk, set, remove y forge corren entre frames.
 - [x] ~~Pedir un guardado~~: no hace falta (la forja es atómica respecto de los guardados). `nr+6AF930` no sirve: restaura una foto.
 - [x] Comando `forge` (y `forge?` en seco) con `plan_transfer`, probado y guardado en el save.
-- [ ] **Favoritas y equipadas**: averiguar dónde lo guarda el juego para bloquearlas (`Relic::locked`). Hoy `forge` no lo verifica.
+- [x] **Favoritas, equipadas, presets y recipientes**: bloqueadas en `forge` (ver arriba).
 - [ ] Interfaz dentro del juego (en vez del archivo de comandos).
 - [ ] Seamless Co-op: probar que la forja funcione con el mod de co-op cargado.
 - [ ] **Cuántas entradas tiene la tabla de ítems** y cómo se ve una entrada vacía. Por ahora la DLL recorre hasta 0x2000 entradas y filtra por la forma del registro; encuentra todas las reliquias, pero el largo real sigue sin confirmar.

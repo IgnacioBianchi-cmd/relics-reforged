@@ -18,7 +18,8 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Motor de reglas (`crates/relic-rules`) | ✔ con tests contra un save real |
 | DLL in-game (`crates/relics-reforged`, me3) | Lee y valida el inventario. Gancho en el hilo principal del juego |
 | Forja completa (`forge` desde el archivo de comandos) | ✔ probada en el juego y guardada en el save |
-| Bloquear favoritas/equipadas, menú dentro del juego, Seamless Co-op | pendiente |
+| Bloqueo de favoritas, equipadas, presets y recipientes | ✔ probado en el juego |
+| Menú dentro del juego, Seamless Co-op | pendiente |
 
 ## Estructura
 
