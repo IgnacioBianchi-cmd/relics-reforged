@@ -216,34 +216,56 @@ fn log_hits(log: &mut Log, base: usize) {
     }
 }
 
-/// Busca `data/export` subiendo desde la carpeta de la DLL (en desarrollo, `target/release`).
+/// Params desde el `regulation.bin` del juego (junto a `nightreign.exe`). Si en desarrollo
+/// aparece `data/export` (subiendo desde la carpeta de la DLL), de ahí se toman solo los nombres.
 fn load_game_data(dll_path: &Path, log: &mut Log) -> Option<GameData> {
-    let found: Option<PathBuf> = dll_path
+    let exe = win::module_path(win::main_module_base()).unwrap_or_default();
+    let regulation = exe.with_file_name("regulation.bin");
+    let mut data = match std::fs::read(&regulation)
+        .map_err(|e| e.to_string())
+        .and_then(|raw| GameData::from_regulation(&raw).map_err(|e| e.to_string()))
+    {
+        Ok(d) => d,
+        Err(e) => {
+            log.line(&format!(
+                "No pude leer los params de {}: {e}",
+                regulation.display()
+            ));
+            return None;
+        }
+    };
+    log.line(&format!(
+        "Params cargados desde {}: {} efectos, {} tipos de reliquia, {} tablas",
+        regulation.display(),
+        data.effects.len(),
+        data.relic_types.len(),
+        data.tables.len()
+    ));
+
+    let csv_dir: Option<PathBuf> = dll_path
         .ancestors()
         .skip(1)
         .take(6)
         .map(|dir| dir.join("data").join("export"))
         .find(|dir| dir.join("AttachEffectParam.csv").exists());
-    let Some(dir) = found else {
-        log.line("No encontré data/export: se listan las reliquias sin validar.");
-        return None;
-    };
-    match GameData::from_csv_dir(&dir) {
-        Ok(data) => {
-            log.line(&format!(
-                "Params cargados desde {}: {} efectos, {} tipos de reliquia, {} tablas",
-                dir.display(),
-                data.effects.len(),
-                data.relic_types.len(),
-                data.tables.len()
-            ));
-            Some(data)
+    match csv_dir.map(|dir| (GameData::from_csv_dir(&dir), dir)) {
+        Some((Ok(csv), dir)) => {
+            for (id, e) in data.effects.iter_mut() {
+                if let Some(c) = csv.effects.get(id) {
+                    e.name = c.name.clone();
+                }
+            }
+            for (id, t) in data.relic_types.iter_mut() {
+                if let Some(c) = csv.relic_types.get(id) {
+                    t.name = c.name.clone();
+                }
+            }
+            log.line(&format!("Nombres tomados de {}", dir.display()));
         }
-        Err(e) => {
-            log.line(&format!("No pude cargar los params: {e}"));
-            None
-        }
+        Some((Err(e), _)) => log.line(&format!("No pude leer los nombres de los CSV: {e}")),
+        None => log.line("Sin CSV de nombres: el menú muestra IDs"),
     }
+    Some(data)
 }
 
 fn dump(log: &mut Log, data: Option<&GameData>, murk: u32, relics: &[LiveRelic]) {

@@ -52,6 +52,58 @@ fn load() -> Option<(GameData, Vec<SaveRelic>)> {
     Some((data, relics))
 }
 
+/// `regulation.bin` del juego instalado (ruta de esta PC; si no existe, el test se saltea).
+const REGULATION: &str =
+    r"B:\SteamLibrary\steamapps\common\ELDEN RING NIGHTREIGN\Game\regulation.bin";
+
+/// Los datos leídos de `regulation.bin` tienen que ser idénticos a los de los CSV (salvo nombres).
+#[test]
+fn regulation_coincide_con_los_csv() {
+    let Some((csv, _)) = load() else { return };
+    let Ok(raw) = std::fs::read(REGULATION) else {
+        eprintln!("(sin {REGULATION}: se saltea el test)");
+        return;
+    };
+    let reg = GameData::from_regulation(&raw).expect("leer regulation.bin");
+
+    assert_eq!(reg.effects.len(), csv.effects.len(), "cantidad de efectos");
+    for (id, a) in &csv.effects {
+        let b = reg
+            .effects
+            .get(id)
+            .unwrap_or_else(|| panic!("falta el efecto {id}"));
+        assert_eq!(
+            a.compatibility_id, b.compatibility_id,
+            "compatibilityId de {id}"
+        );
+        assert_eq!(a.sort_priority, b.sort_priority, "overrideEffectId de {id}");
+        assert_eq!(a.is_debuff, b.is_debuff, "isDebuff de {id}");
+        assert_eq!(
+            a.passive_sp_effects, b.passive_sp_effects,
+            "SpEffects de {id}"
+        );
+    }
+
+    assert_eq!(
+        reg.relic_types.len(),
+        csv.relic_types.len(),
+        "cantidad de tipos"
+    );
+    for (id, a) in &csv.relic_types {
+        let b = reg
+            .relic_types
+            .get(id)
+            .unwrap_or_else(|| panic!("falta el tipo {id}"));
+        assert_eq!(a.is_deep, b.is_deep, "isDeepRelic de {id}");
+        assert_eq!(a.is_salable, b.is_salable, "isSalable de {id}");
+        assert_eq!(a.color, b.color, "relicColor de {id}");
+        assert_eq!(a.slot_tables, b.slot_tables, "tablas de {id}");
+        assert_eq!(a.curse_tables, b.curse_tables, "maldiciones de {id}");
+    }
+
+    assert_eq!(reg.tables, csv.tables, "tablas de efectos");
+}
+
 #[test]
 fn datos_cargan_completos() {
     let Some((data, _)) = load() else { return };
