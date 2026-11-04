@@ -27,6 +27,8 @@ pub struct EffectInfo {
     /// Campo `overrideEffectId`: el juego ordena los efectos por (este valor, ID).
     pub sort_priority: i32,
     pub is_debuff: bool,
+    /// SpEffects que aplica el efecto (`passiveSpEffectId_1..3`, sin los vacíos).
+    pub passive_sp_effects: Vec<u32>,
 }
 
 /// Una fila de `EquipParamAntique` reducida a lo que usan las reglas.
@@ -84,6 +86,17 @@ impl GameData {
         for_each_row(&dir.join("AttachEffectParam.csv"), |row| {
             let id = row.int("ID")?;
             if id >= 0 {
+                let mut passive_sp_effects = Vec::new();
+                for col in [
+                    "passiveSpEffectId_1",
+                    "passiveSpEffectId_2",
+                    "passiveSpEffectId_3",
+                ] {
+                    let sp = row.int(col)?;
+                    if sp > 0 {
+                        passive_sp_effects.push(sp as u32);
+                    }
+                }
                 data.effects.insert(
                     id as EffectId,
                     EffectInfo {
@@ -92,6 +105,7 @@ impl GameData {
                         compatibility_id: row.int("compatibilityId")? as i32,
                         sort_priority: row.int("overrideEffectId")? as i32,
                         is_debuff: row.int("isDebuff")? != 0,
+                        passive_sp_effects,
                     },
                 );
             }

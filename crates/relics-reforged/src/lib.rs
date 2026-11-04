@@ -1,10 +1,13 @@
 //! # Relics Reforged (DLL)
 //!
-//! Versión 0: **solo lectura**. Al cargar la partida escribe en `relics_reforged.log`, junto a la
+//! Versión de desarrollo. Al cargar la partida escribe en `relics_reforged.log`, junto a la
 //! DLL, el murk y todas las reliquias leídas de la memoria del juego, validadas con el motor de
-//! reglas. No modifica nada.
+//! reglas. Solo modifica algo si se lo pide un comando de `relics_reforged_cmd.txt`
+//! (ver [`commands`]).
 
+mod commands;
 mod game;
+mod tracer;
 mod win;
 
 use std::fmt::Write as _;
@@ -46,7 +49,7 @@ pub extern "system" fn DllMain(
     1
 }
 
-struct Log {
+pub(crate) struct Log {
     file: File,
     start: Instant,
 }
@@ -61,7 +64,7 @@ impl Log {
         })
     }
 
-    fn line(&mut self, text: &str) {
+    pub(crate) fn line(&mut self, text: &str) {
         let t = self.start.elapsed().as_secs_f32();
         let _ = writeln!(self.file, "[{t:8.1}s] {text}");
         let _ = self.file.flush();
@@ -77,8 +80,9 @@ fn run(module: usize) {
     };
 
     log.line(&format!(
-        "Relics Reforged v{} (solo lectura)",
-        env!("CARGO_PKG_VERSION")
+        "Relics Reforged v{} (desarrollo: comandos en {})",
+        env!("CARGO_PKG_VERSION"),
+        commands::FILE_NAME
     ));
     log.line(&format!("DLL: {}", dll_path.display()));
 
@@ -96,6 +100,9 @@ fn run(module: usize) {
     log.line(&format!("nightreign.exe en {base:#X}, versión soportada"));
 
     let data = load_game_data(&dll_path, &mut log);
+    let dll_dir = dll_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    // Por si quedó un archivo de comandos de una sesión anterior.
+    let _ = std::fs::remove_file(dll_dir.join(commands::FILE_NAME));
 
     // Esperamos a que la partida esté cargada y estable (mismo estado dos lecturas seguidas).
     let mut waiting_logged = false;
@@ -103,6 +110,21 @@ fn run(module: usize) {
     let mut dumped: Option<(u32, Vec<LiveRelic>)> = None;
     loop {
         std::thread::sleep(Duration::from_secs(1));
+        let mut ctx = commands::Context {
+            game: &game,
+            data: data.as_ref(),
+            dll_dir: &dll_dir,
+            dump_requested: false,
+        };
+        commands::poll(&mut ctx, &mut log);
+        if ctx.dump_requested {
+            dumped = None;
+        }
+        log_hits(&mut log, base);
+        if tracer::is_active() {
+            // Leer la página vigilada consumiría la guarda: no tocamos el inventario.
+            continue;
+        }
         let (Some(murk), relics) = (game.murk(), game.relics()) else {
             if !waiting_logged {
                 log.line("Esperando a que cargue la partida...");
@@ -130,6 +152,35 @@ fn run(module: usize) {
                 dumped = Some(current);
             }
         }
+    }
+}
+
+/// Escribe en el log las escrituras que anotó el rastreador, con direcciones relativas al módulo.
+fn log_hits(log: &mut Log, base: usize) {
+    let size = win::pe_info(base).map_or(0, |(_, s)| s as usize);
+    let rel = |a: usize| {
+        if a >= base && a < base + size {
+            format!("nr+{:X}", a - base)
+        } else {
+            format!("{a:#X}")
+        }
+    };
+    for hit in tracer::take_hits() {
+        let stack: Vec<String> = hit.stack[..hit.stack_len].iter().map(|&a| rel(a)).collect();
+        log.line(&format!(
+            "ESCRITURA en {:#X} desde {} (hilo {}) rcx={:#X} rdx={:#X} r8={:#X} r9={:#X} rbx={:#X} rsi={:#X} rdi={:#X}\n           pila: {}",
+            hit.addr,
+            rel(hit.rip),
+            hit.thread,
+            hit.regs[0],
+            hit.regs[1],
+            hit.regs[2],
+            hit.regs[3],
+            hit.regs[4],
+            hit.regs[5],
+            hit.regs[6],
+            stack.join(" ")
+        ));
     }
 }
 

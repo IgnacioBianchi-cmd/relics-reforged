@@ -74,6 +74,19 @@ impl Relic {
     pub fn effect_count(&self) -> usize {
         self.effects().count()
     }
+
+    /// Lista de SpEffects que el juego guarda en memoria junto a la reliquia (objeto + 0x5C,
+    /// con la cantidad en + 0xA4): los `passiveSpEffectId` de cada efecto en orden de slot y
+    /// después los de cada maldición, sin quitar repetidos. Verificado contra el juego.
+    /// Devuelve `None` si algún efecto no está en los params.
+    pub fn sp_effects(&self, data: &GameData) -> Option<Vec<u32>> {
+        let curses = self.slots.iter().filter_map(|s| s.curse);
+        let mut out = Vec::new();
+        for id in self.effects().chain(curses) {
+            out.extend_from_slice(&data.effects.get(&id)?.passive_sp_effects);
+        }
+        Some(out)
+    }
 }
 
 /// Qué tipo de reliquia es, según sus tablas de roll.

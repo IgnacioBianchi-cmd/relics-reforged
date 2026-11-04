@@ -18,6 +18,7 @@ pub fn sample_data() -> GameData {
         compatibility_id: compat,
         sort_priority: 100,
         is_debuff: debuff,
+        passive_sp_effects: vec![id + 1000],
     };
     for e in [
         effect(10, 100, false),

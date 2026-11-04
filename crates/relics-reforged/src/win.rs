@@ -14,8 +14,77 @@ extern "system" {
         size: usize,
         read: *mut usize,
     ) -> i32;
+    fn WriteProcessMemory(
+        process: Handle,
+        base: *mut c_void,
+        buffer: *const c_void,
+        size: usize,
+        written: *mut usize,
+    ) -> i32;
     fn GetModuleFileNameW(module: Handle, buffer: *mut u16, size: u32) -> u32;
     pub fn DisableThreadLibraryCalls(module: Handle) -> i32;
+    pub fn VirtualProtect(addr: *mut c_void, size: usize, new: u32, old: *mut u32) -> i32;
+    fn VirtualQuery(addr: *const c_void, info: *mut MemoryBasicInformation, len: usize) -> usize;
+    pub fn AddVectoredExceptionHandler(
+        first: u32,
+        handler: unsafe extern "system" fn(*mut ExceptionPointers) -> i32,
+    ) -> Handle;
+    pub fn GetCurrentThreadId() -> u32;
+}
+
+pub const PAGE_GUARD: u32 = 0x100;
+
+#[repr(C)]
+pub struct ExceptionPointers {
+    pub record: *mut u8,
+    pub context: *mut u8,
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct MemoryBasicInformation {
+    base: usize,
+    allocation_base: usize,
+    allocation_protect: u32,
+    partition_id: u16,
+    region_size: usize,
+    state: u32,
+    protect: u32,
+    kind: u32,
+}
+
+/// Protección actual de la página que contiene `addr` (`None` si no está reservada).
+pub fn page_protection(addr: usize) -> Option<u32> {
+    let mut info = MemoryBasicInformation::default();
+    // SAFETY: VirtualQuery solo escribe en nuestra estructura, del tamaño que le pasamos.
+    let n = unsafe {
+        VirtualQuery(
+            addr as *const c_void,
+            &mut info,
+            std::mem::size_of::<MemoryBasicInformation>(),
+        )
+    };
+    const MEM_COMMIT: u32 = 0x1000;
+    (n != 0 && info.state == MEM_COMMIT).then_some(info.protect)
+}
+
+/// Escribe un valor en la memoria del propio proceso; devuelve `false` si la dirección no es escribible.
+pub fn write<T: Copy>(addr: usize, value: T) -> bool {
+    if addr == 0 {
+        return false;
+    }
+    let mut written = 0usize;
+    // SAFETY: WriteProcessMemory valida el destino; el origen es un valor nuestro.
+    let ok = unsafe {
+        WriteProcessMemory(
+            GetCurrentProcess(),
+            addr as *mut c_void,
+            (&value as *const T).cast(),
+            std::mem::size_of::<T>(),
+            &mut written,
+        )
+    };
+    ok != 0 && written == std::mem::size_of::<T>()
 }
 
 /// Dirección base del ejecutable del juego (`nightreign.exe`).
@@ -44,6 +113,33 @@ pub fn read<T: Copy>(addr: usize) -> Option<T> {
     };
     // SAFETY: si se leyeron todos los bytes, el valor está inicializado.
     (ok != 0 && read == std::mem::size_of::<T>()).then(|| unsafe { value.assume_init() })
+}
+
+/// Copia `len` bytes desde `addr`, página por página; las páginas ilegibles quedan en cero.
+/// Devuelve los bytes y cuántas páginas no se pudieron leer.
+pub fn read_bytes(addr: usize, len: usize) -> (Vec<u8>, usize) {
+    let mut out = vec![0u8; len];
+    let mut failed = 0;
+    let mut pos = 0;
+    while pos < len {
+        let chunk = (0x1000 - (addr + pos) % 0x1000).min(len - pos);
+        let mut read = 0usize;
+        // SAFETY: ReadProcessMemory valida el origen; el destino es un tramo de nuestro buffer.
+        let ok = unsafe {
+            ReadProcessMemory(
+                GetCurrentProcess(),
+                (addr + pos) as *const c_void,
+                out[pos..].as_mut_ptr().cast(),
+                chunk,
+                &mut read,
+            )
+        };
+        if ok == 0 || read != chunk {
+            failed += 1;
+        }
+        pos += chunk;
+    }
+    (out, failed)
 }
 
 /// Ruta completa de un módulo cargado (por ejemplo, esta DLL).

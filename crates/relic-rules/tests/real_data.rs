@@ -99,6 +99,56 @@ fn todas_las_reliquias_naturales_son_legales() {
 
 /// Simula transferencias entre reliquias reales: cada plan aceptado tiene que dar una reliquia legal,
 /// y tiene que haber al menos una transferencia posible.
+/// Listas de SpEffects leídas de la memoria del juego (objeto + 0x5C) el 2026-11-04.
+#[test]
+fn lista_de_sp_effects_coincide_con_el_juego() {
+    let Some((data, _)) = load() else { return };
+    /// (item, efectos, maldiciones, SpEffects leídos del juego)
+    type Case = (u32, [u32; 4], [u32; 4], &'static [u32]);
+    let e = u32::MAX;
+    let cases: [Case; 5] = [
+        // Deep con 2 maldiciones: primero los efectos, después las maldiciones.
+        (
+            2011321,
+            [6005600, 6040100, e, e],
+            [6851400, 6820100, e, e],
+            &[7005601, 7040101, 6851400, 6820100],
+        ),
+        // Efecto con 3 SpEffects al final.
+        (
+            2030,
+            [7000090, 7010200, 7050100, e],
+            [e; 4],
+            &[7000090, 7010200, 7050100, 7050200, 7050300],
+        ),
+        // Efecto con 3 SpEffects en el medio.
+        (
+            1460,
+            [7031200, 7050100, 7126000, e],
+            [e; 4],
+            &[7031200, 7050100, 7050200, 7050300, 7126000, 7126001],
+        ),
+        // Repetidos: no se eliminan.
+        (
+            1520,
+            [7126000, 7126001, 7126002, e],
+            [e; 4],
+            &[7126000, 7126001, 7126000, 7126001, 7126000, 7126001],
+        ),
+        // Deep sin maldición con efecto de 2 SpEffects.
+        (
+            2013311,
+            [6647000, 6622400, e, e],
+            [e; 4],
+            &[7647000, 7622400, 7622401],
+        ),
+    ];
+    for (item, effects, curses, expected) in cases {
+        let relic = Relic::from_raw(item, effects, curses);
+        assert_eq!(relic.sp_effects(&data).unwrap(), expected, "item {item}");
+    }
+}
+
 #[test]
 fn transferencias_entre_reliquias_reales() {
     let Some((data, relics)) = load() else { return };
