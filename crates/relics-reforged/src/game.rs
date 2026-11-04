@@ -40,6 +40,13 @@ const INV_ARRAY_LOW: usize = 0x40;
 const INV_LAST_INDEX: usize = 0x70;
 const INV_ENTRY_SIZE: usize = 20;
 
+/// Cuánto de PlayerGameData se revisa buscando menciones de reliquias (slots equipados en
+/// +0x2F4, presets alrededor de +0x16A00).
+const PGD_SCAN: usize = 0x2_0000;
+/// Tramos de PlayerGameData que mencionan reliquias sin bloquearlas: +0x10CC parece una copia
+/// de la entrada de inventario de la reliquia seleccionada en el menú (a confirmar).
+const PGD_NOT_A_LOCK: [(usize, usize); 1] = [(0x10CC, 0x10E0)];
+
 /// `RemoveItem(EquipGameData*, índice, delta, flag)`, la que usa la venta (ver `docs/relevamiento.md`).
 const REMOVE_ITEM_RVA: usize = 0x1F_06B0;
 const REMOVE_ITEM_PROLOGUE: [u8; 16] = [
@@ -183,6 +190,76 @@ impl Game {
             (read::<usize>(inv + INV_ARRAY_HIGH)?, index - split)
         };
         (array != 0).then_some(array + i as usize * INV_ENTRY_SIZE)
+    }
+
+    pub fn game_data_man(&self) -> Option<usize> {
+        read::<usize>(self.base + GAME_DATA_MAN_RVA).filter(|&p| p != 0)
+    }
+
+    pub fn player_game_data(&self) -> Option<usize> {
+        let game_data_man: usize = read(self.base + GAME_DATA_MAN_RVA)?;
+        read::<usize>(game_data_man + PLAYER_GAME_DATA).filter(|&p| p != 0)
+    }
+
+    /// Todas las entradas del inventario: (índice, [handle, item, cantidad, orden, flag]).
+    pub fn inventory_entries(&self) -> Vec<(u32, [u32; 5])> {
+        let Some(inv) = self.equip_game_data().map(|e| e + INVENTORY_IN_EQUIP) else {
+            return Vec::new();
+        };
+        let Some(last) = read::<u32>(inv + INV_LAST_INDEX).filter(|&l| l <= 0x4000) else {
+            return Vec::new();
+        };
+        (0..=last)
+            .filter_map(|index| {
+                let entry: [u32; 5] = read(self.inventory_entry_addr(inv, index)?)?;
+                Some((index, entry))
+            })
+            .collect()
+    }
+
+    /// Dónde aparece mencionado cada handle de reliquia (`0xC080xxxx`) en los datos del jugador:
+    /// PlayerGameData (slots equipados, presets...) y el bloque de `[pgd+0x168E8]` (lo que
+    /// recuerda cada recipiente). Devuelve (handle, lugar) para cada aparición.
+    pub fn relic_references(&self) -> Vec<(u32, String)> {
+        let mut out = Vec::new();
+        let Some(pgd) = self.player_game_data() else {
+            return out;
+        };
+        let mut scan = |base: usize, len: usize, label: &str, skip: &[(usize, usize)]| {
+            let (bytes, _) = crate::win::read_bytes(base, len);
+            for off in (0..len).step_by(4) {
+                let v = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
+                if v >> 16 == 0xC080 && !skip.iter().any(|&(a, b)| off >= a && off < b) {
+                    out.push((v, format!("{label}+{off:X}")));
+                }
+            }
+        };
+        scan(pgd, PGD_SCAN, "pgd", &PGD_NOT_A_LOCK);
+        // Pendiente: los presets y lo que recuerda cada recipiente viven fuera de PlayerGameData
+        // y todavía no tienen un puntero estable (ver docs/relevamiento.md).
+        out
+    }
+
+    /// Si la reliquia no se puede donar ni sacrificar: favorita, equipada, recordada por un
+    /// recipiente o guardada en un preset. Devuelve el motivo.
+    pub fn lock_reason(&self, handle: u32) -> Option<String> {
+        if let Some((_, entry)) = self.inventory_entry(handle) {
+            if entry[4] != 0 {
+                return Some("es favorita".into());
+            }
+        }
+        let places: Vec<String> = self
+            .relic_references()
+            .into_iter()
+            .filter(|(h, _)| *h == handle)
+            .map(|(_, p)| p)
+            .collect();
+        (!places.is_empty()).then(|| {
+            format!(
+                "está equipada o en un preset/recipiente ({})",
+                places.join(", ")
+            )
+        })
     }
 
     /// Busca la entrada de inventario de un handle: (índice, [handle, item, cantidad, x, y]).

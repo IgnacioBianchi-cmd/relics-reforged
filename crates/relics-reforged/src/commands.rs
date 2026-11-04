@@ -16,6 +16,11 @@
 //! | `hook` | instala el gancho del hilo principal (hace falta para `murk`, `set`, `remove` y `forge`) |
 //! | `forge <donante> <slot> <receptora> <slot> <s1> <s2> <s3>` | la transferencia completa (ver [`crate::forge`]) |
 //! | `forge? ...` | igual, pero solo valida y muestra el resultado |
+//! | `snap <nombre>` | foto de PlayerGameData e inventario; lista los cambios respecto de la foto anterior |
+//! | `locks` | reliquias que no se pueden donar ni sacrificar, y por qué |
+//! | `find <u32> ...` | busca esa secuencia de valores (hex, `*` = cualquiera) en toda la memoria |
+//! | `ptrs <dirección> [pgd\|gdm\|nr\|dir] [largo]` | punteros hacia esa dirección (o un objeto que la contiene) |
+//! | `mem <dirección> [largo]` | muestra memoria en hex; las direcciones aceptan `pgd+`, `gdm+`, `nr+` |
 //! | `dumpimage` | copia la imagen de `nightreign.exe` a `nightreign_dump.bin` para analizarla |
 //!
 //! Los handles van en hex (`C08000E6`), los efectos en decimal, como en el log.
@@ -86,6 +91,30 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
         }
         ["dumpimage"] => dump_image(ctx),
         ["hook"] => hook(ctx),
+        ["snap", name] => crate::snap::take(ctx.game, name),
+        ["locks"] => locks(ctx),
+        ["find", words @ ..] if !words.is_empty() => crate::search::find(ctx.game, words),
+        ["ptrs", target, rest @ ..] => {
+            let target = crate::search::parse_addr(ctx.game, target)?;
+            let base = rest.first().copied().unwrap_or("pgd");
+            let len = match rest.get(1) {
+                Some(l) => Some(
+                    usize::from_str_radix(l.trim_start_matches("0x"), 16)
+                        .map_err(|_| format!("largo inválido: {l}"))?,
+                ),
+                None => None,
+            };
+            crate::search::ptrs(ctx.game, target, base, len)
+        }
+        ["mem", addr, rest @ ..] => {
+            let addr = crate::search::parse_addr(ctx.game, addr)?;
+            let len = match rest.first() {
+                Some(l) => usize::from_str_radix(l.trim_start_matches("0x"), 16)
+                    .map_err(|_| format!("largo inválido: {l}"))?,
+                None => 0x100,
+            };
+            Ok(crate::search::mem(addr, len))
+        }
         [cmd @ ("forge" | "forge?"), d, ds, t, ts, s1, s2, s3] => {
             not_while_watching()?;
             let data = ctx.data.ok_or("sin params no puedo validar")?;
@@ -312,6 +341,43 @@ fn remove(ctx: &Context, handle: u32) -> Result<String, String> {
         if ctx.game.inventory_entry(handle).is_some() { "SIGUE" } else { "ya no está" },
         ctx.game.murk()
     ))
+}
+
+/// Lista las reliquias bloqueadas (favoritas o mencionadas en los datos del jugador) y dónde.
+fn locks(ctx: &Context) -> Result<String, String> {
+    use std::collections::BTreeMap;
+    let mut by_handle: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+    for (h, place) in ctx.game.relic_references() {
+        by_handle.entry(h).or_default().push(place);
+    }
+    for (_, entry) in ctx.game.inventory_entries() {
+        if entry[0] >> 16 == 0xC080 && entry[4] != 0 {
+            by_handle
+                .entry(entry[0])
+                .or_default()
+                .push("favorita".into());
+        }
+    }
+    let names: BTreeMap<u32, String> = ctx
+        .game
+        .relics()
+        .into_iter()
+        .map(|r| {
+            let name = ctx
+                .data
+                .and_then(|d| d.relic_types.get(&r.item_id))
+                .map_or(String::from("?"), |t| t.name.clone());
+            (r.handle, name)
+        })
+        .collect();
+    let mut out = format!("{} reliquias bloqueadas:", by_handle.len());
+    for (h, places) in &by_handle {
+        let name = names
+            .get(h)
+            .map_or("(no es una reliquia viva)", |n| n.as_str());
+        let _ = write!(out, "\n  {h:08X} {name}: {}", places.join(", "));
+    }
+    Ok(out)
 }
 
 fn inv(ctx: &Context, handle: u32) -> Result<String, String> {

@@ -10,6 +10,8 @@ mod forge;
 mod game;
 mod mainthread;
 mod profiler;
+mod search;
+mod snap;
 mod tracer;
 mod win;
 

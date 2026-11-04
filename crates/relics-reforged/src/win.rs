@@ -201,6 +201,38 @@ struct MemoryBasicInformation {
     kind: u32,
 }
 
+/// Regiones de memoria privada, comprometida y escribible del proceso: (base, tamaño).
+pub fn writable_regions() -> Vec<(usize, usize)> {
+    const MEM_COMMIT: u32 = 0x1000;
+    const MEM_PRIVATE: u32 = 0x2_0000;
+    let mut out = Vec::new();
+    let mut addr = 0x1_0000usize;
+    while addr < 0x7FFF_FFFE_0000 {
+        let mut info = MemoryBasicInformation::default();
+        // SAFETY: VirtualQuery solo escribe en nuestra estructura.
+        let n = unsafe {
+            VirtualQuery(
+                addr as *const c_void,
+                &mut info,
+                std::mem::size_of::<MemoryBasicInformation>(),
+            )
+        };
+        if n == 0 || info.region_size == 0 {
+            break;
+        }
+        let writable = matches!(info.protect & 0xFF, 0x04 | 0x40);
+        if info.state == MEM_COMMIT
+            && info.kind == MEM_PRIVATE
+            && writable
+            && info.protect & PAGE_GUARD == 0
+        {
+            out.push((info.base, info.region_size));
+        }
+        addr = info.base + info.region_size;
+    }
+    out
+}
+
 /// Protección actual de la página que contiene `addr` (`None` si no está reservada).
 pub fn page_protection(addr: usize) -> Option<u32> {
     let mut info = MemoryBasicInformation::default();
@@ -288,6 +320,29 @@ pub fn read_bytes(addr: usize, len: usize) -> (Vec<u8>, usize) {
         pos += chunk;
     }
     (out, failed)
+}
+
+/// Llena `buf` con lo que hay desde `addr`, página por página (las ilegibles quedan en cero).
+pub fn read_into(addr: usize, buf: &mut [u8]) {
+    let mut pos = 0;
+    while pos < buf.len() {
+        let chunk = (0x1000 - (addr + pos) % 0x1000).min(buf.len() - pos);
+        let mut read = 0usize;
+        // SAFETY: ReadProcessMemory valida el origen; el destino es un tramo de nuestro buffer.
+        let ok = unsafe {
+            ReadProcessMemory(
+                GetCurrentProcess(),
+                (addr + pos) as *const c_void,
+                buf[pos..].as_mut_ptr().cast(),
+                chunk,
+                &mut read,
+            )
+        };
+        if ok == 0 || read != chunk {
+            buf[pos..pos + chunk].fill(0);
+        }
+        pos += chunk;
+    }
 }
 
 /// Ruta completa de un módulo cargado (por ejemplo, esta DLL).

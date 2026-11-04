@@ -123,6 +123,23 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
         .iter()
         .map(|&h| snapshot(&game, h))
         .collect::<Result<_, _>>()?;
+    // La donante y los sacrificios se destruyen: no pueden ser favoritas ni estar en uso.
+    for (i, s) in snaps.iter().enumerate() {
+        if i == 1 {
+            continue; // la receptora sí puede (es justamente la que el jugador quiere mejorar)
+        }
+        if let Some(reason) = game.lock_reason(s.handle) {
+            let role = if i == 0 {
+                "la donante".to_string()
+            } else {
+                format!("el sacrificio {}", i - 1)
+            };
+            return Err(format!(
+                "no se puede forjar: {role} ({:08X}) {reason}",
+                s.handle
+            ));
+        }
+    }
     let relics: Vec<Relic> = snaps.iter().map(to_relic).collect();
     let murk = game.murk().ok_or("no puedo leer el murk")?;
     let mut registry = ForgedRegistry::load(dll_dir);
@@ -186,6 +203,11 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
             }
             if game.murk() != Some(murk) {
                 return Err("el murk cambió desde la validación; no hago nada".into());
+            }
+            for &h in &to_remove {
+                if let Some(reason) = game.lock_reason(h) {
+                    return Err(format!("{h:08X} {reason}; no hago nada"));
+                }
             }
             // A partir de acá se modifica el juego.
             for &h in &to_remove {
