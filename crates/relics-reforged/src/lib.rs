@@ -1,0 +1,225 @@
+//! # Relics Reforged (DLL)
+//!
+//! Versión 0: **solo lectura**. Al cargar la partida escribe en `relics_reforged.log`, junto a la
+//! DLL, el murk y todas las reliquias leídas de la memoria del juego, validadas con el motor de
+//! reglas. No modifica nada.
+
+mod game;
+mod win;
+
+use std::fmt::Write as _;
+use std::fs::File;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use relic_rules::{relic_kind, validate, GameData, Relic, RelicKind};
+
+use crate::game::{Game, LiveRelic, SUPPORTED_TIMESTAMP};
+
+const DLL_PROCESS_ATTACH: u32 = 1;
+
+/// Punto de entrada de la DLL. Solo lanza un hilo: hacer trabajo dentro de `DllMain`
+/// (con el loader lock tomado) puede colgar el juego.
+#[no_mangle]
+#[allow(non_snake_case)]
+// La firma la impone Windows; el puntero solo se le devuelve al sistema.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "system" fn DllMain(
+    module: win::Handle,
+    reason: u32,
+    _reserved: *mut std::ffi::c_void,
+) -> i32 {
+    if reason == DLL_PROCESS_ATTACH {
+        // SAFETY: `module` es el handle que nos pasa el loader.
+        unsafe { win::DisableThreadLibraryCalls(module) };
+        let module = module as usize;
+        std::thread::spawn(move || {
+            let result = std::panic::catch_unwind(|| run(module));
+            if result.is_err() {
+                if let Some(mut log) = Log::open(module) {
+                    log.line("ERROR: el hilo del mod terminó por un panic");
+                }
+            }
+        });
+    }
+    1
+}
+
+struct Log {
+    file: File,
+    start: Instant,
+}
+
+impl Log {
+    fn open(module: usize) -> Option<Log> {
+        let path = win::module_path(module)?.with_file_name("relics_reforged.log");
+        let file = File::options().create(true).append(true).open(path).ok()?;
+        Some(Log {
+            file,
+            start: Instant::now(),
+        })
+    }
+
+    fn line(&mut self, text: &str) {
+        let t = self.start.elapsed().as_secs_f32();
+        let _ = writeln!(self.file, "[{t:8.1}s] {text}");
+        let _ = self.file.flush();
+    }
+}
+
+fn run(module: usize) {
+    let dll_path = win::module_path(module).unwrap_or_default();
+    // Empezamos un log nuevo en cada arranque del juego.
+    let _ = File::create(dll_path.with_file_name("relics_reforged.log"));
+    let Some(mut log) = Log::open(module) else {
+        return;
+    };
+
+    log.line(&format!(
+        "Relics Reforged v{} (solo lectura)",
+        env!("CARGO_PKG_VERSION")
+    ));
+    log.line(&format!("DLL: {}", dll_path.display()));
+
+    let base = win::main_module_base();
+    let game = match Game::attach(base) {
+        Ok(g) => g,
+        Err(ts) => {
+            log.line(&format!(
+                "Versión del juego NO soportada (TimeDateStamp {ts:08X?}, se esperaba {SUPPORTED_TIMESTAMP:08X}). \
+                 El mod queda inactivo."
+            ));
+            return;
+        }
+    };
+    log.line(&format!("nightreign.exe en {base:#X}, versión soportada"));
+
+    let data = load_game_data(&dll_path, &mut log);
+
+    // Esperamos a que la partida esté cargada y estable (mismo estado dos lecturas seguidas).
+    let mut waiting_logged = false;
+    let mut previous: Option<(u32, Vec<LiveRelic>)> = None;
+    let mut dumped: Option<(u32, Vec<LiveRelic>)> = None;
+    loop {
+        std::thread::sleep(Duration::from_secs(1));
+        let (Some(murk), relics) = (game.murk(), game.relics()) else {
+            if !waiting_logged {
+                log.line("Esperando a que cargue la partida...");
+                waiting_logged = true;
+            }
+            continue;
+        };
+        if relics.is_empty() {
+            continue;
+        }
+        let current = (murk, relics);
+        if previous.as_ref() != Some(&current) {
+            previous = Some(current);
+            continue; // todavía cambiando
+        }
+        match &dumped {
+            Some((old_murk, old_relics)) if *old_relics == current.1 => {
+                if *old_murk != current.0 {
+                    log.line(&format!("Murk: {old_murk} -> {}", current.0));
+                    dumped = Some(current);
+                }
+            }
+            _ => {
+                dump(&mut log, data.as_ref(), current.0, &current.1);
+                dumped = Some(current);
+            }
+        }
+    }
+}
+
+/// Busca `data/export` subiendo desde la carpeta de la DLL (en desarrollo, `target/release`).
+fn load_game_data(dll_path: &Path, log: &mut Log) -> Option<GameData> {
+    let found: Option<PathBuf> = dll_path
+        .ancestors()
+        .skip(1)
+        .take(6)
+        .map(|dir| dir.join("data").join("export"))
+        .find(|dir| dir.join("AttachEffectParam.csv").exists());
+    let Some(dir) = found else {
+        log.line("No encontré data/export: se listan las reliquias sin validar.");
+        return None;
+    };
+    match GameData::from_csv_dir(&dir) {
+        Ok(data) => {
+            log.line(&format!(
+                "Params cargados desde {}: {} efectos, {} tipos de reliquia, {} tablas",
+                dir.display(),
+                data.effects.len(),
+                data.relic_types.len(),
+                data.tables.len()
+            ));
+            Some(data)
+        }
+        Err(e) => {
+            log.line(&format!("No pude cargar los params: {e}"));
+            None
+        }
+    }
+}
+
+fn dump(log: &mut Log, data: Option<&GameData>, murk: u32, relics: &[LiveRelic]) {
+    log.line(&format!(
+        "===== Inventario: murk {murk}, {} reliquias =====",
+        relics.len()
+    ));
+    let (mut legal, mut illegal, mut fixed, mut unknown) = (0, 0, 0, 0);
+    for r in relics {
+        let relic = Relic::from_raw(r.item_id, r.effects, r.curses);
+        let mut text = format!("#{:<4} {:08X} item {:<8}", r.index, r.handle, r.item_id);
+        if let Some(data) = data {
+            let name = data
+                .relic_types
+                .get(&r.item_id)
+                .map_or("?", |t| t.name.as_str());
+            let status = match relic_kind(data, r.item_id) {
+                RelicKind::Random { deep, size } => match validate(data, &relic) {
+                    Ok(()) => {
+                        legal += 1;
+                        format!("{}{} OK", if deep { "Deep " } else { "" }, size)
+                    }
+                    Err(v) => {
+                        illegal += 1;
+                        format!("ILEGAL: {v}")
+                    }
+                },
+                RelicKind::Fixed => {
+                    fixed += 1;
+                    "fija".to_string()
+                }
+                RelicKind::Unknown => {
+                    unknown += 1;
+                    "tipo desconocido".to_string()
+                }
+            };
+            let _ = write!(text, " [{status}] {name}");
+            for slot in relic.slots.iter() {
+                if let Some(e) = slot.effect {
+                    let ename = data.effects.get(&e).map_or("?", |i| i.name.as_str());
+                    let _ = write!(text, "\n                 · {e} {ename}");
+                    if let Some(c) = slot.curse {
+                        let cname = data.effects.get(&c).map_or("?", |i| i.name.as_str());
+                        let _ = write!(text, "  [maldición {c} {cname}]");
+                    }
+                }
+            }
+        } else {
+            let _ = write!(
+                text,
+                " efectos {:08X?} maldiciones {:08X?}",
+                r.effects, r.curses
+            );
+        }
+        log.line(&text);
+    }
+    if data.is_some() {
+        log.line(&format!(
+            "Resumen: {legal} aleatorias legales, {illegal} ILEGALES, {fixed} fijas, {unknown} desconocidas"
+        ));
+    }
+}

@@ -1,0 +1,12 @@
+profileVersion = "v1"
+
+# Save aparte para desarrollo: la primera vez me3 copia tu save normal con este nombre,
+# y a partir de ahí el mod trabaja sobre la copia. Tu NR0000.sl2 no se toca.
+savefile = "NR_RelicsReforged.sl2"
+
+[[supports]]
+game = "nightreign"
+
+# DLL compilada en modo release (cargo build --release).
+[[natives]]
+path = '../target/release/relics_reforged.dll'

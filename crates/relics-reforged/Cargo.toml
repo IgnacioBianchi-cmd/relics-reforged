@@ -1,0 +1,12 @@
+[package]
+name = "relics-reforged"
+description = "DLL de Relics Reforged para Elden Ring Nightreign (se carga con me3)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+relic-rules = { path = "../relic-rules" }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/relic-rules"]
+members = ["crates/relic-rules", "crates/relics-reforged"]
 
 [workspace.package]
 edition = "2021"
