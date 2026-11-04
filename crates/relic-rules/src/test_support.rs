@@ -19,6 +19,7 @@ pub fn sample_data() -> GameData {
         sort_priority: 100,
         is_debuff: debuff,
         passive_sp_effects: vec![id + 1000],
+        text_id: id as i32,
     };
     for e in [
         effect(10, 100, false),

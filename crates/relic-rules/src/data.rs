@@ -29,6 +29,8 @@ pub struct EffectInfo {
     pub is_debuff: bool,
     /// SpEffects que aplica el efecto (`passiveSpEffectId_1..3`, sin los vacíos).
     pub passive_sp_effects: Vec<u32>,
+    /// ID del nombre en los textos del juego (`attachTextId`).
+    pub text_id: i32,
 }
 
 /// Una fila de `EquipParamAntique` reducida a lo que usan las reglas.
@@ -106,6 +108,7 @@ impl GameData {
                         sort_priority: row.int("overrideEffectId")? as i32,
                         is_debuff: row.int("isDebuff")? != 0,
                         passive_sp_effects,
+                        text_id: row.int("attachTextId")? as i32,
                     },
                 );
             }

@@ -20,7 +20,8 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Forja completa (`forge` desde el archivo de comandos) | ✔ probada en el juego y guardada en el save |
 | Bloqueo de favoritas, equipadas, presets y recipientes | ✔ probado en el juego |
 | Menú dentro del juego (F7, ImGui con hudhook) | ✔ probado: forja desde el menú guardada en el save |
-| Seamless Co-op, solo en la Roundtable, params desde memoria (sin CSV) | pendiente |
+| Params desde `regulation.bin` y nombres desde los textos del juego (sin CSV) | ✔ probado en el juego |
+| Seamless Co-op, solo en la Roundtable, menú con estilo del juego | pendiente |
 
 ## Estructura
 

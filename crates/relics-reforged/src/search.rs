@@ -161,3 +161,95 @@ pub fn ptrs(game: &Game, target: usize, base: &str, len: Option<usize>) -> Resul
     }
     Ok(out)
 }
+
+/// Busca un texto en UTF-16 (alineado a 2) en toda la memoria privada escribible.
+pub fn find_text(text: &str) -> Result<String, String> {
+    let needle: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    if needle.len() < 6 {
+        return Err("el texto es muy corto".into());
+    }
+    let len = needle.len();
+    let mut buf = vec![0u8; CHUNK + len];
+    let own = (buf.as_ptr() as usize, buf.as_ptr() as usize + buf.len());
+    let mut hits = Vec::new();
+    'outer: for (base, size) in win::writable_regions() {
+        let mut pos = 0;
+        while pos < size {
+            let take = (CHUNK + len).min(size - pos);
+            win::read_into(base + pos, &mut buf[..take]);
+            let bytes = &buf[..take];
+            let mut off = 0;
+            while off + len <= bytes.len() {
+                if bytes[off..off + len] == needle[..] {
+                    let addr = base + pos + off;
+                    if !(addr >= own.0 && addr < own.1) {
+                        hits.push(addr);
+                        if hits.len() >= MAX_HITS {
+                            break 'outer;
+                        }
+                    }
+                }
+                off += 2;
+            }
+            pos += CHUNK;
+        }
+    }
+    let mut out = format!("{} apariciones de \"{text}\":", hits.len());
+    for h in hits {
+        let _ = write!(out, "\n  {h:#X}");
+    }
+    Ok(out)
+}
+
+/// Dado un texto dentro de un FMG cargado en memoria, retrocede hasta la cabecera del FMG
+/// (versión 2: 00 00 02 00, tamaño, 01 FF, grupos, textos, offset de la tabla de textos) y
+/// muestra el FMG y el ID de ese texto.
+pub fn fmg_of(addr: usize) -> Result<String, String> {
+    let start = (addr & !7).saturating_sub(0x40_0000);
+    let (bytes, _) = win::read_bytes(start, addr - start + 8);
+    let rel = addr - start;
+    let mut o = rel & !7;
+    loop {
+        if bytes.get(o..o + 4) == Some(&[0, 0, 2, 0]) && bytes.get(o + 8) == Some(&1) {
+            let r32 = |x: usize| u32::from_le_bytes(bytes[o + x..o + x + 4].try_into().unwrap());
+            let r64 = |x: usize| u64::from_le_bytes(bytes[o + x..o + x + 8].try_into().unwrap());
+            let size = r32(4) as usize;
+            let groups = r32(0x0C) as usize;
+            let strings = r32(0x10) as usize;
+            let table = r64(0x18) as usize;
+            let fmg = start + o;
+            // Al cargar el FMG, el juego convierte el offset de la tabla en una dirección.
+            let table = if table == fmg + 0x28 + groups * 16 {
+                table - fmg
+            } else {
+                table
+            };
+            if rel - o < size && table == 0x28 + groups * 16 && strings < 0x10_0000 {
+                let target = (addr - fmg) as u64;
+                let (file, _) = win::read_bytes(fmg, size);
+                let f32_ = |x: usize| u32::from_le_bytes(file[x..x + 4].try_into().unwrap());
+                let f64_ = |x: usize| u64::from_le_bytes(file[x..x + 8].try_into().unwrap());
+                let mut id = None;
+                for g in 0..groups {
+                    let gb = 0x28 + g * 16;
+                    let (first_index, first, last) =
+                        (f32_(gb) as usize, f32_(gb + 4) as i32, f32_(gb + 8) as i32);
+                    for k in 0..=(last - first).max(0) as usize {
+                        let idx = first_index + k;
+                        if idx < strings && f64_(table + idx * 8) == target {
+                            id = Some(first + k as i32);
+                        }
+                    }
+                }
+                return Ok(format!(
+                    "FMG en {fmg:#X}: {size:#X} bytes, {groups} grupos, {strings} textos; \
+                     el texto de {addr:#X} es el ID {id:?}"
+                ));
+            }
+        }
+        if o < 8 {
+            return Err("no encontré la cabecera del FMG (hasta 4 MB antes)".into());
+        }
+        o -= 8;
+    }
+}

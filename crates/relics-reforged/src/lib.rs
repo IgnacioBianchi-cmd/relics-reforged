@@ -9,6 +9,7 @@ mod commands;
 mod forge;
 mod game;
 mod mainthread;
+mod msg;
 mod profiler;
 mod search;
 mod snap;
@@ -117,15 +118,12 @@ fn run(module: usize) {
     };
     log.line(&format!("nightreign.exe en {base:#X}, versión soportada"));
 
-    let data = load_game_data(&dll_path, &mut log).map(Arc::new);
+    let mut data = load_game_data(&dll_path, &mut log).map(Arc::new);
     let dll_dir = dll_path.parent().unwrap_or(Path::new(".")).to_path_buf();
     // Por si quedó un archivo de comandos de una sesión anterior.
     let _ = std::fs::remove_file(dll_dir.join(commands::FILE_NAME));
-
-    if let Some(data) = &data {
-        ui::start(module, game, data.clone(), dll_dir.clone());
-        log.line(&format!("Menú: se abre con {}", ui::TOGGLE_KEY_NAME));
-    }
+    // El menú arranca cuando la partida está cargada, con los nombres ya leídos del juego.
+    let mut menu_started = false;
 
     // Esperamos a que la partida esté cargada y estable (mismo estado dos lecturas seguidas).
     let mut waiting_logged = false;
@@ -180,6 +178,25 @@ fn run(module: usize) {
             match mainthread::install(base) {
                 Ok(()) => log.line("Gancho del hilo principal instalado"),
                 Err(e) => log.line(&format!("ERROR: no pude instalar el gancho: {e}")),
+            }
+        }
+        // Nombres desde los textos del juego, y después el menú.
+        if !menu_started {
+            if let Some(current) = &data {
+                let (fmgs, array) = game
+                    .player_game_data()
+                    .map_or((Vec::new(), None), msg::loaded_fmgs);
+                let mut named = (**current).clone();
+                let summary = msg::apply_names(&mut named, &fmgs);
+                log.line(&format!(
+                    "Nombres del juego ({} FMG, array en {array:X?}): {summary}",
+                    fmgs.len()
+                ));
+                let named = Arc::new(named);
+                ui::start(module, game, named.clone(), dll_dir.clone());
+                log.line(&format!("Menú: se abre con {}", ui::TOGGLE_KEY_NAME));
+                data = Some(named);
+                menu_started = true;
             }
         }
     }

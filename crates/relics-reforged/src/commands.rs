@@ -18,6 +18,8 @@
 //! | `forge? ...` | igual, pero solo valida y muestra el resultado |
 //! | `snap <nombre>` | foto de PlayerGameData e inventario; lista los cambios respecto de la foto anterior |
 //! | `locks` | reliquias que no se pueden donar ni sacrificar, y por qué |
+//! | `findtext <texto>` | busca un texto en UTF-16 en toda la memoria |
+//! | `fmg <dirección>` | cabecera del FMG que contiene ese texto, y su ID |
 //! | `find <u32> ...` | busca esa secuencia de valores (hex, `*` = cualquiera) en toda la memoria |
 //! | `ptrs <dirección> [pgd\|gdm\|nr\|dir] [largo]` | punteros hacia esa dirección (o un objeto que la contiene) |
 //! | `mem <dirección> [largo]` | muestra memoria en hex; las direcciones aceptan `pgd+`, `gdm+`, `nr+` |
@@ -94,6 +96,8 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
         ["snap", name] => crate::snap::take(ctx.game, name),
         ["locks"] => locks(ctx),
         ["find", words @ ..] if !words.is_empty() => crate::search::find(ctx.game, words),
+        ["findtext", words @ ..] if !words.is_empty() => crate::search::find_text(&words.join(" ")),
+        ["fmg", addr] => crate::search::fmg_of(crate::search::parse_addr(ctx.game, addr)?),
         ["ptrs", target, rest @ ..] => {
             let target = crate::search::parse_addr(ctx.game, target)?;
             let base = rest.first().copied().unwrap_or("pgd");

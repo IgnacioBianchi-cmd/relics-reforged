@@ -82,6 +82,7 @@ fn regulation_coincide_con_los_csv() {
             a.passive_sp_effects, b.passive_sp_effects,
             "SpEffects de {id}"
         );
+        assert_eq!(a.text_id, b.text_id, "attachTextId de {id}");
     }
 
     assert_eq!(

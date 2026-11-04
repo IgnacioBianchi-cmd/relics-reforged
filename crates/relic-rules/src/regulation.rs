@@ -231,6 +231,7 @@ impl GameData {
                     sort_priority: i32_le(row, 0x34)?,
                     is_debuff: row[0x21] != 0,
                     passive_sp_effects,
+                    text_id: i32_le(row, 0x1C)?,
                 },
             );
         }

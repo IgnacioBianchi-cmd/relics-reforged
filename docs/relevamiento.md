@@ -205,6 +205,21 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - Probado el 2026-11-04: 66 de 141 reliquias bloqueadas; rechazos por favorita, por preset + recipiente y por recipiente solo.
 - En el save, recipientes y presets están en USERDATA_00 con otro formato (recipiente: ID + 6 handles, 0x1C bytes; desde ~`0x1c090`).
 
+### Params desde `regulation.bin` ✔ (2026-11-04)
+
+- `regulation.bin` (carpeta `Game`) = AES-256-CBC (IV = primeros 16 bytes) → DCX con **ZSTD** → BND4 → un PARAM por tabla. La clave es la `NR_REGULATION_KEY` de Andre.SoulsFormats (Smithbox), guardada como texto hex en el heap de strings de la DLL.
+- PARAM: cantidad de filas en `+0x0A`, índice de filas desde `+0x40` (0x18 c/u: ID, 0, offset de datos u64, offset de nombre u64). Offsets de campos de los paramdefs de Smithbox (`Assets/PARAM/NR/Defs`): ver `crates/relic-rules/src/regulation.rs`.
+- Test `regulation_coincide_con_los_csv`: efectos, tipos y tablas idénticos a los CSV exportados.
+- En memoria hay dos copias de los params (la regulación descomprimida y otra), sin un puntero estático cómodo: por eso se lee del disco.
+
+### Nombres desde los textos del juego (FMG) ✔ (2026-11-04)
+
+- Los FMG cargados están en un array con firma propia: `[X] = X` (puntero a sí mismo), `[X+8]` = cantidad de categorías (0x206), y desde `X+0x10` un puntero a FMG (o 0) por categoría. El de nombres de efectos está en la categoría 44.
+- No hay puntero estático (`nr+3C078F8` pareció serlo en una sesión por la tolerancia de 64 KB de `ptrs`, pero no lo es). El array queda a ~2,5 MB de PlayerGameData: se busca la firma en ±64 MB de PlayerGameData y, si no aparece, en toda la memoria.
+- FMG en memoria = archivo versión 2 (`00 00 02 00`, tamaño, `01`, grupos, textos), salvo que `+0x18` (tabla de textos) pasa a ser una dirección; los offsets de cada texto siguen relativos.
+- Nombres de efectos por `attachTextId` (`AttachEffectParam+0x1C`), de reliquias por ID de `EquipParamAntique`. Se combinan los FMG que cubren muchos IDs, cuyos textos son mayormente de esos IDs y cortos; los saltos de línea se reemplazan por espacios.
+- Resultado: 2066/2079 efectos (4 FMG) y 849/1397 reliquias (2 FMG; las demás son filas sin uso). Salen en el idioma del juego del jugador.
+
 ### Saves de prueba
 
 - Respaldos en `data/save/backups/` (no van a git). Para restaurar: con el juego cerrado, copiar sobre `NR_RelicsReforged.sl2` y `.bak`, y **ponerles la fecha actual** (la carpeta tiene `steam_autocloud.vdf`).
@@ -269,7 +284,7 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [x] **Favoritas, equipadas, presets y recipientes**: bloqueadas en `forge` (ver arriba).
 - [x] Interfaz dentro del juego: menú F7 (`ui.rs`, Dear ImGui con hudhook 0.9.3 sobre DirectX 12). La fuente de ImGui cubre Latin-1: nada de "→" ni otros símbolos fuera de ese rango.
 - [ ] **Solo en la Roundtable** (regla 11): falta detectar dónde está el jugador; hoy el menú forja en cualquier lado.
-- [ ] **Params desde memoria**: hoy la DLL lee `data/export/*.csv`, que no se pueden repartir. Para pasarle el mod a otros hay que armar `GameData` desde los params en memoria.
+- [x] **Params y nombres sin CSV** (ver arriba): params desde `regulation.bin`, nombres desde los FMG cargados.
 - [ ] Seamless Co-op: probar que la forja funcione con el mod de co-op cargado.
 - [ ] **Cuántas entradas tiene la tabla de ítems** y cómo se ve una entrada vacía. Por ahora la DLL recorre hasta 0x2000 entradas y filtra por la forma del registro; encuentra todas las reliquias, pero el largo real sigue sin confirmar.
 - [x] Instalar Rust y me3. Falta Seamless Co-op.
