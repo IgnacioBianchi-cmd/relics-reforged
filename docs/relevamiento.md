@@ -164,4 +164,5 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [ ] **Escritura segura**: cómo borrar una reliquia y descontar murk usando las funciones del propio juego (vender o descartar), no escribiendo bytes a mano. Se investiga desde la DLL, no con el debugger de CE (crashea).
 - [ ] **Cuántas entradas tiene la tabla de ítems** y cómo distinguir una entrada vacía (para recorrerla entera).
 - [ ] Instalar Rust, me3 y Seamless Co-op para la fase de DLL.
-- [ ] Motor de reglas: implementar las reglas 1–9 como biblioteca, testeada contra `relics.json` y los CSV.
+- [x] Motor de reglas: `crates/relic-rules`, testeado contra `relics.json` y los CSV.
+- [ ] DLL: leer params, murk e inventario desde memoria y armar `GameData` sin depender de los CSV.
