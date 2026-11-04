@@ -13,12 +13,15 @@ mod profiler;
 mod search;
 mod snap;
 mod tracer;
+mod ui;
 mod win;
 
 use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use relic_rules::{relic_kind, validate, GameData, Relic, RelicKind};
@@ -56,27 +59,37 @@ pub extern "system" fn DllMain(
 
 pub(crate) struct Log {
     file: File,
-    start: Instant,
 }
+
+/// Momento en que arrancó el mod: los tiempos del log son relativos a esto.
+static START: OnceLock<Instant> = OnceLock::new();
+/// Handle de nuestra DLL, para que cualquier hilo pueda escribir en el log.
+static MODULE: AtomicUsize = AtomicUsize::new(0);
 
 impl Log {
     fn open(module: usize) -> Option<Log> {
         let path = win::module_path(module)?.with_file_name("relics_reforged.log");
         let file = File::options().create(true).append(true).open(path).ok()?;
-        Some(Log {
-            file,
-            start: Instant::now(),
-        })
+        Some(Log { file })
     }
 
     pub(crate) fn line(&mut self, text: &str) {
-        let t = self.start.elapsed().as_secs_f32();
+        let t = START.get_or_init(Instant::now).elapsed().as_secs_f32();
         let _ = writeln!(self.file, "[{t:8.1}s] {text}");
         let _ = self.file.flush();
     }
 }
 
+/// Escribe una línea en el log desde cualquier hilo (por ejemplo, el del menú).
+pub(crate) fn log_event(text: &str) {
+    if let Some(mut log) = Log::open(MODULE.load(Ordering::Relaxed)) {
+        log.line(text);
+    }
+}
+
 fn run(module: usize) {
+    MODULE.store(module, Ordering::Relaxed);
+    START.get_or_init(Instant::now);
     let dll_path = win::module_path(module).unwrap_or_default();
     // Empezamos un log nuevo en cada arranque del juego.
     let _ = File::create(dll_path.with_file_name("relics_reforged.log"));
@@ -104,10 +117,15 @@ fn run(module: usize) {
     };
     log.line(&format!("nightreign.exe en {base:#X}, versión soportada"));
 
-    let data = load_game_data(&dll_path, &mut log);
+    let data = load_game_data(&dll_path, &mut log).map(Arc::new);
     let dll_dir = dll_path.parent().unwrap_or(Path::new(".")).to_path_buf();
     // Por si quedó un archivo de comandos de una sesión anterior.
     let _ = std::fs::remove_file(dll_dir.join(commands::FILE_NAME));
+
+    if let Some(data) = &data {
+        ui::start(module, game, data.clone(), dll_dir.clone());
+        log.line(&format!("Menú: se abre con {}", ui::TOGGLE_KEY_NAME));
+    }
 
     // Esperamos a que la partida esté cargada y estable (mismo estado dos lecturas seguidas).
     let mut waiting_logged = false;
@@ -117,7 +135,7 @@ fn run(module: usize) {
         std::thread::sleep(Duration::from_secs(1));
         let mut ctx = commands::Context {
             game: &game,
-            data: data.as_ref(),
+            data: data.as_deref(),
             dll_dir: &dll_dir,
             dump_requested: false,
         };
@@ -153,8 +171,15 @@ fn run(module: usize) {
                 }
             }
             _ => {
-                dump(&mut log, data.as_ref(), current.0, &current.1);
+                dump(&mut log, data.as_deref(), current.0, &current.1);
                 dumped = Some(current);
+            }
+        }
+        // Con la partida cargada y estable, el gancho del hilo principal (lo usa el menú).
+        if !mainthread::is_installed() {
+            match mainthread::install(base) {
+                Ok(()) => log.line("Gancho del hilo principal instalado"),
+                Err(e) => log.line(&format!("ERROR: no pude instalar el gancho: {e}")),
             }
         }
     }

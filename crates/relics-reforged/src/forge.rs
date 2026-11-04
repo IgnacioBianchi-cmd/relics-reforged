@@ -171,17 +171,27 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
             .map(|e| {
                 data.effects
                     .get(&e)
-                    .map_or(e.to_string(), |i| i.name.clone())
+                    .map_or(e.to_string(), |i| crate::ui::clean_name(&i.name))
             })
             .collect::<Vec<_>>()
-            .join(" | ")
+            .join("  |  ")
+    };
+    let relic_name = data
+        .relic_types
+        .get(&relics[1].item_id)
+        .map_or("La receptora".to_string(), |t| t.name.clone());
+    let forged_note = |forged: &[EffectId]| {
+        let limit = Rules::default().forge_limit[relics[1].effect_count().clamp(1, 3) - 1];
+        format!("{}/{limit} efectos forjados", forged.len())
     };
     if dry_run {
         return Ok(format!(
-            "SE PUEDE: {target:08X} quedaría [{}]; murk {murk} -> {new_murk} (costo {}, {} puntos de sacrificio)",
+            "Resultado: {relic_name} quedaría con  {}\nCosto: {} de murk ({murk} → {new_murk}). \
+             Sacrificios: {} puntos. Quedaría con {}.",
             names(&plan.new_target),
             plan.murk_cost,
-            plan.sacrifice_points
+            plan.sacrifice_points,
+            forged_note(&plan.new_target_forged)
         ));
     }
 
@@ -248,11 +258,11 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     };
 
     Ok(format!(
-        "FORJA HECHA: {target:08X} ahora tiene [{}]; murk {murk} -> {new_murk} (costo {}, {} puntos de sacrificio); \
-         forjados en la receptora: {:?}{registry_note}",
+        "Forja hecha: {relic_name} ahora tiene  {}\nMurk {murk} → {new_murk} (costo {}). {}. \
+         [{target:08X}, forjados {:?}]{registry_note}",
         names(&plan.new_target),
         plan.murk_cost,
-        plan.sacrifice_points,
+        forged_note(&plan.new_target_forged),
         plan.new_target_forged
     ))
 }
