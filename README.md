@@ -19,7 +19,8 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | DLL in-game (`crates/relics-reforged`, me3) | Lee y valida el inventario. Gancho en el hilo principal del juego |
 | Forja completa (`forge` desde el archivo de comandos) | ✔ probada en el juego y guardada en el save |
 | Bloqueo de favoritas, equipadas, presets y recipientes | ✔ probado en el juego |
-| Menú dentro del juego, Seamless Co-op | pendiente |
+| Menú dentro del juego (F7, ImGui con hudhook) | ✔ probado: forja desde el menú guardada en el save |
+| Seamless Co-op, solo en la Roundtable, params desde memoria (sin CSV) | pendiente |
 
 ## Estructura
 
@@ -54,6 +55,8 @@ cargo build --release -p relics-reforged
 ```
 
 Después, doble clic en `me3/relics-reforged-dev.me3`. El log queda en `target/release/relics_reforged.log`.
+
+En el juego, **F7** abre el menú: receptora y efecto a reemplazar, donante y efecto a transferir, 3 sacrificios, vista previa y forja (con doble confirmación). Para pruebas sin menú está el archivo de comandos (`crates/relics-reforged/src/commands.rs`).
 
 ## Reglas de balance (por defecto)
 

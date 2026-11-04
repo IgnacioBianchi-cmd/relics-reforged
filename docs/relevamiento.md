@@ -267,7 +267,9 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [x] ~~Pedir un guardado~~: no hace falta (la forja es atómica respecto de los guardados). `nr+6AF930` no sirve: restaura una foto.
 - [x] Comando `forge` (y `forge?` en seco) con `plan_transfer`, probado y guardado en el save.
 - [x] **Favoritas, equipadas, presets y recipientes**: bloqueadas en `forge` (ver arriba).
-- [ ] Interfaz dentro del juego (en vez del archivo de comandos).
+- [x] Interfaz dentro del juego: menú F7 (`ui.rs`, Dear ImGui con hudhook 0.9.3 sobre DirectX 12). La fuente de ImGui cubre Latin-1: nada de "→" ni otros símbolos fuera de ese rango.
+- [ ] **Solo en la Roundtable** (regla 11): falta detectar dónde está el jugador; hoy el menú forja en cualquier lado.
+- [ ] **Params desde memoria**: hoy la DLL lee `data/export/*.csv`, que no se pueden repartir. Para pasarle el mod a otros hay que armar `GameData` desde los params en memoria.
 - [ ] Seamless Co-op: probar que la forja funcione con el mod de co-op cargado.
 - [ ] **Cuántas entradas tiene la tabla de ítems** y cómo se ve una entrada vacía. Por ahora la DLL recorre hasta 0x2000 entradas y filtra por la forma del registro; encuentra todas las reliquias, pero el largo real sigue sin confirmar.
 - [x] Instalar Rust y me3. Falta Seamless Co-op.

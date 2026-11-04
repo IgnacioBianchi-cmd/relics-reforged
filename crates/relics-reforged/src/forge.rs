@@ -186,7 +186,7 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     };
     if dry_run {
         return Ok(format!(
-            "Resultado: {relic_name} quedaría con  {}\nCosto: {} de murk ({murk} → {new_murk}). \
+            "Resultado: {relic_name} quedaría con  {}\nCosto: {} de murk ({murk} -> {new_murk}). \
              Sacrificios: {} puntos. Quedaría con {}.",
             names(&plan.new_target),
             plan.murk_cost,
@@ -258,7 +258,7 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     };
 
     Ok(format!(
-        "Forja hecha: {relic_name} ahora tiene  {}\nMurk {murk} → {new_murk} (costo {}). {}. \
+        "Forja hecha: {relic_name} ahora tiene  {}\nMurk {murk} -> {new_murk} (costo {}). {}. \
          [{target:08X}, forjados {:?}]{registry_note}",
         names(&plan.new_target),
         plan.murk_cost,
