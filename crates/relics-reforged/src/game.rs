@@ -40,12 +40,16 @@ const INV_ARRAY_LOW: usize = 0x40;
 const INV_LAST_INDEX: usize = 0x70;
 const INV_ENTRY_SIZE: usize = 20;
 
-/// Cuánto de PlayerGameData se revisa buscando menciones de reliquias (slots equipados en
-/// +0x2F4, presets alrededor de +0x16A00).
-const PGD_SCAN: usize = 0x2_0000;
-/// Tramos de PlayerGameData que mencionan reliquias sin bloquearlas: +0x10CC parece una copia
-/// de la entrada de inventario de la reliquia seleccionada en el menú (a confirmar).
-const PGD_NOT_A_LOCK: [(usize, usize); 1] = [(0x10CC, 0x10E0)];
+/// Slots de reliquia del recipiente equipado ahora (6 handles). Solo se mira esto de
+/// PlayerGameData: más adelante (+0x8FC..) hay una lista con todas las reliquias, que no
+/// significa que estén en uso.
+const EQUIPPED_SLOTS: usize = 0x2F4;
+const EQUIPPED_SLOTS_LEN: usize = 6 * 4;
+/// Puntero al contenedor de recipientes y presets: {asignador, cabeza del `std::map` de
+/// recipientes, cantidad} y {asignador, ?, cantidad de presets}, seguidos de los presets.
+const RELIC_SETS_PTR: usize = 0x6F8;
+const ALLOCATOR_VTABLE_RVA: usize = 0x39B_8008;
+const PRESET_SIZE: usize = 0x50;
 
 /// `RemoveItem(EquipGameData*, índice, delta, flag)`, la que usa la venta (ver `docs/relevamiento.md`).
 const REMOVE_ITEM_RVA: usize = 0x1F_06B0;
@@ -54,6 +58,12 @@ const REMOVE_ITEM_PROLOGUE: [u8; 16] = [
 ];
 /// Cota superior de entradas a recorrer (Elden Ring usa 5120; sobra margen).
 const MAX_ITEMS: usize = 0x2000;
+
+/// ¿La entrada de inventario `[handle, item, cantidad, orden, marcas]` es favorita? Es el byte
+/// bajo de las marcas; los bytes altos traen otro dato que cambia entre sesiones.
+pub fn is_favorite(entry: &[u32; 5]) -> bool {
+    entry[4] & 0xFF != 0
+}
 
 /// Una reliquia leída de la memoria del juego.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,38 +228,104 @@ impl Game {
     }
 
     /// Dónde aparece mencionado cada handle de reliquia (`0xC080xxxx`) en los datos del jugador:
-    /// PlayerGameData (slots equipados, presets...) y el bloque de `[pgd+0x168E8]` (lo que
-    /// recuerda cada recipiente). Devuelve (handle, lugar) para cada aparición.
-    pub fn relic_references(&self) -> Vec<(u32, String)> {
+    /// PlayerGameData (slots equipados en +0x2F4), los presets y el árbol de
+    /// recipientes (`std::map`), estos dos en el contenedor de `[pgd+0x6F8]`. Devuelve (handle, lugar) para cada
+    /// aparición, o `Err` si las estructuras no están donde se esperan (en ese caso no se puede
+    /// garantizar nada y no hay que forjar).
+    pub fn relic_references(&self) -> Result<Vec<(u32, String)>, String> {
+        let pgd = self
+            .player_game_data()
+            .ok_or("no encuentro PlayerGameData")?;
+        // Contenedor de recipientes y presets: lo apunta pgd+0x6F8. Sus dos contenedores
+        // internos empiezan con el puntero al asignador del juego: si no, no es lo que creemos.
+        let sets: usize = read(pgd + RELIC_SETS_PTR).ok_or("no puedo leer PlayerGameData")?;
+        let alloc = self.base + ALLOCATOR_VTABLE_RVA;
+        let a0: usize = read(sets).unwrap_or(0);
+        let a1: usize = read(sets + 0x18).unwrap_or(0);
+        if sets == 0 || a0 != alloc || a1 != alloc {
+            return Err(format!(
+                "los recipientes y presets no están donde se espera ([pgd+{RELIC_SETS_PTR:X}] = {sets:#X})"
+            ));
+        }
         let mut out = Vec::new();
-        let Some(pgd) = self.player_game_data() else {
-            return out;
-        };
-        let mut scan = |base: usize, len: usize, label: &str, skip: &[(usize, usize)]| {
-            let (bytes, _) = crate::win::read_bytes(base, len);
-            for off in (0..len).step_by(4) {
-                let v = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
-                if v >> 16 == 0xC080 && !skip.iter().any(|&(a, b)| off >= a && off < b) {
-                    out.push((v, format!("{label}+{off:X}")));
+        let mut scan =
+            |base: usize, len: usize, label: &dyn Fn(usize) -> String, skip: &[(usize, usize)]| {
+                let (bytes, _) = crate::win::read_bytes(base, len);
+                for off in (0..len).step_by(4) {
+                    let v = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
+                    if v >> 16 == 0xC080 && !skip.iter().any(|&(a, b)| off >= a && off < b) {
+                        out.push((v, label(off)));
+                    }
                 }
+            };
+        scan(
+            pgd + EQUIPPED_SLOTS,
+            EQUIPPED_SLOTS_LEN,
+            &|off| format!("equipada (slot {})", off / 4 + 1),
+            &[],
+        );
+        // Presets: cantidad en +0x28, registros de 0x50 bytes desde +0x30.
+        let presets: usize = read(sets + 0x28).ok_or("no puedo leer los presets")?;
+        if presets > 0x100 {
+            return Err(format!("cantidad de presets inválida ({presets})"));
+        }
+        scan(
+            sets + 0x30,
+            presets * PRESET_SIZE,
+            &|off| format!("preset {}", off / PRESET_SIZE + 1),
+            &[],
+        );
+        // Árbol rojo-negro de MSVC: nodo = izquierda, padre, derecha, color, esNulo (+0x19),
+        // clave = ID del recipiente (+0x1C), 6 handles desde +0x24.
+        let head: usize = read(sets + 8).ok_or("no puedo leer el árbol")?;
+        let count: usize = read(sets + 0x10).ok_or("no puedo leer el árbol")?;
+        if head == 0 || count > 0x1000 {
+            return Err(format!(
+                "árbol de recipientes inválido ({head:#X}, {count})"
+            ));
+        }
+        let root: usize = read(head + 8).ok_or("no puedo leer el árbol")?;
+        let mut stack = vec![root];
+        let mut visited = 0;
+        while let Some(node) = stack.pop() {
+            let is_nil: u8 = read(node + 0x19).ok_or("nodo ilegible")?;
+            if node == head || is_nil != 0 {
+                continue;
             }
-        };
-        scan(pgd, PGD_SCAN, "pgd", &PGD_NOT_A_LOCK);
-        // Pendiente: los presets y lo que recuerda cada recipiente viven fuera de PlayerGameData
-        // y todavía no tienen un puntero estable (ver docs/relevamiento.md).
-        out
+            visited += 1;
+            if visited > count {
+                return Err("el árbol de recipientes tiene más nodos de los que dice".into());
+            }
+            let vessel: u32 = read(node + 0x1C).ok_or("nodo ilegible")?;
+            let handles: [u32; 6] = read(node + 0x24).ok_or("nodo ilegible")?;
+            for h in handles.into_iter().filter(|h| h >> 16 == 0xC080) {
+                out.push((h, format!("recipiente {vessel:#X}")));
+            }
+            stack.push(read(node).ok_or("nodo ilegible")?);
+            stack.push(read(node + 0x10).ok_or("nodo ilegible")?);
+        }
+        if visited != count {
+            return Err(format!(
+                "recorrí {visited} recipientes de {count}: el árbol no es lo que parece"
+            ));
+        }
+        Ok(out)
     }
 
     /// Si la reliquia no se puede donar ni sacrificar: favorita, equipada, recordada por un
-    /// recipiente o guardada en un preset. Devuelve el motivo.
+    /// recipiente o guardada en un preset. Devuelve el motivo. Si no se puede verificar, también
+    /// la da por bloqueada.
     pub fn lock_reason(&self, handle: u32) -> Option<String> {
         if let Some((_, entry)) = self.inventory_entry(handle) {
-            if entry[4] != 0 {
+            if is_favorite(&entry) {
                 return Some("es favorita".into());
             }
         }
-        let places: Vec<String> = self
-            .relic_references()
+        let refs = match self.relic_references() {
+            Ok(r) => r,
+            Err(e) => return Some(format!("no se pudo verificar si está en uso: {e}")),
+        };
+        let places: Vec<String> = refs
             .into_iter()
             .filter(|(h, _)| *h == handle)
             .map(|(_, p)| p)

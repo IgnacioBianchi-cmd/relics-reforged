@@ -347,11 +347,11 @@ fn remove(ctx: &Context, handle: u32) -> Result<String, String> {
 fn locks(ctx: &Context) -> Result<String, String> {
     use std::collections::BTreeMap;
     let mut by_handle: BTreeMap<u32, Vec<String>> = BTreeMap::new();
-    for (h, place) in ctx.game.relic_references() {
+    for (h, place) in ctx.game.relic_references()? {
         by_handle.entry(h).or_default().push(place);
     }
     for (_, entry) in ctx.game.inventory_entries() {
-        if entry[0] >> 16 == 0xC080 && entry[4] != 0 {
+        if entry[0] >> 16 == 0xC080 && crate::game::is_favorite(&entry) {
             by_handle
                 .entry(entry[0])
                 .or_default()
