@@ -40,12 +40,6 @@ const INV_ARRAY_LOW: usize = 0x40;
 const INV_LAST_INDEX: usize = 0x70;
 const INV_ENTRY_SIZE: usize = 20;
 
-/// Guardar ya: serializa la partida y la manda a escribir (la usan los menús del juego).
-const SAVE_NOW_RVA: usize = 0x6A_F930;
-const SAVE_NOW_PROLOGUE: [u8; 16] = [
-    0x48, 0x89, 0x6C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48,
-];
-
 /// `RemoveItem(EquipGameData*, índice, delta, flag)`, la que usa la venta (ver `docs/relevamiento.md`).
 const REMOVE_ITEM_RVA: usize = 0x1F_06B0;
 const REMOVE_ITEM_PROLOGUE: [u8; 16] = [
@@ -229,29 +223,19 @@ impl Game {
 
     /// Verifica que el código de las funciones del juego que usamos sea el esperado.
     pub fn check_game_functions(&self) -> Result<(), String> {
-        for (rva, prologue) in [
-            (REMOVE_ITEM_RVA, REMOVE_ITEM_PROLOGUE),
-            (SAVE_NOW_RVA, SAVE_NOW_PROLOGUE),
-        ] {
-            let actual: [u8; 16] = read(self.base + rva).ok_or("no puedo leer el código")?;
-            if actual != prologue {
-                return Err(format!("el código en nr+{rva:X} no es el esperado"));
-            }
+        let actual: [u8; 16] =
+            read(self.base + REMOVE_ITEM_RVA).ok_or("no puedo leer el código")?;
+        if actual != REMOVE_ITEM_PROLOGUE {
+            return Err(format!(
+                "el código en nr+{REMOVE_ITEM_RVA:X} no es el esperado"
+            ));
         }
         Ok(())
     }
 
-    /// Pide al juego que guarde ahora (`nr+6AF930`). Si ya hay un guardado en curso, el juego
-    /// termina ese primero.
-    ///
-    /// # Safety
-    /// Tiene que correr en el hilo principal (ver `mainthread::run`).
-    pub unsafe fn save_now(&self) -> Result<(), String> {
-        self.check_game_functions()?;
-        let f: unsafe extern "win64" fn() = std::mem::transmute(self.base + SAVE_NOW_RVA);
-        f();
-        Ok(())
-    }
+    // NO llamar a nr+6AF930: no es "guardar ya" sino "foto en memoria / restaurar foto". Si ya
+    // hay una foto (GameMan+0xDA8), la carga encima de la partida (probado el 2026-11-04: dejó
+    // un personaje por defecto con 9.999.999 de murk). Ver docs/relevamiento.md.
 
     /// Recorre la tabla de ítems y devuelve las reliquias, validando la forma de cada registro.
     pub fn relics(&self) -> Vec<LiveRelic> {

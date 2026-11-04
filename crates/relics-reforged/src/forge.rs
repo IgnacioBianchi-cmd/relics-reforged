@@ -8,7 +8,9 @@
 //! 2. Borrar donante y sacrificios con `RemoveItem` del juego.
 //! 3. Reescribir la receptora (efectos, maldiciones y SpEffects).
 //! 4. Descontar el murk.
-//! 5. Pedir un guardado.
+//!
+//! No pide un guardado: como todo cambia en un mismo frame, el próximo guardado del juego toma
+//! la forja completa o nada de ella.
 //!
 //! Las marcas de "forjada" se guardan en `relics_reforged_forjas.txt`, junto a la DLL, indexadas
 //! por el número de orden de la entrada de inventario (estable entre sesiones).
@@ -204,8 +206,8 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
             if !crate::win::write(murk_addr, new_murk) {
                 return Err("ATENCIÓN: no pude descontar el murk".into());
             }
-            // SAFETY: hilo principal.
-            unsafe { game.save_now()? };
+            // Sin pedido de guardado: todo cambió en un mismo frame, así que el próximo guardado
+            // del juego toma la forja entera o nada de ella.
             Ok(())
         },
         std::time::Duration::from_secs(5),
@@ -225,7 +227,7 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
 
     Ok(format!(
         "FORJA HECHA: {target:08X} ahora tiene [{}]; murk {murk} -> {new_murk} (costo {}, {} puntos de sacrificio); \
-         forjados en la receptora: {:?}; se pidió un guardado{registry_note}",
+         forjados en la receptora: {:?}{registry_note}",
         names(&plan.new_target),
         plan.murk_cost,
         plan.sacrifice_points,

@@ -13,8 +13,7 @@
 //! | `profile <segundos>` | muestrea todos los hilos y escribe `profile.txt` (ver `disasm ... profile`) |
 //! | `inv <handle>` | muestra la entrada del inventario de ese handle |
 //! | `remove <handle>` | quita la reliquia con `RemoveItem` del juego, como la venta (no da murk) |
-//! | `hook` | instala el gancho del hilo principal (hace falta para `murk`, `set`, `remove`, `save` y `forge`) |
-//! | `save` | pide un guardado al juego |
+//! | `hook` | instala el gancho del hilo principal (hace falta para `murk`, `set`, `remove` y `forge`) |
 //! | `forge <donante> <slot> <receptora> <slot> <s1> <s2> <s3>` | la transferencia completa (ver [`crate::forge`]) |
 //! | `forge? ...` | igual, pero solo valida y muestra el resultado |
 //! | `dumpimage` | copia la imagen de `nightreign.exe` a `nightreign_dump.bin` para analizarla |
@@ -87,12 +86,6 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
         }
         ["dumpimage"] => dump_image(ctx),
         ["hook"] => hook(ctx),
-        ["save"] => {
-            let game = *ctx.game;
-            // SAFETY: corre en el hilo principal.
-            mainthread::run(move || unsafe { game.save_now() }, MAIN_THREAD_TIMEOUT)??;
-            Ok("se pidió un guardado".into())
-        }
         [cmd @ ("forge" | "forge?"), d, ds, t, ts, s1, s2, s3] => {
             not_while_watching()?;
             let data = ctx.data.ok_or("sin params no puedo validar")?;

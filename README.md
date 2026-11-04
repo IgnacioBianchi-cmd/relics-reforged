@@ -16,8 +16,9 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 |---|---|
 | Relevamiento del formato del save, params y memoria | ✔ ([docs/relevamiento.md](docs/relevamiento.md)) |
 | Motor de reglas (`crates/relic-rules`) | ✔ con tests contra un save real |
-| DLL in-game (`crates/relics-reforged`, me3) | Lee murk e inventario y los valida. Comandos de desarrollo para escribir efectos y murk y borrar reliquias con la función del juego (probado y guardado en el save) |
-| Transferencia completa en el juego (forja, hilo del juego, guardado, menú) | pendiente |
+| DLL in-game (`crates/relics-reforged`, me3) | Lee y valida el inventario. Gancho en el hilo principal del juego |
+| Forja completa (`forge` desde el archivo de comandos) | ✔ probada en el juego y guardada en el save |
+| Bloquear favoritas/equipadas, menú dentro del juego, Seamless Co-op | pendiente |
 
 ## Estructura
 

@@ -162,7 +162,34 @@ Inventario = EquipGameData + 0x1C8 (= PlayerGameData + 0x3A0):
 | `[+0x70]` | último índice válido |
 | entrada (20 bytes) | +0 handle (0 = vacía), +4 item\|0x80000000, +8 cantidad, +0xC número de orden, +0x10 flag |
 
-Resultado: la reliquia desaparece de la tabla de ítems y del inventario, el menú muestra el contador correcto y, **después de un guardado real** (volver al título), el save tampoco la tiene. Un guardado que el juego hizo poco después del borrado todavía la tenía: el juego guarda una foto armada antes, así que el mod tiene que **pedir un guardado** después de forjar.
+Resultado: la reliquia desaparece de la tabla de ítems y del inventario, el menú muestra el contador correcto y, **después de un guardado real** (volver al título), el save tampoco la tiene. Un guardado que el juego hizo poco después del borrado todavía la tenía: el juego guarda una foto armada antes. Como la forja cambia todo en un mismo frame, cualquier guardado posterior la toma entera o no la toma: **no hace falta pedir un guardado**.
+
+### Hilo principal ✔
+
+Perfilador por muestreo (`profiler.rs`, comando `profile`): el hilo que arranca en el punto de entrada (`nr+26916BC`) es el principal, y es el que lee el inventario en cada frame.
+
+| Dirección | Qué es |
+|---|---|
+| `nr+DCB340` | ciclo principal (WinMain) |
+| `nr+DCB37F` | `call nr+F2F640`, una vez por frame: **acá va el gancho** |
+| `nr+F2F640` | un frame entero (sin argumentos; incrementa el contador `nr+3C2C24C`) |
+
+`mainthread.rs` cambia los 4 bytes del desplazamiento de esa llamada por un código propio, reservado a menos de 2 GB, que guarda rcx/rdx/r8/r9/xmm0-3, corre la cola de trabajos del mod y salta a `nr+F2F640`. Probado: 60 frames por segundo, estable.
+
+### Guardado: lo que NO hay que llamar ⚠
+
+Rastreo de lecturas (`watchr`) al volver al título: el save se arma en `nr+69F560` (un ítem: handle, ID y 0x48 bytes del registro) ← `nr+20D210` ← `nr+2014A0` (datos de partida desde PlayerGameData) ← `nr+6B97D0` (serializar en un buffer; GameMan = `[nr+3C13258]`).
+
+**`nr+6AF930` NO es "guardar ya".** Es "foto en memoria / restaurar foto": si `GameMan+0xDA8` está vacío, serializa la partida ahí; si ya hay una foto, **la carga** (`nr+6B24A0` lee desde el buffer). La llamamos el 2026-11-04 y cargó un personaje por defecto (Wylder, tutoriales, cinemática del DLC, 9.999.999 de runas) encima del save de prueba, y el guardado siguiente dejó el resumen del perfil (USERDATA_10) en blanco. Se recuperó con un respaldo. No usar.
+
+### Forja completa ✔ (2026-11-04)
+
+`forge C08000B9 3 C08000C9 3 C08000E0 C08000AA C0800054`: la Grand Burning Scene pasó de Giants' Flame · Fire Attack +1 · Frost Resistance a Giants' Flame · **Cooldown Reduction +3** · Fire Attack +1 (el juego reordena solo); 145 → 141 reliquias; murk 11.840 → 1.840. Después de volver al título, el save tiene exactamente eso en la sección principal y el perfil intacto. El save conserva además una copia vieja del bloque de reliquias en otra zona de USERDATA_00, que el juego ignora al cargar.
+
+### Saves de prueba
+
+- Respaldos en `data/save/backups/` (no van a git). Para restaurar: con el juego cerrado, copiar sobre `NR_RelicsReforged.sl2` y `.bak`, y **ponerles la fecha actual** (la carpeta tiene `steam_autocloud.vdf`).
+- Un save puede tener las reliquias bien y el perfil roto: verificar las 14 secciones, no solo USERDATA_00.
 
 Direcciones de referencia: sesión 1, murk A `7FF3B2F3BF30` y reliquia A `7FF3B17C8208`; sesión 2, murk A `7FF43F72F380` y reliquia A `7FF43E948208` (Deep Polished Tranquil Scene).
 Archivos: `data/ce/sesion1.scandata`, `data/ce/murk_comparado.PTR`.
@@ -217,9 +244,12 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [ ] **Byte +36**: qué significa (¿favorita? ¿nueva?). Se prueba marcando o desmarcando una reliquia y comparando saves.
 - [x] **Memoria**: murk y tabla de ítems encontrados con punteros estáticos, verificados en 3 sesiones.
 - [x] **Escritura**: murk y efectos por escritura directa; borrado con `RemoveItem` del juego. Probado y guardado en el save.
-- [ ] **Hilo del juego**: hoy la DLL llama a `RemoveItem` desde su propio hilo (sirve para probar con el personaje quieto). El mod final tiene que ejecutar la forja en el hilo principal del juego (por ejemplo, con un hook o una tarea propia).
-- [ ] **Pedir un guardado** después de forjar (encontrar la función que usa el juego, por ejemplo al vender).
-- [ ] Juntar todo en un comando `forge` que use `plan_transfer`: validar, borrar donante y sacrificios, reescribir la receptora, descontar murk y guardar.
+- [x] **Hilo del juego**: gancho en `nr+DCB37F`; murk, set, remove y forge corren entre frames.
+- [x] ~~Pedir un guardado~~: no hace falta (la forja es atómica respecto de los guardados). `nr+6AF930` no sirve: restaura una foto.
+- [x] Comando `forge` (y `forge?` en seco) con `plan_transfer`, probado y guardado en el save.
+- [ ] **Favoritas y equipadas**: averiguar dónde lo guarda el juego para bloquearlas (`Relic::locked`). Hoy `forge` no lo verifica.
+- [ ] Interfaz dentro del juego (en vez del archivo de comandos).
+- [ ] Seamless Co-op: probar que la forja funcione con el mod de co-op cargado.
 - [ ] **Cuántas entradas tiene la tabla de ítems** y cómo se ve una entrada vacía. Por ahora la DLL recorre hasta 0x2000 entradas y filtra por la forma del registro; encuentra todas las reliquias, pero el largo real sigue sin confirmar.
 - [x] Instalar Rust y me3. Falta Seamless Co-op.
 - [x] Motor de reglas: `crates/relic-rules`, testeado contra `relics.json` y los CSV.
