@@ -133,6 +133,108 @@ fn note(instr: &Instruction) -> Option<String> {
         .then(|| format!("[nr+{:X}]", instr.ip_rel_memory_address()))
 }
 
+/// (hilo, RIP, direcciones de la pila)
+type ProfileSample = (u32, u64, Vec<u64>);
+
+/// Resume un `profile.txt` de la DLL: por hilo, las funciones donde más se lo encontró (RIP) y
+/// las que más aparecen en su pila (una vez por muestra).
+fn profile(image: &Image, path: &str, top: usize) {
+    use std::collections::{BTreeMap, HashMap, HashSet};
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("no pude leer {path}: {e}"));
+    let mut base = u64::MAX;
+    let mut starts: BTreeMap<u32, u64> = BTreeMap::new();
+    let mut samples: Vec<ProfileSample> = Vec::new();
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        match parts.next() {
+            Some("T") => {
+                let tid: u32 = parts.next().unwrap().parse().unwrap();
+                let start = u64::from_str_radix(parts.next().unwrap(), 16).unwrap();
+                starts.insert(tid, start);
+            }
+            Some("S") => {
+                let tid: u32 = parts.next().unwrap().parse().unwrap();
+                let rip = u64::from_str_radix(parts.next().unwrap(), 16).unwrap();
+                let stack: Vec<u64> = parts.map(|p| u64::from_str_radix(p, 16).unwrap()).collect();
+                if let Some(&min) = stack.iter().min() {
+                    base = base.min(min);
+                }
+                samples.push((tid, rip, stack));
+            }
+            _ => {}
+        }
+    }
+    // La base del módulo: la dirección de la pila más baja, redondeada a 64 KB.
+    base &= !0xFFFF;
+    let size = image.bytes.len() as u64;
+    let name = |a: u64| -> String {
+        if a >= base && a < base + size {
+            let rva = (a - base) as u32;
+            match image.function_of(rva) {
+                Some((s, _)) => format!("nr+{s:X}"),
+                None => format!("nr+{rva:X}(?)"),
+            }
+        } else {
+            format!("{a:X}")
+        }
+    };
+    println!("base estimada {base:X}, {} muestras", samples.len());
+    let mut per_thread: BTreeMap<u32, Vec<&ProfileSample>> = BTreeMap::new();
+    for s in &samples {
+        per_thread.entry(s.0).or_default().push(s);
+    }
+    let mut threads: Vec<_> = per_thread.into_iter().collect();
+    // Primero los hilos que más tiempo pasan dentro del juego.
+    threads.sort_by_key(|(_, v)| {
+        std::cmp::Reverse(
+            v.iter()
+                .filter(|s| s.1 >= base && s.1 < base + size)
+                .count(),
+        )
+    });
+    for (tid, v) in threads.iter().take(12) {
+        let inside = v
+            .iter()
+            .filter(|s| s.1 >= base && s.1 < base + size)
+            .count();
+        let start = starts.get(tid).copied().unwrap_or(0);
+        println!(
+            "\n=== hilo {tid} (arranca en {}): {} muestras, {inside} con RIP en el juego ===",
+            name(start),
+            v.len()
+        );
+        let mut rip_count: HashMap<String, usize> = HashMap::new();
+        let mut stack_count: HashMap<String, usize> = HashMap::new();
+        for s in v {
+            *rip_count.entry(name(s.1)).or_default() += 1;
+            let unique: HashSet<String> = s.2.iter().map(|&a| name(a)).collect();
+            for f in unique {
+                *stack_count.entry(f).or_default() += 1;
+            }
+        }
+        let mut r: Vec<_> = rip_count.into_iter().collect();
+        r.sort_by_key(|(_, c)| std::cmp::Reverse(*c));
+        println!(
+            "  RIP: {}",
+            r.iter()
+                .take(top)
+                .map(|(f, c)| format!("{f}×{c}"))
+                .collect::<Vec<_>>()
+                .join("  ")
+        );
+        let mut st: Vec<_> = stack_count.into_iter().collect();
+        st.sort_by_key(|(_, c)| std::cmp::Reverse(*c));
+        println!(
+            "  pila: {}",
+            st.iter()
+                .take(top * 2)
+                .map(|(f, c)| format!("{f}×{c}"))
+                .collect::<Vec<_>>()
+                .join("  ")
+        );
+    }
+}
+
 fn parse_rva(s: &str) -> u32 {
     let s = s.trim_start_matches("nr+").trim_start_matches("0x");
     u32::from_str_radix(s, 16).unwrap_or_else(|_| panic!("RVA inválida: {s}"))
@@ -187,6 +289,11 @@ fn main() {
                 }
             }
         }
+        "profile" => profile(
+            &image,
+            &rest[0],
+            rest.get(1).map_or(12, |s| s.parse().unwrap()),
+        ),
         _ => {
             eprintln!("comando desconocido: {cmd}");
             std::process::exit(2);

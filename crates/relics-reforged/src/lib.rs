@@ -6,7 +6,10 @@
 //! (ver [`commands`]).
 
 mod commands;
+mod forge;
 mod game;
+mod mainthread;
+mod profiler;
 mod tracer;
 mod win;
 
@@ -168,7 +171,9 @@ fn log_hits(log: &mut Log, base: usize) {
     for hit in tracer::take_hits() {
         let stack: Vec<String> = hit.stack[..hit.stack_len].iter().map(|&a| rel(a)).collect();
         log.line(&format!(
-            "ESCRITURA en {:#X} desde {} (hilo {}) rcx={:#X} rdx={:#X} r8={:#X} r9={:#X} rbx={:#X} rsi={:#X} rdi={:#X}\n           pila: {}",
+            "{} x{} en {:#X} desde {} (hilo {}) rcx={:#X} rdx={:#X} r8={:#X} r9={:#X} rbx={:#X} rsi={:#X} rdi={:#X}\n           pila: {}",
+            if hit.write { "ESCRITURA" } else { "LECTURA" },
+            hit.count,
             hit.addr,
             rel(hit.rip),
             hit.thread,

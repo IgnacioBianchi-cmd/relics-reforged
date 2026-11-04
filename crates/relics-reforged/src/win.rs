@@ -32,6 +32,154 @@ extern "system" {
     pub fn GetCurrentThreadId() -> u32;
 }
 
+extern "system" {
+    fn CreateToolhelp32Snapshot(flags: u32, pid: u32) -> Handle;
+    fn Thread32First(snapshot: Handle, entry: *mut ThreadEntry32) -> i32;
+    fn Thread32Next(snapshot: Handle, entry: *mut ThreadEntry32) -> i32;
+    fn GetCurrentProcessId() -> u32;
+    fn OpenThread(access: u32, inherit: i32, tid: u32) -> Handle;
+    fn CloseHandle(h: Handle) -> i32;
+    pub fn SuspendThread(h: Handle) -> u32;
+    pub fn ResumeThread(h: Handle) -> u32;
+    fn GetThreadContext(h: Handle, ctx: *mut Context) -> i32;
+}
+
+#[link(name = "ntdll")]
+extern "system" {
+    fn NtQueryInformationThread(
+        h: Handle,
+        class: u32,
+        info: *mut c_void,
+        len: u32,
+        ret: *mut u32,
+    ) -> i32;
+}
+
+#[repr(C)]
+struct ThreadEntry32 {
+    size: u32,
+    usage: u32,
+    thread_id: u32,
+    owner_pid: u32,
+    base_pri: i32,
+    delta_pri: i32,
+    flags: u32,
+}
+
+/// CONTEXT de x64: 0x4D0 bytes alineados a 16. Solo usamos unos pocos campos por offset.
+#[repr(C, align(16))]
+struct Context([u8; 0x4D0]);
+
+/// IDs de los hilos de este proceso.
+pub fn process_threads() -> Vec<u32> {
+    const TH32CS_SNAPTHREAD: u32 = 0x4;
+    let mut out = Vec::new();
+    // SAFETY: llamadas de Toolhelp con una estructura nuestra del tamaño declarado.
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if snap as isize == -1 {
+            return out;
+        }
+        let pid = GetCurrentProcessId();
+        let mut e = ThreadEntry32 {
+            size: std::mem::size_of::<ThreadEntry32>() as u32,
+            usage: 0,
+            thread_id: 0,
+            owner_pid: 0,
+            base_pri: 0,
+            delta_pri: 0,
+            flags: 0,
+        };
+        let mut ok = Thread32First(snap, &mut e);
+        while ok != 0 {
+            if e.owner_pid == pid {
+                out.push(e.thread_id);
+            }
+            ok = Thread32Next(snap, &mut e);
+        }
+        CloseHandle(snap);
+    }
+    out
+}
+
+pub fn open_thread(tid: u32) -> Option<Handle> {
+    const ACCESS: u32 = 0x0002 | 0x0008 | 0x0040; // SUSPEND_RESUME | GET_CONTEXT | QUERY_INFORMATION
+                                                  // SAFETY: OpenThread no tiene precondiciones; devuelve NULL si falla.
+    let h = unsafe { OpenThread(ACCESS, 0, tid) };
+    (!h.is_null()).then_some(h)
+}
+
+pub fn close_handle(h: Handle) {
+    // SAFETY: cerramos un handle que abrimos nosotros.
+    unsafe { CloseHandle(h) };
+}
+
+/// Dirección donde arrancó el hilo (ThreadQuerySetWin32StartAddress).
+pub fn thread_start_address(h: Handle) -> Option<usize> {
+    let mut addr = 0usize;
+    // SAFETY: el buffer es un usize nuestro y le pasamos su tamaño.
+    let status = unsafe {
+        NtQueryInformationThread(
+            h,
+            9,
+            (&mut addr as *mut usize).cast(),
+            8,
+            std::ptr::null_mut(),
+        )
+    };
+    (status >= 0).then_some(addr)
+}
+
+/// RIP y RSP de un hilo suspendido. No pide memoria del heap.
+pub fn thread_rip_rsp(h: Handle) -> Option<(usize, usize)> {
+    const CONTEXT_CONTROL: u32 = 0x0010_0001;
+    let mut ctx = Context([0; 0x4D0]);
+    ctx.0[0x30..0x34].copy_from_slice(&CONTEXT_CONTROL.to_le_bytes());
+    // SAFETY: CONTEXT alineado y del tamaño correcto, con ContextFlags inicializado.
+    if unsafe { GetThreadContext(h, &mut ctx) } == 0 {
+        return None;
+    }
+    let field = |off: usize| usize::from_le_bytes(ctx.0[off..off + 8].try_into().unwrap());
+    Some((field(0xF8), field(0x98)))
+}
+
+extern "system" {
+    fn VirtualAlloc(addr: *mut c_void, size: usize, kind: u32, protect: u32) -> *mut c_void;
+    fn FlushInstructionCache(process: Handle, addr: *const c_void, size: usize) -> i32;
+}
+
+/// Reserva memoria ejecutable a menos de 2 GB de `near` (para poder llegar con un `call rel32`).
+pub fn alloc_executable_near(near: usize, size: usize) -> Option<usize> {
+    const MEM_COMMIT_RESERVE: u32 = 0x3000;
+    const PAGE_EXECUTE_READWRITE: u32 = 0x40;
+    const STEP: usize = 0x1_0000;
+    for i in 1..0x7000usize {
+        for candidate in [near.checked_sub(i * STEP), near.checked_add(i * STEP)]
+            .into_iter()
+            .flatten()
+        {
+            // SAFETY: pedimos una dirección concreta; si está ocupada devuelve NULL.
+            let p = unsafe {
+                VirtualAlloc(
+                    candidate as *mut c_void,
+                    size,
+                    MEM_COMMIT_RESERVE,
+                    PAGE_EXECUTE_READWRITE,
+                )
+            };
+            if !p.is_null() {
+                return Some(p as usize);
+            }
+        }
+    }
+    None
+}
+
+pub fn flush_instruction_cache(addr: usize, size: usize) {
+    // SAFETY: solo invalida la caché de instrucciones de un rango de nuestro proceso.
+    unsafe { FlushInstructionCache(GetCurrentProcess(), addr as *const c_void, size) };
+}
+
 pub const PAGE_GUARD: u32 = 0x100;
 
 #[repr(C)]

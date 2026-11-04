@@ -40,6 +40,12 @@ const INV_ARRAY_LOW: usize = 0x40;
 const INV_LAST_INDEX: usize = 0x70;
 const INV_ENTRY_SIZE: usize = 20;
 
+/// Guardar ya: serializa la partida y la manda a escribir (la usan los menús del juego).
+const SAVE_NOW_RVA: usize = 0x6A_F930;
+const SAVE_NOW_PROLOGUE: [u8; 16] = [
+    0x48, 0x89, 0x6C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48,
+];
+
 /// `RemoveItem(EquipGameData*, índice, delta, flag)`, la que usa la venta (ver `docs/relevamiento.md`).
 const REMOVE_ITEM_RVA: usize = 0x1F_06B0;
 const REMOVE_ITEM_PROLOGUE: [u8; 16] = [
@@ -58,6 +64,7 @@ pub struct LiveRelic {
     pub curses: [u32; 4],
 }
 
+#[derive(Clone, Copy)]
 pub struct Game {
     base: usize,
 }
@@ -202,8 +209,7 @@ impl Game {
     /// Devuelve lo que devuelve el juego (la cantidad que queda).
     ///
     /// # Safety
-    /// Llama código del juego desde nuestro hilo: el inventario no debería estar en uso
-    /// (por ejemplo, con el menú de reliquias abierto) mientras tanto.
+    /// Llama código del juego: tiene que correr en el hilo principal (ver `mainthread::run`).
     pub unsafe fn remove_item(&self, handle: u32) -> Result<i32, String> {
         let addr = self.base + REMOVE_ITEM_RVA;
         let prologue: [u8; 16] = read(addr).ok_or("no puedo leer el código")?;
@@ -219,6 +225,32 @@ impl Game {
         // nr+1F06B0: i32 RemoveItem(EquipGameData*, u32 index, i32 delta, bool flag)
         let f: unsafe extern "win64" fn(usize, u32, i32, u8) -> i32 = std::mem::transmute(addr);
         Ok(f(equip, index, -1, 0))
+    }
+
+    /// Verifica que el código de las funciones del juego que usamos sea el esperado.
+    pub fn check_game_functions(&self) -> Result<(), String> {
+        for (rva, prologue) in [
+            (REMOVE_ITEM_RVA, REMOVE_ITEM_PROLOGUE),
+            (SAVE_NOW_RVA, SAVE_NOW_PROLOGUE),
+        ] {
+            let actual: [u8; 16] = read(self.base + rva).ok_or("no puedo leer el código")?;
+            if actual != prologue {
+                return Err(format!("el código en nr+{rva:X} no es el esperado"));
+            }
+        }
+        Ok(())
+    }
+
+    /// Pide al juego que guarde ahora (`nr+6AF930`). Si ya hay un guardado en curso, el juego
+    /// termina ese primero.
+    ///
+    /// # Safety
+    /// Tiene que correr en el hilo principal (ver `mainthread::run`).
+    pub unsafe fn save_now(&self) -> Result<(), String> {
+        self.check_game_functions()?;
+        let f: unsafe extern "win64" fn() = std::mem::transmute(self.base + SAVE_NOW_RVA);
+        f();
+        Ok(())
     }
 
     /// Recorre la tabla de ítems y devuelve las reliquias, validando la forma de cada registro.

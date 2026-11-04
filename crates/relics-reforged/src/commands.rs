@@ -9,8 +9,14 @@
 //! | `set <handle> <ef>[/<maldición>] ...` | reescribe los efectos (hasta 3, `-` = vacío) y la lista de SpEffects; tiene que quedar legal |
 //! | `set! ...` | igual, pero sin exigir que la lista de SpEffects actual sea la esperada (para reparar) |
 //! | `watch <handle>` / `unwatch` | rastrea qué código escribe en esa reliquia |
+//! | `watchr <handle>` | igual, pero también anota las lecturas (agrupadas por instrucción) |
+//! | `profile <segundos>` | muestrea todos los hilos y escribe `profile.txt` (ver `disasm ... profile`) |
 //! | `inv <handle>` | muestra la entrada del inventario de ese handle |
 //! | `remove <handle>` | quita la reliquia con `RemoveItem` del juego, como la venta (no da murk) |
+//! | `hook` | instala el gancho del hilo principal (hace falta para `murk`, `set`, `remove`, `save` y `forge`) |
+//! | `save` | pide un guardado al juego |
+//! | `forge <donante> <slot> <receptora> <slot> <s1> <s2> <s3>` | la transferencia completa (ver [`crate::forge`]) |
+//! | `forge? ...` | igual, pero solo valida y muestra el resultado |
 //! | `dumpimage` | copia la imagen de `nightreign.exe` a `nightreign_dump.bin` para analizarla |
 //!
 //! Los handles van en hex (`C08000E6`), los efectos en decimal, como en el log.
@@ -21,11 +27,14 @@ use std::path::Path;
 use relic_rules::{normalize, relic_kind, validate, GameData, Relic, RelicKind, Slot, EMPTY};
 
 use crate::game::Game;
+use crate::mainthread;
 use crate::tracer;
 use crate::win;
 use crate::Log;
 
 pub const FILE_NAME: &str = "relics_reforged_cmd.txt";
+/// Tiempo máximo para que el hilo principal ejecute un trabajo (en una pantalla de carga no corre).
+const MAIN_THREAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const OBJECT_SIZE: usize = 0x100;
 
 pub struct Context<'a> {
@@ -65,7 +74,9 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
         ["murk", old, new] => murk(ctx, parse_u32(old)?, parse_u32(new)?),
         ["set", h, slots @ ..] => set(ctx, parse_handle(h)?, slots, false),
         ["set!", h, slots @ ..] => set(ctx, parse_handle(h)?, slots, true),
-        ["watch", h] => watch(ctx, parse_handle(h)?),
+        ["watch", h] => watch(ctx, parse_handle(h)?, false),
+        ["watchr", h] => watch(ctx, parse_handle(h)?, true),
+        ["profile", secs] => profile(ctx, parse_u32(secs)?),
         ["unwatch"] => {
             tracer::unwatch();
             let (reads, outside, dropped) = tracer::counters();
@@ -75,6 +86,26 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
             ))
         }
         ["dumpimage"] => dump_image(ctx),
+        ["hook"] => hook(ctx),
+        ["save"] => {
+            let game = *ctx.game;
+            // SAFETY: corre en el hilo principal.
+            mainthread::run(move || unsafe { game.save_now() }, MAIN_THREAD_TIMEOUT)??;
+            Ok("se pidió un guardado".into())
+        }
+        [cmd @ ("forge" | "forge?"), d, ds, t, ts, s1, s2, s3] => {
+            not_while_watching()?;
+            let data = ctx.data.ok_or("sin params no puedo validar")?;
+            let order = crate::forge::Order {
+                donor: parse_handle(d)?,
+                donor_slot: parse_u32(ds)? as usize,
+                target: parse_handle(t)?,
+                target_slot: parse_u32(ts)? as usize,
+                sacrifices: [parse_handle(s1)?, parse_handle(s2)?, parse_handle(s3)?],
+                dry_run: *cmd == "forge?",
+            };
+            crate::forge::forge(*ctx.game, data, ctx.dll_dir, order)
+        }
         ["remove", h] => remove(ctx, parse_handle(h)?),
         ["inv", h] => inv(ctx, parse_handle(h)?),
         _ => Err("comando desconocido".into()),
@@ -116,18 +147,36 @@ fn obj(ctx: &Context, handle: u32) -> Result<String, String> {
 }
 
 fn murk(ctx: &Context, old: u32, new: u32) -> Result<String, String> {
-    let addr = ctx.game.murk_addr().ok_or("no encuentro el murk")?;
-    let current: u32 = win::read(addr).ok_or("no puedo leer el murk")?;
-    if current != old {
-        return Err(format!(
-            "el murk actual es {current}, no {old}; no cambio nada"
-        ));
-    }
-    if !win::write(addr, new) {
-        return Err("no pude escribir el murk".into());
-    }
-    let after: u32 = win::read(addr).unwrap_or(0);
-    Ok(format!("murk {current} -> {after}"))
+    let game = *ctx.game;
+    mainthread::run(
+        move || {
+            let addr = game.murk_addr().ok_or("no encuentro el murk")?;
+            let current: u32 = win::read(addr).ok_or("no puedo leer el murk")?;
+            if current != old {
+                return Err(format!(
+                    "el murk actual es {current}, no {old}; no cambio nada"
+                ));
+            }
+            if !win::write(addr, new) {
+                return Err("no pude escribir el murk".to_string());
+            }
+            let after: u32 = win::read(addr).unwrap_or(0);
+            Ok(format!("murk {current} -> {after} (en el hilo principal)"))
+        },
+        MAIN_THREAD_TIMEOUT,
+    )?
+}
+
+fn hook(ctx: &Context) -> Result<String, String> {
+    mainthread::install(ctx.game.base())?;
+    let before = mainthread::frames();
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    let after = mainthread::frames();
+    let tid = mainthread::run(|| unsafe { win::GetCurrentThreadId() }, MAIN_THREAD_TIMEOUT)?;
+    Ok(format!(
+        "gancho instalado: {} frames en 1 s, hilo principal {tid}",
+        after - before
+    ))
 }
 
 fn parse_slot(s: &str) -> Result<Slot, String> {
@@ -180,7 +229,12 @@ fn set(ctx: &Context, handle: u32, slots: &[&str], force: bool) -> Result<String
         .sp_effects(data)
         .ok_or("un efecto no está en los params")?;
     let (effects, curses) = relic.to_raw();
-    if !ctx.game.write_slots(handle, effects, curses, &sp) {
+    let game = *ctx.game;
+    let written = mainthread::run(
+        move || game.write_slots(handle, effects, curses, &sp),
+        MAIN_THREAD_TIMEOUT,
+    )?;
+    if !written {
         return Err("no pude escribir".into());
     }
     let (_, after) = ctx
@@ -207,14 +261,26 @@ fn set(ctx: &Context, handle: u32, slots: &[&str], force: bool) -> Result<String
     ))
 }
 
-fn watch(ctx: &Context, handle: u32) -> Result<String, String> {
+fn profile(ctx: &Context, seconds: u32) -> Result<String, String> {
+    if !(1..=60).contains(&seconds) {
+        return Err("entre 1 y 60 segundos".into());
+    }
+    let base = ctx.game.base();
+    let size = win::pe_info(base).map_or(0, |(_, s)| s as usize);
+    let (text, summary) = crate::profiler::run(seconds as u64, 5, (base, base + size))?;
+    let path = ctx.dll_dir.join("profile.txt");
+    std::fs::write(&path, text).map_err(|e| format!("no pude escribir {}: {e}", path.display()))?;
+    Ok(format!("perfil: {summary}, en {}", path.display()))
+}
+
+fn watch(ctx: &Context, handle: u32, reads: bool) -> Result<String, String> {
     let (object, live) = ctx
         .game
         .relic_by_handle(handle)
         .ok_or("no hay una reliquia con ese handle")?;
     let base = ctx.game.base();
     let size = win::pe_info(base).map_or(0, |(_, s)| s as usize);
-    tracer::watch(object, OBJECT_SIZE, (base, base + size))?;
+    tracer::watch(object, OBJECT_SIZE, (base, base + size), reads)?;
     Ok(format!(
         "vigilando {handle:08X} (item {}) en {object:#X}. Mientras dure, el inventario no se relee.",
         live.item_id
@@ -238,8 +304,12 @@ fn remove(ctx: &Context, handle: u32) -> Result<String, String> {
             ))
         }
     }
-    // SAFETY: los comandos se mandan con el jugador quieto y sin menús abiertos.
-    let result = unsafe { ctx.game.remove_item(handle)? };
+    let game = *ctx.game;
+    // SAFETY: corre en el hilo principal, entre dos frames.
+    let result = mainthread::run(
+        move || unsafe { game.remove_item(handle) },
+        MAIN_THREAD_TIMEOUT,
+    )??;
     let still_there = ctx.game.relic_by_handle(handle).is_some();
     Ok(format!(
         "remove {handle:08X} (item {}, entrada {entry:X?}): RemoveItem devolvió {result}; en la tabla {}; \

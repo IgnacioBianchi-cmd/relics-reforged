@@ -49,10 +49,15 @@ pub struct Hit {
     /// al propio allocator del juego).
     pub stack: [usize; STACK_SLOTS],
     pub stack_len: usize,
+    /// `false` si es una lectura (solo en modo lecturas).
+    pub write: bool,
+    /// Cuántas veces pasó esa misma instrucción (se agrupa por RIP y tipo de acceso).
+    pub count: u32,
 }
 
 static INSTALL: Once = Once::new();
 static ACTIVE: AtomicBool = AtomicBool::new(false);
+static READ_MODE: AtomicBool = AtomicBool::new(false);
 static PAGE: AtomicUsize = AtomicUsize::new(0);
 static PROTECT: AtomicUsize = AtomicUsize::new(0);
 static START: AtomicUsize = AtomicUsize::new(0);
@@ -83,7 +88,8 @@ pub fn is_active() -> bool {
 }
 
 /// Empieza a vigilar `[start, start + len)`. El objeto no puede cruzar el borde de una página.
-pub fn watch(start: usize, len: usize, module: (usize, usize)) -> Result<(), String> {
+/// Con `reads`, también anota las lecturas (agrupadas por instrucción).
+pub fn watch(start: usize, len: usize, module: (usize, usize), reads: bool) -> Result<(), String> {
     if is_active() {
         return Err("ya hay una vigilancia activa".into());
     }
@@ -104,6 +110,7 @@ pub fn watch(start: usize, len: usize, module: (usize, usize)) -> Result<(), Str
         hits.clear();
         hits.reserve(MAX_HITS);
     }
+    READ_MODE.store(reads, Ordering::Relaxed);
     READS.store(0, Ordering::Relaxed);
     OUTSIDE.store(0, Ordering::Relaxed);
     DROPPED.store(0, Ordering::Relaxed);
@@ -168,12 +175,16 @@ unsafe extern "system" fn handler(info: *mut ExceptionPointers) -> i32 {
             }
             let inside =
                 addr >= START.load(Ordering::Relaxed) && addr < END.load(Ordering::Relaxed);
+            let write = kind == 1;
             if !inside {
                 OUTSIDE.fetch_add(1, Ordering::Relaxed);
-            } else if kind != 1 {
-                READS.fetch_add(1, Ordering::Relaxed);
             } else {
-                record(ctx, addr);
+                if !write {
+                    READS.fetch_add(1, Ordering::Relaxed);
+                }
+                if write || READ_MODE.load(Ordering::Relaxed) {
+                    record(ctx, addr, write);
+                }
             }
             let eflags = ctx.add(CTX_EFLAGS) as *mut u32;
             *eflags |= TRAP_FLAG;
@@ -194,12 +205,17 @@ unsafe extern "system" fn handler(info: *mut ExceptionPointers) -> i32 {
     }
 }
 
-unsafe fn record(ctx: *mut u8, addr: usize) {
+unsafe fn record(ctx: *mut u8, addr: usize, write: bool) {
     let reg = |off: usize| *(ctx.add(off) as *const usize);
     let Ok(mut hits) = HITS.try_lock() else {
         DROPPED.fetch_add(1, Ordering::Relaxed);
         return;
     };
+    let rip = reg(CTX_RIP);
+    if let Some(h) = hits.iter_mut().find(|h| h.rip == rip && h.write == write) {
+        h.count = h.count.saturating_add(1);
+        return;
+    }
     if hits.len() >= MAX_HITS {
         DROPPED.fetch_add(1, Ordering::Relaxed);
         return;
@@ -228,7 +244,9 @@ unsafe fn record(ctx: *mut u8, addr: usize) {
     }
     hits.push(Hit {
         thread: win::GetCurrentThreadId(),
-        rip: reg(CTX_RIP),
+        rip,
+        write,
+        count: 1,
         addr,
         regs: [
             reg(CTX_RCX),
