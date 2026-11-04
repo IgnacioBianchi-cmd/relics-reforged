@@ -30,10 +30,20 @@ const SP_LIST_IN_OBJECT: usize = 0x5C;
 const SP_COUNT_IN_OBJECT: usize = 0xA4;
 const MAX_SP_EFFECTS: usize = 18;
 
-/// Función del juego que quita N unidades de un ítem por su handle (ver `docs/relevamiento.md`).
-const REMOVE_ITEM_BY_HANDLE_RVA: usize = 0x7E_A470;
-const REMOVE_ITEM_BY_HANDLE_PROLOGUE: [u8; 16] = [
-    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA0,
+/// EquipGameData dentro de PlayerGameData, y el inventario dentro de EquipGameData.
+const EQUIP_GAME_DATA: usize = 0x1D8;
+const INVENTORY_IN_EQUIP: usize = 0x1C8;
+/// Inventario: índices `< [+0x1C]` en el array de `[+0x40]`, el resto en el de `[+0x30]`.
+const INV_SPLIT: usize = 0x1C;
+const INV_ARRAY_HIGH: usize = 0x30;
+const INV_ARRAY_LOW: usize = 0x40;
+const INV_LAST_INDEX: usize = 0x70;
+const INV_ENTRY_SIZE: usize = 20;
+
+/// `RemoveItem(EquipGameData*, índice, delta, flag)`, la que usa la venta (ver `docs/relevamiento.md`).
+const REMOVE_ITEM_RVA: usize = 0x1F_06B0;
+const REMOVE_ITEM_PROLOGUE: [u8; 16] = [
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x44, 0x89, 0x44, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41,
 ];
 /// Cota superior de entradas a recorrer (Elden Ring usa 5120; sobra margen).
 const MAX_ITEMS: usize = 0x2000;
@@ -156,25 +166,59 @@ impl Game {
             && write(object + SP_COUNT_IN_OBJECT, sp_effects.len() as u32)
     }
 
-    /// Quita `quantity` unidades del ítem con ese handle usando la función del propio juego
-    /// (la misma cadena que usa la venta: desequipa, saca del inventario y libera el objeto).
-    /// No toca el murk. Devuelve `Err` si el código del juego no es el esperado.
+    /// Dirección de EquipGameData (PlayerGameData + 0x1D8), lo que recibe `RemoveItem`.
+    fn equip_game_data(&self) -> Option<usize> {
+        let game_data_man: usize = read(self.base + GAME_DATA_MAN_RVA)?;
+        let player_game_data: usize = read(game_data_man + PLAYER_GAME_DATA)?;
+        (player_game_data != 0).then_some(player_game_data + EQUIP_GAME_DATA)
+    }
+
+    /// Dirección de la entrada `index` del inventario (20 bytes: handle, item, cantidad, ...).
+    fn inventory_entry_addr(&self, inv: usize, index: u32) -> Option<usize> {
+        let split: u32 = read(inv + INV_SPLIT)?;
+        let (array, i) = if index < split {
+            (read::<usize>(inv + INV_ARRAY_LOW)?, index)
+        } else {
+            (read::<usize>(inv + INV_ARRAY_HIGH)?, index - split)
+        };
+        (array != 0).then_some(array + i as usize * INV_ENTRY_SIZE)
+    }
+
+    /// Busca la entrada de inventario de un handle: (índice, [handle, item, cantidad, x, y]).
+    pub fn inventory_entry(&self, handle: u32) -> Option<(u32, [u32; 5])> {
+        let inv = self.equip_game_data()? + INVENTORY_IN_EQUIP;
+        let last: u32 = read(inv + INV_LAST_INDEX)?;
+        if last > 0x4000 {
+            return None; // no parece un inventario
+        }
+        (0..=last).find_map(|index| {
+            let entry: [u32; 5] = read(self.inventory_entry_addr(inv, index)?)?;
+            (entry[0] == handle).then_some((index, entry))
+        })
+    }
+
+    /// Quita una unidad del ítem con ese handle llamando a `RemoveItem` del propio juego, igual que
+    /// la venta: desequipa, saca del inventario y libera el objeto. No toca el murk.
+    /// Devuelve lo que devuelve el juego (la cantidad que queda).
     ///
     /// # Safety
     /// Llama código del juego desde nuestro hilo: el inventario no debería estar en uso
     /// (por ejemplo, con el menú de reliquias abierto) mientras tanto.
-    pub unsafe fn remove_item(&self, handle: u32, quantity: i32) -> Result<bool, String> {
-        let addr = self.base + REMOVE_ITEM_BY_HANDLE_RVA;
+    pub unsafe fn remove_item(&self, handle: u32) -> Result<i32, String> {
+        let addr = self.base + REMOVE_ITEM_RVA;
         let prologue: [u8; 16] = read(addr).ok_or("no puedo leer el código")?;
-        if prologue != REMOVE_ITEM_BY_HANDLE_PROLOGUE {
+        if prologue != REMOVE_ITEM_PROLOGUE {
             return Err(format!(
-                "el código en nr+{REMOVE_ITEM_BY_HANDLE_RVA:X} no es el esperado"
+                "el código en nr+{REMOVE_ITEM_RVA:X} no es el esperado"
             ));
         }
-        // nr+7EA470: bool RemoveItemByHandle(const u32* handle, i32 quantity)
-        let f: unsafe extern "win64" fn(*const u32, i32) -> u8 = std::mem::transmute(addr);
-        let handle_cell = handle;
-        Ok(f(&handle_cell, quantity) != 0)
+        let equip = self.equip_game_data().ok_or("no encuentro EquipGameData")?;
+        let (index, _) = self
+            .inventory_entry(handle)
+            .ok_or("el handle no está en el inventario")?;
+        // nr+1F06B0: i32 RemoveItem(EquipGameData*, u32 index, i32 delta, bool flag)
+        let f: unsafe extern "win64" fn(usize, u32, i32, u8) -> i32 = std::mem::transmute(addr);
+        Ok(f(equip, index, -1, 0))
     }
 
     /// Recorre la tabla de ítems y devuelve las reliquias, validando la forma de cada registro.

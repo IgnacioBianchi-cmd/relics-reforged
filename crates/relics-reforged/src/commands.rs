@@ -9,7 +9,8 @@
 //! | `set <handle> <ef>[/<maldición>] ...` | reescribe los efectos (hasta 3, `-` = vacío) y la lista de SpEffects; tiene que quedar legal |
 //! | `set! ...` | igual, pero sin exigir que la lista de SpEffects actual sea la esperada (para reparar) |
 //! | `watch <handle>` / `unwatch` | rastrea qué código escribe en esa reliquia |
-//! | `remove <handle>` | quita la reliquia con la función del juego (no da murk) |
+//! | `inv <handle>` | muestra la entrada del inventario de ese handle |
+//! | `remove <handle>` | quita la reliquia con `RemoveItem` del juego, como la venta (no da murk) |
 //! | `dumpimage` | copia la imagen de `nightreign.exe` a `nightreign_dump.bin` para analizarla |
 //!
 //! Los handles van en hex (`C08000E6`), los efectos en decimal, como en el log.
@@ -75,6 +76,7 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
         }
         ["dumpimage"] => dump_image(ctx),
         ["remove", h] => remove(ctx, parse_handle(h)?),
+        ["inv", h] => inv(ctx, parse_handle(h)?),
         _ => Err("comando desconocido".into()),
     }
 }
@@ -226,15 +228,35 @@ fn remove(ctx: &Context, handle: u32) -> Result<String, String> {
         .relic_by_handle(handle)
         .ok_or("no hay una reliquia con ese handle")?;
     let murk_before = ctx.game.murk();
+    let entry = ctx.game.inventory_entry(handle);
+    // Control de que entendemos el inventario: la entrada tiene que tener el mismo ítem y cantidad 1.
+    match entry {
+        Some((_, e)) if e[1] == live.item_id | 0x8000_0000 && e[2] == 1 => {}
+        other => {
+            return Err(format!(
+                "la entrada del inventario no es la esperada: {other:X?}; no borro nada"
+            ))
+        }
+    }
     // SAFETY: los comandos se mandan con el jugador quieto y sin menús abiertos.
-    let ok = unsafe { ctx.game.remove_item(handle, 1)? };
+    let result = unsafe { ctx.game.remove_item(handle)? };
     let still_there = ctx.game.relic_by_handle(handle).is_some();
     Ok(format!(
-        "remove {handle:08X} (item {}): la función devolvió {ok}; la reliquia {}; murk {murk_before:?} -> {:?}",
+        "remove {handle:08X} (item {}, entrada {entry:X?}): RemoveItem devolvió {result}; en la tabla {}; \
+         en el inventario {}; murk {murk_before:?} -> {:?}",
         live.item_id,
-        if still_there { "SIGUE en la tabla" } else { "ya no está" },
+        if still_there { "SIGUE" } else { "ya no está" },
+        if ctx.game.inventory_entry(handle).is_some() { "SIGUE" } else { "ya no está" },
         ctx.game.murk()
     ))
+}
+
+fn inv(ctx: &Context, handle: u32) -> Result<String, String> {
+    let (index, entry) = ctx
+        .game
+        .inventory_entry(handle)
+        .ok_or("el handle no está en el inventario")?;
+    Ok(format!("inventario[{index}] = {entry:08X?}"))
 }
 
 fn dump_image(ctx: &Context) -> Result<String, String> {

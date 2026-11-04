@@ -119,6 +119,51 @@ Primera prueba de `relics_reforged.dll` cargada con `me3/relics-reforged-dev.me3
 - Resumen del motor de reglas sobre los datos vivos: **58 aleatorias legales (51 normales + 7 Deep), 0 ilegales, 89 fijas, 0 de tipo desconocido**.
 - Las reliquias ocupan los índices **84 a 230 de la tabla de ítems, contiguos**. Los índices 0–83 son otros ítems (no pasan el filtro de forma).
 
+## Escritura (2026-11-04, todo probado en el juego con el save aparte)
+
+Herramientas: los comandos de desarrollo de la DLL (`relics_reforged_cmd.txt`, ver `crates/relics-reforged/src/commands.rs`), el rastreador de escrituras (`tracer.rs`: `PAGE_GUARD` + manejador vectorizado, sin debugger; aguantó una hora con 2 M de lecturas sin problemas) y el desensamblador del volcado (`crates/re-tools`, binario `disasm`).
+
+### Objeto de ítem de una reliquia (0x100 bytes)
+
+| Offset | Contenido |
+|---|---|
+| +0x00 | vtable (`nr+2C321D0`) |
+| +0x08 | registro de 80 bytes, igual al del save |
+| +0x5C | lista de hasta 18 **SpEffects** (`passiveSpEffectId_1..3` de cada efecto en orden de slot, después los de cada maldición, sin quitar repetidos) |
+| +0xA4 | cantidad de SpEffects de la lista |
+
+- La lista de SpEffects **no está en el save**: el juego la arma al cargar. Es lo que se aplica en la expedición; la interfaz muestra los efectos del registro.
+- Regla verificada contra 9 objetos (test `lista_de_sp_effects_coincide_con_el_juego`).
+
+### Murk y efectos: escritura directa ✔
+
+- Escribir el murk en `PlayerGameData + 0xD0` y los efectos/maldiciones/SpEffects en el objeto funciona: la interfaz lo muestra y **el save lo guarda** en el próximo guardado.
+- Al recargar, el juego recalcula la lista de SpEffects desde el registro (verificado).
+
+### Borrar una reliquia: `RemoveItem` del juego ✔
+
+Rastreo de una venta: lo único que se escribe en el objeto es su destrucción (los ítems tienen **conteo de referencias**; el objeto se libera al soltar la última). La cadena que lo suelta es la del inventario:
+
+| Función | Qué hace |
+|---|---|
+| `nr+7E91A0` | vender desde el menú (llama a la siguiente y después suma el murk) |
+| `nr+7EAB30` | quitar N de la selección del menú (`[+0x50]` índice, `[+0x54]` handle) |
+| **`nr+1F06B0`** | **`RemoveItem(EquipGameData*, índice, delta, flag)`**: la que usa el mod, con delta -1 y flag 0 |
+| `nr+1F3E90` | resta la cantidad (`nr+1F4FF0`); si llega a 0 desequipa (`nr+1F1540`) y borra la entrada (`nr+1F6410`) |
+| `nr+754050` → `nr+6C1E60` → `nr+69FAF0` | suelta la referencia del handle; en 0 destruye y libera el objeto |
+| `nr+7EA470` | quitar N por **ID de ítem** (borra la primera entrada de ese tipo: **no sirve** para reliquias) |
+| `nr+7EABC0` | devuelve EquipGameData = `[[nr+3C078D0]+8] + 0x1D8` |
+
+Inventario = EquipGameData + 0x1C8 (= PlayerGameData + 0x3A0):
+
+| Campo | Contenido |
+|---|---|
+| `[+0x1C]` | cantidad de índices que van al array de `[+0x40]`; el resto va al de `[+0x30]` (índice − `[+0x1C]`) |
+| `[+0x70]` | último índice válido |
+| entrada (20 bytes) | +0 handle (0 = vacía), +4 item\|0x80000000, +8 cantidad, +0xC número de orden, +0x10 flag |
+
+Resultado: la reliquia desaparece de la tabla de ítems y del inventario, el menú muestra el contador correcto y, **después de un guardado real** (volver al título), el save tampoco la tiene. Un guardado que el juego hizo poco después del borrado todavía la tenía: el juego guarda una foto armada antes, así que el mod tiene que **pedir un guardado** después de forjar.
+
 Direcciones de referencia: sesión 1, murk A `7FF3B2F3BF30` y reliquia A `7FF3B17C8208`; sesión 2, murk A `7FF43F72F380` y reliquia A `7FF43E948208` (Deep Polished Tranquil Scene).
 Archivos: `data/ce/sesion1.scandata`, `data/ce/murk_comparado.PTR`.
 
@@ -171,7 +216,10 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [x] Regla de orden de los efectos.
 - [ ] **Byte +36**: qué significa (¿favorita? ¿nueva?). Se prueba marcando o desmarcando una reliquia y comparando saves.
 - [x] **Memoria**: murk y tabla de ítems encontrados con punteros estáticos, verificados en 3 sesiones.
-- [ ] **Escritura segura**: cómo borrar una reliquia y descontar murk usando las funciones del propio juego (vender o descartar), no escribiendo bytes a mano. Se investiga desde la DLL, no con el debugger de CE (crashea).
+- [x] **Escritura**: murk y efectos por escritura directa; borrado con `RemoveItem` del juego. Probado y guardado en el save.
+- [ ] **Hilo del juego**: hoy la DLL llama a `RemoveItem` desde su propio hilo (sirve para probar con el personaje quieto). El mod final tiene que ejecutar la forja en el hilo principal del juego (por ejemplo, con un hook o una tarea propia).
+- [ ] **Pedir un guardado** después de forjar (encontrar la función que usa el juego, por ejemplo al vender).
+- [ ] Juntar todo en un comando `forge` que use `plan_transfer`: validar, borrar donante y sacrificios, reescribir la receptora, descontar murk y guardar.
 - [ ] **Cuántas entradas tiene la tabla de ítems** y cómo se ve una entrada vacía. Por ahora la DLL recorre hasta 0x2000 entradas y filtra por la forma del registro; encuentra todas las reliquias, pero el largo real sigue sin confirmar.
 - [x] Instalar Rust y me3. Falta Seamless Co-op.
 - [x] Motor de reglas: `crates/relic-rules`, testeado contra `relics.json` y los CSV.

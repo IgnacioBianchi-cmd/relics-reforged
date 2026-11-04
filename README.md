@@ -16,15 +16,16 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 |---|---|
 | Relevamiento del formato del save, params y memoria | ✔ ([docs/relevamiento.md](docs/relevamiento.md)) |
 | Motor de reglas (`crates/relic-rules`) | ✔ con tests contra un save real |
-| DLL in-game (`crates/relics-reforged`, me3) | v0 de **solo lectura**: lee murk e inventario y los valida (probado en el juego) |
-| Transferencia en el juego (escritura, menú) | pendiente |
+| DLL in-game (`crates/relics-reforged`, me3) | Lee murk e inventario y los valida. Comandos de desarrollo para escribir efectos y murk y borrar reliquias con la función del juego (probado y guardado en el save) |
+| Transferencia completa en el juego (forja, hilo del juego, guardado, menú) | pendiente |
 
 ## Estructura
 
 | Ruta | Contenido |
 |---|---|
 | `crates/relic-rules/` | Motor de reglas en Rust: legalidad de reliquias y transferencias. Sin acceso al juego |
-| `crates/relics-reforged/` | La DLL que carga me3. Hoy solo lee y escribe `relics_reforged.log` junto a la DLL |
+| `crates/relics-reforged/` | La DLL que carga me3. Escribe `relics_reforged.log` y acepta comandos de prueba en `relics_reforged_cmd.txt`, ambos junto a la DLL |
+| `crates/re-tools/` | `disasm`: desensamblador del volcado de `nightreign.exe` (comando `dumpimage` de la DLL) |
 | `me3/relics-reforged-dev.me3` | Perfil de me3 para probar, con un save aparte (`NR_RelicsReforged.sl2`) |
 | `docs/relevamiento.md` | Todo lo averiguado: formato del save, params, punteros, reglas |
 | `tools/` | Scripts de análisis (Python/PowerShell) usados en el relevamiento |
