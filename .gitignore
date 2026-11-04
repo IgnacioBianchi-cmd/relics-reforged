@@ -1,0 +1,18 @@
+# Herramientas de terceros (se bajan aparte)
+/herramientas/
+/smithbox-project/
+
+# Datos personales del jugador (save, backups, sesiones de Cheat Engine)
+/data/save/
+/data/ce/
+
+# Datos del juego exportados de Smithbox (propiedad de FromSoftware; no se redistribuyen)
+/data/export/
+
+# Rust
+/target/
+**/*.rs.bk
+
+# Python
+__pycache__/
+*.pyc
