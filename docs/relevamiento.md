@@ -12,7 +12,8 @@ Fecha: 2026-11-03 · Juego: `nightreign.exe` del 2026-07-02 · regulation.bin de
 | Cheat Engine | Instalado |
 | Smithbox 2.2.6 | `herramientas\Smithbox-2.2.6` (hash verificado). Proyecto en `smithbox-project` |
 | Python 3.13, git, Node, .NET, Java | Instalados |
-| Rust (cargo), me3, Ghidra, x64dbg, ReClass.NET | **No instalados** |
+| Rust 1.99.1 (MSVC) + Build Tools 2022, me3 v0.13.0 | Instalados (2026-11-03) |
+| Ghidra, x64dbg, ReClass.NET | **No instalados** |
 
 ## Estructura de la carpeta
 
@@ -109,6 +110,15 @@ registro(h) = objeto(h) + 0x8        ← mismo layout de 80 bytes que en el save
 - La vtable de los objetos de ítem no cambió entre sesiones (`7FF61B0A21D0`). Igual la DLL tiene que trabajar siempre relativa a la base del módulo.
 - **Conclusión:** la DLL puede leer el murk y recorrer el inventario de reliquias con dos punteros estáticos. Fin de la ingeniería inversa necesaria para *leer*.
 
+#### DLL v0 en el juego (2026-11-04) ✔
+
+Primera prueba de `relics_reforged.dll` cargada con `me3/relics-reforged-dev.me3` (save aparte `NR_RelicsReforged.sl2`):
+
+- Detecta 1.3.3.0 por `TimeDateStamp`, carga los params de `data/export` (2079 efectos, 1397 tipos, 1079 tablas) y espera unos 35 s a que la partida esté estable.
+- Lee **murk 11190** y **147 reliquias**. Las 147 coinciden **por contenido** (item, efectos y maldiciones en orden) con el save: el `NR_RelicsReforged.sl2` desencriptado tiene exactamente 147 registros.
+- Resumen del motor de reglas sobre los datos vivos: **58 aleatorias legales (51 normales + 7 Deep), 0 ilegales, 89 fijas, 0 de tipo desconocido**.
+- Las reliquias ocupan los índices **84 a 230 de la tabla de ítems, contiguos**. Los índices 0–83 son otros ítems (no pasan el filtro de forma).
+
 Direcciones de referencia: sesión 1, murk A `7FF3B2F3BF30` y reliquia A `7FF3B17C8208`; sesión 2, murk A `7FF43F72F380` y reliquia A `7FF43E948208` (Deep Polished Tranquil Scene).
 Archivos: `data/ce/sesion1.scandata`, `data/ce/murk_comparado.PTR`.
 
@@ -162,7 +172,8 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [ ] **Byte +36**: qué significa (¿favorita? ¿nueva?). Se prueba marcando o desmarcando una reliquia y comparando saves.
 - [x] **Memoria**: murk y tabla de ítems encontrados con punteros estáticos, verificados en 3 sesiones.
 - [ ] **Escritura segura**: cómo borrar una reliquia y descontar murk usando las funciones del propio juego (vender o descartar), no escribiendo bytes a mano. Se investiga desde la DLL, no con el debugger de CE (crashea).
-- [ ] **Cuántas entradas tiene la tabla de ítems** y cómo distinguir una entrada vacía (para recorrerla entera).
-- [ ] Instalar Rust, me3 y Seamless Co-op para la fase de DLL.
+- [ ] **Cuántas entradas tiene la tabla de ítems** y cómo se ve una entrada vacía. Por ahora la DLL recorre hasta 0x2000 entradas y filtra por la forma del registro; encuentra todas las reliquias, pero el largo real sigue sin confirmar.
+- [x] Instalar Rust y me3. Falta Seamless Co-op.
 - [x] Motor de reglas: `crates/relic-rules`, testeado contra `relics.json` y los CSV.
-- [ ] DLL: leer params, murk e inventario desde memoria y armar `GameData` sin depender de los CSV.
+- [x] DLL v0 de solo lectura: murk e inventario desde memoria, validados en el juego.
+- [ ] DLL: armar `GameData` desde los params en memoria, sin depender de los CSV.

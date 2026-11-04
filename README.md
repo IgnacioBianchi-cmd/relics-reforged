@@ -16,13 +16,16 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 |---|---|
 | Relevamiento del formato del save, params y memoria | ✔ ([docs/relevamiento.md](docs/relevamiento.md)) |
 | Motor de reglas (`crates/relic-rules`) | ✔ con tests contra un save real |
-| DLL in-game (me3) | pendiente |
+| DLL in-game (`crates/relics-reforged`, me3) | v0 de **solo lectura**: lee murk e inventario y los valida (probado en el juego) |
+| Transferencia en el juego (escritura, menú) | pendiente |
 
 ## Estructura
 
 | Ruta | Contenido |
 |---|---|
 | `crates/relic-rules/` | Motor de reglas en Rust: legalidad de reliquias y transferencias. Sin acceso al juego |
+| `crates/relics-reforged/` | La DLL que carga me3. Hoy solo lee y escribe `relics_reforged.log` junto a la DLL |
+| `me3/relics-reforged-dev.me3` | Perfil de me3 para probar, con un save aparte (`NR_RelicsReforged.sl2`) |
 | `docs/relevamiento.md` | Todo lo averiguado: formato del save, params, punteros, reglas |
 | `tools/` | Scripts de análisis (Python/PowerShell) usados en el relevamiento |
 | `data/` | Datos locales, **no van a git**: CSV del juego, save del jugador, archivos de Cheat Engine |
@@ -40,6 +43,14 @@ Los tests de `tests/real_data.rs` usan datos reales si existen:
 - `data/save/relics.json`: generado con `tools/decrypt_sl2.ps1` + `tools/relic_survey.py` desde un save.
 
 Si faltan, esos tests se saltean y pasan.
+
+Para probar en el juego:
+
+```bash
+cargo build --release -p relics-reforged
+```
+
+Después, doble clic en `me3/relics-reforged-dev.me3`. El log queda en `target/release/relics_reforged.log`.
 
 ## Reglas de balance (por defecto)
 
