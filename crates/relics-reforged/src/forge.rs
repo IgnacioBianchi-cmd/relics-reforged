@@ -18,6 +18,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
+use relic_rules::lang::{self, tr, Lang};
 use relic_rules::{plan_transfer, EffectId, GameData, Relic, Rules, TransferRequest};
 
 use crate::game::{Game, LiveRelic};
@@ -68,15 +69,25 @@ struct Snapshot {
 }
 
 fn snapshot(game: &Game, handle: u32) -> Result<Snapshot, String> {
-    let (_, live) = game
-        .relic_by_handle(handle)
-        .ok_or_else(|| format!("no hay una reliquia {handle:08X}"))?;
-    let (_, entry) = game
-        .inventory_entry(handle)
-        .ok_or_else(|| format!("{handle:08X} no está en el inventario"))?;
+    let (_, live) = game.relic_by_handle(handle).ok_or_else(|| {
+        format!(
+            "{} {handle:08X}",
+            tr("no hay una reliquia", "there is no relic")
+        )
+    })?;
+    let (_, entry) = game.inventory_entry(handle).ok_or_else(|| {
+        format!(
+            "{handle:08X} {}",
+            tr("no está en el inventario", "is not in the inventory")
+        )
+    })?;
     if entry[1] != live.item_id | 0x8000_0000 || entry[2] != 1 {
         return Err(format!(
-            "la entrada de inventario de {handle:08X} no es la esperada: {entry:X?}"
+            "{} {handle:08X}: {entry:X?}",
+            tr(
+                "entrada de inventario inesperada para",
+                "unexpected inventory entry for"
+            )
         ));
     }
     Ok(Snapshot {
@@ -112,10 +123,14 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     } = order;
     let handles = [donor, target, sacrifices[0], sacrifices[1], sacrifices[2]];
     if handles.iter().collect::<HashSet<_>>().len() != handles.len() {
-        return Err("hay una reliquia repetida en el pedido".into());
+        return Err(tr(
+            "hay una reliquia repetida en el pedido",
+            "the same relic was chosen twice",
+        )
+        .into());
     }
     if !(1..=3).contains(&donor_slot) || !(1..=3).contains(&target_slot) {
-        return Err("los slots van del 1 al 3".into());
+        return Err(tr("los slots van del 1 al 3", "slots go from 1 to 3").into());
     }
     game.check_game_functions()?;
 
@@ -130,18 +145,21 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
         }
         if let Some(reason) = game.lock_reason(s.handle) {
             let role = if i == 0 {
-                "la donante".to_string()
+                tr("la donante", "the donor").to_string()
             } else {
-                format!("el sacrificio {}", i - 1)
+                format!("{} {}", tr("el sacrificio", "sacrifice"), i - 1)
             };
             return Err(format!(
-                "no se puede forjar: {role} ({:08X}) {reason}",
+                "{}: {role} ({:08X}) {reason}",
+                tr("no se puede forjar", "can't forge"),
                 s.handle
             ));
         }
     }
     let relics: Vec<Relic> = snaps.iter().map(to_relic).collect();
-    let murk = game.murk().ok_or("no puedo leer el murk")?;
+    let murk = game
+        .murk()
+        .ok_or(tr("no puedo leer el murk", "can't read the murk"))?;
     let mut registry = ForgedRegistry::load(dll_dir);
     let target_order = snaps[1].order;
 
@@ -159,11 +177,11 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
             available_murk: murk,
         },
     )
-    .map_err(|e| format!("no se puede forjar: {e}"))?;
-    let sp = plan
-        .new_target
-        .sp_effects(data)
-        .ok_or("un efecto no está en los params")?;
+    .map_err(|e| format!("{}: {e}", tr("no se puede forjar", "can't forge")))?;
+    let sp = plan.new_target.sp_effects(data).ok_or(tr(
+        "un efecto no está en los params",
+        "an effect is missing from the params",
+    ))?;
     let (effects, curses) = plan.new_target.to_raw();
     let new_murk = murk - plan.murk_cost;
     let names = |r: &Relic| -> String {
@@ -179,20 +197,34 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     let relic_name = data
         .relic_types
         .get(&relics[1].item_id)
-        .map_or("La receptora".to_string(), |t| t.name.clone());
+        .map_or(tr("La receptora", "The target").to_string(), |t| {
+            t.name.clone()
+        });
     let forged_note = |forged: &[EffectId]| {
         let limit = Rules::default().forge_limit[relics[1].effect_count().clamp(1, 3) - 1];
-        format!("{}/{limit} efectos forjados", forged.len())
+        format!(
+            "{}/{limit} {}",
+            forged.len(),
+            tr("efectos forjados", "forged effects")
+        )
     };
     if dry_run {
-        return Ok(format!(
-            "Resultado: {relic_name} quedaría con  {}\nCosto: {} de murk ({murk} -> {new_murk}). \
-             Sacrificios: {} puntos. Quedaría con {}.",
+        let (names, cost, points, note) = (
             names(&plan.new_target),
             plan.murk_cost,
             plan.sacrifice_points,
-            forged_note(&plan.new_target_forged)
-        ));
+            forged_note(&plan.new_target_forged),
+        );
+        return Ok(match lang::get() {
+            Lang::Es => format!(
+                "Resultado: {relic_name} quedaría con  {names}\nCosto: {cost} de murk \
+                 ({murk} -> {new_murk}). Sacrificios: {points} puntos. Quedaría con {note}."
+            ),
+            Lang::En => format!(
+                "Result: {relic_name} would have  {names}\nCost: {cost} murk \
+                 ({murk} -> {new_murk}). Sacrifices: {points} points. It would have {note}."
+            ),
+        });
     }
 
     // Lo que se compara en el hilo principal antes de tocar nada.
@@ -205,18 +237,39 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
             for (h, live) in &expected {
                 match game.relic_by_handle(*h) {
                     Some((_, now)) if now == *live => {}
-                    _ => return Err(format!("{h:08X} cambió desde la validación; no hago nada")),
+                    _ => {
+                        return Err(format!(
+                            "{h:08X} {}",
+                            tr(
+                                "cambió desde la validación; no se hizo nada",
+                                "changed since validation; nothing was done"
+                            )
+                        ))
+                    }
                 }
                 if game.inventory_entry(*h).is_none() {
-                    return Err(format!("{h:08X} ya no está en el inventario; no hago nada"));
+                    return Err(format!(
+                        "{h:08X} {}",
+                        tr(
+                            "ya no está en el inventario; no se hizo nada",
+                            "is no longer in the inventory; nothing was done"
+                        )
+                    ));
                 }
             }
             if game.murk() != Some(murk) {
-                return Err("el murk cambió desde la validación; no hago nada".into());
+                return Err(tr(
+                    "el murk cambió desde la validación; no se hizo nada",
+                    "the murk changed since validation; nothing was done",
+                )
+                .into());
             }
             for &h in &to_remove {
                 if let Some(reason) = game.lock_reason(h) {
-                    return Err(format!("{h:08X} {reason}; no hago nada"));
+                    return Err(format!(
+                        "{h:08X} {reason}; {}",
+                        tr("no se hizo nada", "nothing was done")
+                    ));
                 }
             }
             // A partir de acá se modifica el juego.
@@ -225,18 +278,31 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
                 let left = unsafe { game.remove_item(h)? };
                 if left != 0 || game.relic_by_handle(h).is_some() {
                     return Err(format!(
-                        "ATENCIÓN: {h:08X} no se borró del todo (quedan {left}); la forja quedó a medias"
+                        "{} {h:08X} ({left})",
+                        tr(
+                            "ATENCIÓN: la forja quedó a medias, no se borró",
+                            "WARNING: the forge is incomplete, could not remove"
+                        )
                     ));
                 }
             }
             if !game.write_slots(target, effects, curses, &sp) {
-                return Err(
-                    "ATENCIÓN: no pude reescribir la receptora; la forja quedó a medias".into(),
-                );
+                return Err(tr(
+                    "ATENCIÓN: no se pudo reescribir la receptora; la forja quedó a medias",
+                    "WARNING: could not rewrite the target; the forge is incomplete",
+                )
+                .into());
             }
-            let murk_addr = game.murk_addr().ok_or("ATENCIÓN: no encuentro el murk")?;
+            let murk_addr = game.murk_addr().ok_or(tr(
+                "ATENCIÓN: no se encontró el murk",
+                "WARNING: murk not found",
+            ))?;
             if !crate::win::write(murk_addr, new_murk) {
-                return Err("ATENCIÓN: no pude descontar el murk".into());
+                return Err(tr(
+                    "ATENCIÓN: no se pudo descontar el murk",
+                    "WARNING: could not charge the murk",
+                )
+                .into());
             }
             // Sin pedido de guardado: todo cambió en un mismo frame, así que el próximo guardado
             // del juego toma la forja entera o nada de ella.
@@ -257,12 +323,20 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
         Err(e) => format!(" (no pude guardar {FORGED_FILE}: {e})"),
     };
 
-    Ok(format!(
-        "Forja hecha: {relic_name} ahora tiene  {}\nMurk {murk} -> {new_murk} (costo {}). {}. \
-         [{target:08X}, forjados {:?}]{registry_note}",
+    let (names, cost, note, ids) = (
         names(&plan.new_target),
         plan.murk_cost,
         forged_note(&plan.new_target_forged),
-        plan.new_target_forged
-    ))
+        &plan.new_target_forged,
+    );
+    Ok(match lang::get() {
+        Lang::Es => format!(
+            "Forja hecha: {relic_name} ahora tiene  {names}\nMurk {murk} -> {new_murk} \
+             (costo {cost}). {note}. [{target:08X}, {ids:?}]{registry_note}"
+        ),
+        Lang::En => format!(
+            "Forge done: {relic_name} now has  {names}\nMurk {murk} -> {new_murk} \
+             (cost {cost}). {note}. [{target:08X}, {ids:?}]{registry_note}"
+        ),
+    })
 }

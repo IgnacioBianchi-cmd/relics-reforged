@@ -9,6 +9,7 @@
 //! - ítem `i`: `objeto = [[nightreign.exe + 0x3C131C8] + 0x8 + i*8]`, registro en `objeto + 0x8`
 //!   (mismo layout de 80 bytes que en el save).
 
+use relic_rules::lang::tr;
 use relic_rules::EMPTY;
 
 use crate::win::{pe_info, read, write};
@@ -261,7 +262,7 @@ impl Game {
         scan(
             pgd + EQUIPPED_SLOTS,
             EQUIPPED_SLOTS_LEN,
-            &|off| format!("equipada (slot {})", off / 4 + 1),
+            &|off| format!("{} (slot {})", tr("equipada", "equipped"), off / 4 + 1),
             &[],
         );
         // Presets: cantidad en +0x28, registros de 0x50 bytes desde +0x30.
@@ -299,7 +300,7 @@ impl Game {
             let vessel: u32 = read(node + 0x1C).ok_or("nodo ilegible")?;
             let handles: [u32; 6] = read(node + 0x24).ok_or("nodo ilegible")?;
             for h in handles.into_iter().filter(|h| h >> 16 == 0xC080) {
-                out.push((h, format!("recipiente {vessel:#X}")));
+                out.push((h, format!("{} {vessel:#X}", tr("recipiente", "vessel"))));
             }
             stack.push(read(node).ok_or("nodo ilegible")?);
             stack.push(read(node + 0x10).ok_or("nodo ilegible")?);
@@ -318,12 +319,20 @@ impl Game {
     pub fn lock_reason(&self, handle: u32) -> Option<String> {
         if let Some((_, entry)) = self.inventory_entry(handle) {
             if is_favorite(&entry) {
-                return Some("es favorita".into());
+                return Some(tr("es favorita", "is a favorite").into());
             }
         }
         let refs = match self.relic_references() {
             Ok(r) => r,
-            Err(e) => return Some(format!("no se pudo verificar si está en uso: {e}")),
+            Err(e) => {
+                return Some(format!(
+                    "{}: {e}",
+                    tr(
+                        "no se pudo verificar si está en uso",
+                        "couldn't check whether it is in use"
+                    )
+                ))
+            }
         };
         let places: Vec<String> = refs
             .into_iter()
@@ -332,7 +341,11 @@ impl Game {
             .collect();
         (!places.is_empty()).then(|| {
             format!(
-                "está equipada o en un preset/recipiente ({})",
+                "{} ({})",
+                tr(
+                    "está equipada o en un preset/recipiente",
+                    "is equipped or in a preset/vessel"
+                ),
                 places.join(", ")
             )
         })

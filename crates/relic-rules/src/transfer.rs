@@ -6,6 +6,8 @@
 
 use std::fmt;
 
+use crate::lang::{self, tr, Lang};
+
 use crate::data::{EffectId, GameData};
 use crate::relic::{relic_kind, Relic, RelicKind};
 use crate::validate::{normalize, validate, Violation};
@@ -76,9 +78,9 @@ pub enum Role {
 impl fmt::Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Role::Donor => write!(f, "la donante"),
-            Role::Target => write!(f, "la receptora"),
-            Role::Sacrifice(i) => write!(f, "el sacrificio {}", i + 1),
+            Role::Donor => write!(f, "{}", tr("la donante", "the donor")),
+            Role::Target => write!(f, "{}", tr("la receptora", "the target")),
+            Role::Sacrifice(i) => write!(f, "{} {}", tr("el sacrificio", "sacrifice"), i + 1),
         }
     }
 }
@@ -118,30 +120,75 @@ pub enum TransferError {
 
 impl fmt::Display for TransferError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let es = lang::get() == Lang::Es;
         match self {
-            TransferError::NotEligible(r) => write!(f, "{r} tiene efectos fijos y no se puede usar"),
-            TransferError::Locked(r) => write!(f, "{r} es favorita o está equipada"),
-            TransferError::SameRelicTwice(a, b) => write!(f, "{a} y {b} son la misma reliquia"),
-            TransferError::DeepMismatch(r) => {
+            TransferError::NotEligible(r) if es => {
+                write!(f, "{r} tiene efectos fijos y no se puede usar")
+            }
+            TransferError::NotEligible(r) => write!(f, "{r} has fixed effects and can't be used"),
+            TransferError::Locked(r) if es => write!(f, "{r} es favorita o está equipada"),
+            TransferError::Locked(r) => write!(f, "{r} is a favorite or is equipped"),
+            TransferError::SameRelicTwice(a, b) if es => {
+                write!(f, "{a} y {b} son la misma reliquia")
+            }
+            TransferError::SameRelicTwice(a, b) => write!(f, "{a} and {b} are the same relic"),
+            TransferError::DeepMismatch(r) if es => {
                 write!(f, "{r} no es del mismo tipo (normal/Deep) que la receptora")
             }
-            TransferError::TargetInvalid(v) => write!(f, "la receptora no es válida: {v}"),
-            TransferError::EmptyDonorSlot => write!(f, "ese slot de la donante está vacío"),
-            TransferError::InvalidTargetSlot => write!(f, "ese slot de la receptora no existe"),
-            TransferError::WrongSacrificeCount { expected, found } => {
-                write!(f, "hacen falta {expected} reliquias de sacrificio (elegiste {found})")
+            TransferError::DeepMismatch(r) => {
+                write!(f, "{r} is not the same kind (normal/Deep) as the target")
             }
-            TransferError::NotEnoughPoints { needed, have } => write!(
+            TransferError::TargetInvalid(v) if es => write!(f, "la receptora no es válida: {v}"),
+            TransferError::TargetInvalid(v) => write!(f, "the target is not valid: {v}"),
+            TransferError::EmptyDonorSlot => write!(
+                f,
+                "{}",
+                tr(
+                    "ese slot de la donante está vacío",
+                    "that donor slot is empty"
+                )
+            ),
+            TransferError::InvalidTargetSlot => write!(
+                f,
+                "{}",
+                tr(
+                    "ese slot de la receptora no existe",
+                    "that target slot doesn't exist"
+                )
+            ),
+            TransferError::WrongSacrificeCount { expected, found } if es => write!(
+                f,
+                "hacen falta {expected} reliquias de sacrificio (elegiste {found})"
+            ),
+            TransferError::WrongSacrificeCount { expected, found } => {
+                write!(f, "{expected} sacrifice relics are needed ({found} chosen)")
+            }
+            TransferError::NotEnoughPoints { needed, have } if es => write!(
                 f,
                 "los sacrificios suman {have} punto(s) y hacen falta {needed} (chica 1, mediana 2, grande 3)"
             ),
-            TransferError::ForgeLimitReached { limit } => {
-                write!(f, "esta reliquia ya tiene el máximo de {limit} efecto(s) forjado(s)")
-            }
-            TransferError::NotEnoughMurk { needed, have } => {
+            TransferError::NotEnoughPoints { needed, have } => write!(
+                f,
+                "the sacrifices add up to {have} point(s) and {needed} are needed (delicate 1, polished 2, grand 3)"
+            ),
+            TransferError::ForgeLimitReached { limit } if es => write!(
+                f,
+                "esta reliquia ya tiene el máximo de {limit} efecto(s) forjado(s)"
+            ),
+            TransferError::ForgeLimitReached { limit } => write!(
+                f,
+                "this relic already has the maximum of {limit} forged effect(s)"
+            ),
+            TransferError::NotEnoughMurk { needed, have } if es => {
                 write!(f, "hacen falta {needed} de murk y tenés {have}")
             }
-            TransferError::ResultInvalid(v) => write!(f, "la reliquia resultante no sería válida: {v}"),
+            TransferError::NotEnoughMurk { needed, have } => {
+                write!(f, "{needed} murk is needed and you have {have}")
+            }
+            TransferError::ResultInvalid(v) if es => {
+                write!(f, "la reliquia resultante no sería válida: {v}")
+            }
+            TransferError::ResultInvalid(v) => write!(f, "the resulting relic would not be valid: {v}"),
         }
     }
 }

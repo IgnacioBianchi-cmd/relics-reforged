@@ -13,6 +13,7 @@ use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::imgui::{self, Condition, Key, Ui};
 use hudhook::windows::Win32::Foundation::HINSTANCE;
 use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter};
+use relic_rules::lang::{self, tr, Lang};
 use relic_rules::{relic_kind, EffectId, GameData, Relic, RelicKind};
 
 use crate::forge::{self, Order};
@@ -277,20 +278,30 @@ impl Menu {
         };
         let by_handle: HashMap<u32, &RelicView> = relics.iter().map(|r| (r.handle, r)).collect();
 
-        ui.text(format!("Murk: {murk}    Reliquias: {}", relics.len()));
+        ui.text(format!(
+            "Murk: {murk}    {}: {}",
+            tr("Reliquias", "Relics"),
+            relics.len()
+        ));
         ui.same_line();
-        if ui.button("Refrescar") {
+        if ui.button(tr("Refrescar", "Refresh")) {
             self.refresh();
         }
         ui.same_line();
-        if ui.button("Empezar de nuevo") {
+        if ui.button(tr("Empezar de nuevo", "Start over")) {
             self.reset_selection();
         }
         if loading {
-            ui.text_disabled("Leyendo reliquias...");
+            ui.text_disabled(tr("Leyendo reliquias...", "Reading relics..."));
         }
         if let Some(e) = &load_error {
-            ui.text_colored(RED, format!("No pude leer las reliquias: {e}"));
+            ui.text_colored(
+                RED,
+                format!(
+                    "{}: {e}",
+                    tr("No pude leer las reliquias", "Couldn't read the relics")
+                ),
+            );
         }
         match &last {
             Some(Ok(msg)) => colored_wrapped(ui, GREEN, msg),
@@ -298,16 +309,23 @@ impl Menu {
             None => {}
         }
         if forging {
-            ui.text_colored(GOLD, "Forjando...");
+            ui.text_colored(GOLD, tr("Forjando...", "Forging..."));
         }
-        ui.input_text("Filtro", &mut self.filter).build();
+        ui.input_text(tr("Filtro", "Filter"), &mut self.filter)
+            .build();
         ui.separator();
 
         // 1. Receptora.
         let target = self.target.and_then(|h| by_handle.get(&h).copied());
         match target {
             None => {
-                ui.text_colored(GOLD, "1. Elegí la reliquia que querés mejorar (receptora)");
+                ui.text_colored(
+                    GOLD,
+                    tr(
+                        "1. Elegí la reliquia que querés mejorar (receptora)",
+                        "1. Choose the relic you want to improve (target)",
+                    ),
+                );
                 let list: Vec<&RelicView> = relics
                     .iter()
                     .filter(|r| r.size.is_some() && self.matches_filter(r))
@@ -319,13 +337,16 @@ impl Menu {
                 return;
             }
             Some(t) => {
-                ui.text(format!("Receptora: {}", t.name));
+                ui.text(format!("{}: {}", tr("Receptora", "Target"), t.name));
                 ui.same_line();
-                if ui.small_button("cambiar##receptora") {
+                if ui.small_button(format!("{}##receptora", tr("cambiar", "change"))) {
                     self.reset_selection();
                     return;
                 }
-                ui.text_colored(GOLD, "2. Efecto que se reemplaza:");
+                ui.text_colored(
+                    GOLD,
+                    tr("2. Efecto que se reemplaza:", "2. Effect to replace:"),
+                );
                 self.slot_picker(ui, "r", t, true);
             }
         }
@@ -336,7 +357,13 @@ impl Menu {
         let donor = self.donor.and_then(|h| by_handle.get(&h).copied());
         match donor {
             None => {
-                ui.text_colored(GOLD, "3. Elegí la donante (se destruye)");
+                ui.text_colored(
+                    GOLD,
+                    tr(
+                        "3. Elegí la donante (se destruye)",
+                        "3. Choose the donor (it is destroyed)",
+                    ),
+                );
                 let list: Vec<&RelicView> = relics
                     .iter()
                     .filter(|r| {
@@ -354,15 +381,21 @@ impl Menu {
                 return;
             }
             Some(d) => {
-                ui.text(format!("Donante: {}", d.name));
+                ui.text(format!("{}: {}", tr("Donante", "Donor"), d.name));
                 ui.same_line();
-                if ui.small_button("cambiar##donante") {
+                if ui.small_button(format!("{}##donante", tr("cambiar", "change"))) {
                     self.donor = None;
                     self.sacrifices.clear();
                     self.confirm = false;
                     return;
                 }
-                ui.text_colored(GOLD, "4. Efecto que se transfiere (con su maldición):");
+                ui.text_colored(
+                    GOLD,
+                    tr(
+                        "4. Efecto que se transfiere (con su maldición):",
+                        "4. Effect to transfer (with its curse):",
+                    ),
+                );
                 self.slot_picker(ui, "d", d, false);
             }
         }
@@ -378,10 +411,16 @@ impl Menu {
             .sum();
         ui.text_colored(
             GOLD,
-            format!(
-                "5. Elegí 3 sacrificios ({}/3, {points} puntos; chica 1, mediana 2, grande 3)",
-                self.sacrifices.len()
-            ),
+            match lang::get() {
+                Lang::Es => format!(
+                    "5. Elegí 3 sacrificios ({}/3, {points} puntos; chica 1, mediana 2, grande 3)",
+                    self.sacrifices.len()
+                ),
+                Lang::En => format!(
+                    "5. Choose 3 sacrifices ({}/3, {points} points; delicate 1, polished 2, grand 3)",
+                    self.sacrifices.len()
+                ),
+            },
         );
         let chosen: HashSet<u32> = self.sacrifices.iter().copied().collect();
         let list: Vec<&RelicView> = relics
@@ -408,13 +447,16 @@ impl Menu {
         // 6. Vista previa y forja.
         self.update_preview();
         let Some(key) = self.selection_key() else {
-            ui.text_disabled("Completá la selección para ver el resultado.");
+            ui.text_disabled(tr(
+                "Completá la selección para ver el resultado.",
+                "Complete the selection to see the result.",
+            ));
             return;
         };
         match preview.as_ref().filter(|(k, _)| *k == key) {
             None => {
                 if preview_busy {
-                    ui.text_disabled("Calculando...");
+                    ui.text_disabled(tr("Calculando...", "Calculating..."));
                 }
             }
             Some((_, Err(e))) => colored_wrapped(ui, RED, e),
@@ -424,19 +466,22 @@ impl Menu {
                     return;
                 }
                 if !self.confirm {
-                    if ui.button("Forjar") {
+                    if ui.button(tr("Forjar", "Forge")) {
                         self.confirm = true;
                     }
                 } else {
                     ui.text_colored(
                         RED,
-                        "La donante y los 3 sacrificios se destruyen. No se puede deshacer.",
+                        tr(
+                            "La donante y los 3 sacrificios se destruyen. No se puede deshacer.",
+                            "The donor and the 3 sacrifices are destroyed. This can't be undone.",
+                        ),
                     );
-                    if ui.button("Confirmar forja") {
+                    if ui.button(tr("Confirmar forja", "Confirm forge")) {
                         self.start_forge(key);
                     }
                     ui.same_line();
-                    if ui.button("Cancelar") {
+                    if ui.button(tr("Cancelar", "Cancel")) {
                         self.confirm = false;
                     }
                 }
@@ -465,15 +510,22 @@ impl Menu {
             .horizontal_scrollbar(true)
             .build(|| {
                 if list.is_empty() {
-                    ui.text_disabled("No hay reliquias que sirvan acá.");
+                    ui.text_disabled(tr(
+                        "No hay reliquias que sirvan acá.",
+                        "No usable relics here.",
+                    ));
                 }
                 for r in list {
                     let mut label = r.label();
                     if r.forged_count() > 0 {
-                        label.push_str(&format!("  [forjada {}]", r.forged_count()));
+                        label.push_str(&format!(
+                            "  [{} {}]",
+                            tr("forjada", "forged"),
+                            r.forged_count()
+                        ));
                     }
                     if show_locks && r.locked.is_some() {
-                        label.push_str("  [en uso]");
+                        label.push_str(tr("  [en uso]", "  [in use]"));
                     }
                     if ui
                         .selectable_config(format!("{label}##{id}{:X}", r.handle))
@@ -487,14 +539,14 @@ impl Menu {
                             ui.text(&r.name);
                             for (i, e) in r.effects.iter().enumerate() {
                                 let mark = if r.forged.get(i) == Some(&true) {
-                                    "  [forjado]"
+                                    tr("  [forjado]", "  [forged]")
                                 } else {
                                     ""
                                 };
                                 ui.text(format!("  {}. {e}{mark}", i + 1));
                             }
                             if let Some(why) = &r.locked {
-                                ui.text_colored(RED, format!("En uso: {why}"));
+                                ui.text_colored(RED, format!("{}: {why}", tr("En uso", "In use")));
                             }
                         });
                     }
@@ -511,9 +563,9 @@ impl Menu {
                 .effects
                 .get(i)
                 .cloned()
-                .unwrap_or_else(|| "(vacío)".into());
+                .unwrap_or_else(|| tr("(vacío)", "(empty)").into());
             if r.forged.get(i) == Some(&true) {
-                text.push_str("  [forjado]");
+                text.push_str(tr("  [forjado]", "  [forged]"));
             }
             let value = if target {
                 &mut self.target_slot
@@ -565,10 +617,16 @@ fn load(
     data: &GameData,
     dir: &std::path::Path,
 ) -> Result<(Vec<RelicView>, u32), String> {
-    let murk = game.murk().ok_or("la partida no está cargada")?;
+    let murk = game
+        .murk()
+        .ok_or(tr("la partida no está cargada", "the game is not loaded"))?;
     let live = game.relics();
     if live.is_empty() {
-        return Err("no encuentro reliquias (¿la partida está cargada?)".into());
+        return Err(tr(
+            "no encuentro reliquias (¿la partida está cargada?)",
+            "no relics found (is the game loaded?)",
+        )
+        .into());
     }
     let mut locks: HashMap<u32, Vec<String>> = HashMap::new();
     match game.relic_references() {
@@ -589,7 +647,10 @@ fn load(
     for (_, entry) in game.inventory_entries() {
         order.insert(entry[0], entry[3]);
         if is_favorite(&entry) {
-            locks.entry(entry[0]).or_default().push("favorita".into());
+            locks
+                .entry(entry[0])
+                .or_default()
+                .push(tr("favorita", "favorite").into());
         }
     }
     let effect_name = |e: EffectId| -> String {
@@ -614,7 +675,11 @@ fn load(
                     let e = s.effect?;
                     let mut text = effect_name(e);
                     if let Some(c) = s.curse {
-                        text.push_str(&format!(" (maldición: {})", effect_name(c)));
+                        text.push_str(&format!(
+                            " ({}: {})",
+                            tr("maldición", "curse"),
+                            effect_name(c)
+                        ));
                     }
                     Some(text)
                 })

@@ -192,6 +192,20 @@ fn run(module: usize) {
                     "Nombres del juego ({} FMG, array en {array:X?}): {summary}",
                     fmgs.len()
                 ));
+                // Idioma del menú = idioma del juego: "Strength +3" (7000302) en español es "Fuerza".
+                let strength = named
+                    .effects
+                    .get(&7_000_302)
+                    .map_or("", |e| e.name.as_str());
+                let lang = if strength.starts_with("Fuerza") {
+                    relic_rules::lang::Lang::Es
+                } else {
+                    relic_rules::lang::Lang::En
+                };
+                relic_rules::lang::set(lang);
+                log.line(&format!(
+                    "Idioma del menú: {lang:?} (7000302 = \"{strength}\")"
+                ));
                 let named = Arc::new(named);
                 ui::start(module, game, named.clone(), dll_dir.clone());
                 log.line(&format!("Menú: se abre con {}", ui::TOGGLE_KEY_NAME));

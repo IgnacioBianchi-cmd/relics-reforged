@@ -12,6 +12,7 @@
 //! El motor no lee ni escribe la memoria del juego: es lógica pura y testeable.
 
 pub mod data;
+pub mod lang;
 pub mod regulation;
 pub mod relic;
 pub mod transfer;

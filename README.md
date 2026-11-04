@@ -57,7 +57,7 @@ cargo build --release -p relics-reforged
 
 Después, doble clic en `me3/relics-reforged-dev.me3`. El log queda en `target/release/relics_reforged.log`.
 
-En el juego, **F7** abre el menú: receptora y efecto a reemplazar, donante y efecto a transferir, 3 sacrificios, vista previa y forja (con doble confirmación). Para pruebas sin menú está el archivo de comandos (`crates/relics-reforged/src/commands.rs`).
+El menú y sus mensajes salen en inglés o en español según el idioma del juego (por defecto, inglés; ver `relic_rules::lang`). En el juego, **F7** abre el menú: receptora y efecto a reemplazar, donante y efecto a transferir, 3 sacrificios, vista previa y forja (con doble confirmación). Para pruebas sin menú está el archivo de comandos (`crates/relics-reforged/src/commands.rs`).
 
 ## Reglas de balance (por defecto)
 

@@ -12,6 +12,8 @@
 
 use std::fmt;
 
+use crate::lang::{self, tr, Lang};
+
 use crate::data::{EffectId, GameData, ItemId};
 use crate::relic::{relic_kind, Relic, RelicKind, Slot};
 
@@ -41,34 +43,62 @@ pub enum Violation {
 
 impl fmt::Display for Violation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let es = lang::get() == Lang::Es;
         match self {
-            Violation::UnknownRelicType(id) => write!(f, "tipo de reliquia desconocido ({id})"),
-            Violation::NotRandom(id) => write!(f, "la reliquia {id} tiene efectos fijos"),
-            Violation::WrongEffectCount { expected, found } => {
-                write!(
-                    f,
-                    "esta reliquia lleva {expected} efecto(s) y tiene {found}"
-                )
+            Violation::UnknownRelicType(id) if es => {
+                write!(f, "tipo de reliquia desconocido ({id})")
             }
-            Violation::GapInSlots => write!(f, "hay un slot vacío entre efectos"),
-            Violation::CurseWithoutEffect { slot } => {
+            Violation::UnknownRelicType(id) => write!(f, "unknown relic type ({id})"),
+            Violation::NotRandom(id) if es => write!(f, "la reliquia {id} tiene efectos fijos"),
+            Violation::NotRandom(id) => write!(f, "relic {id} has fixed effects"),
+            Violation::WrongEffectCount { expected, found } if es => write!(
+                f,
+                "esta reliquia lleva {expected} efecto(s) y tiene {found}"
+            ),
+            Violation::WrongEffectCount { expected, found } => {
+                write!(f, "this relic takes {expected} effect(s) and has {found}")
+            }
+            Violation::GapInSlots => write!(
+                f,
+                "{}",
+                tr(
+                    "hay un slot vacío entre efectos",
+                    "there is an empty slot between effects"
+                )
+            ),
+            Violation::CurseWithoutEffect { slot } if es => {
                 write!(f, "el slot {} tiene maldición pero no efecto", slot + 1)
             }
-            Violation::UnknownEffect(id) => write!(f, "efecto desconocido ({id})"),
-            Violation::DuplicateEffect(id) => write!(f, "el efecto {id} está repetido"),
+            Violation::CurseWithoutEffect { slot } => {
+                write!(f, "slot {} has a curse but no effect", slot + 1)
+            }
+            Violation::UnknownEffect(id) if es => write!(f, "efecto desconocido ({id})"),
+            Violation::UnknownEffect(id) => write!(f, "unknown effect ({id})"),
+            Violation::DuplicateEffect(id) if es => write!(f, "el efecto {id} está repetido"),
+            Violation::DuplicateEffect(id) => write!(f, "effect {id} is repeated"),
+            Violation::CompatibilityClash { a, b, .. } if es => write!(
+                f,
+                "los efectos {a} y {b} no pueden ir juntos en una reliquia"
+            ),
             Violation::CompatibilityClash { a, b, .. } => {
-                write!(
-                    f,
-                    "los efectos {a} y {b} no pueden ir juntos en una reliquia"
-                )
+                write!(f, "effects {a} and {b} can't be on the same relic")
             }
-            Violation::NoValidAssignment => {
-                write!(
-                    f,
-                    "esta combinación de efectos no puede salir en este tipo de reliquia"
+            Violation::NoValidAssignment => write!(
+                f,
+                "{}",
+                tr(
+                    "esta combinación de efectos no puede salir en este tipo de reliquia",
+                    "this combination of effects can't roll on this type of relic"
                 )
-            }
-            Violation::WrongOrder => write!(f, "los efectos no están en el orden del juego"),
+            ),
+            Violation::WrongOrder => write!(
+                f,
+                "{}",
+                tr(
+                    "los efectos no están en el orden del juego",
+                    "the effects are not in the game's order"
+                )
+            ),
         }
     }
 }
