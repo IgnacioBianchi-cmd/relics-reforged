@@ -64,6 +64,9 @@ const KEY_FILTER: (&str, &str, Key) = ("KG_Key_4", "4", Key::Alpha4);
 const KEY_SORT: (&str, &str, Key) = ("KG_Key_5", "5", Key::Alpha5);
 const KEY_RESET: (&str, &str, Key) = ("KG_Key_1", "1", Key::Alpha1);
 const KEY_REMOVE: (&str, &str, Key) = ("KG_Key_2", "2", Key::Alpha2);
+/// Puntos de sacrificio: azul claro.
+const POINTS: [f32; 4] = [0.62, 0.76, 1.0, 1.0];
+
 /// Texto de los controles: un blanco apagado, como el del juego.
 const PROMPT_TEXT: [f32; 4] = [0.74, 0.74, 0.72, 1.0];
 
@@ -373,8 +376,9 @@ struct Shared {
     /// Vista previa de la selección actual: (clave de la selección, resultado de `forge?`).
     preview: Option<(SelectionKey, Result<String, String>)>,
     preview_busy: bool,
-    /// Resultado de la última forja.
+    /// Resultado de la última forja, y cuándo llegó (el de una forja hecha se va solo).
     last: Option<Result<String, String>>,
+    last_at: Option<std::time::Instant>,
     forging: bool,
 }
 
@@ -685,6 +689,7 @@ impl Menu {
             {
                 let mut s = shared.lock().unwrap_or_else(|e| e.into_inner());
                 s.last = Some(result);
+                s.last_at = Some(std::time::Instant::now());
                 s.forging = false;
                 s.preview = None;
             }
@@ -937,10 +942,24 @@ impl Menu {
                 ),
             );
         }
-        match &last {
-            Some(Ok(msg)) => colored_wrapped(ui, GREEN, msg),
-            Some(Err(e)) => colored_wrapped(ui, RED, e),
-            None => {}
+        // Resultado de la última forja: el de una forja hecha se va a los 10 s; cualquiera se
+        // cierra con "OK".
+        let expired = matches!(last, Some(Ok(_)))
+            && self
+                .shared()
+                .last_at
+                .is_some_and(|t| t.elapsed() > std::time::Duration::from_secs(10));
+        if let Some(result) = last.as_ref().filter(|_| !expired) {
+            let (color, msg) = match result {
+                Ok(msg) => (GREEN, msg),
+                Err(e) => (RED, e),
+            };
+            colored_wrapped(ui, color, msg);
+            if self.text_button(ui, "cerrar_mensaje", "OK", false) {
+                self.shared().last = None;
+            }
+        } else if expired {
+            self.shared().last = None;
         }
         if forging {
             ui.text_colored(GOLD, tr("Forjando...", "Forging..."));
@@ -996,7 +1015,7 @@ impl Menu {
             ),
             Some(t) => {
                 relic_title(ui, self.icons.as_ref(), t);
-                if self.text_button(ui, "receptora", tr("Cambiar", "Change")) {
+                if self.text_button(ui, "receptora", tr("Cambiar", "Change"), true) {
                     self.reset_selection();
                     return;
                 }
@@ -1026,7 +1045,7 @@ impl Menu {
             (Some(t), Some(d)) => {
                 let target_item = by_handle.get(&t).map(|t| t.item_id);
                 relic_title(ui, self.icons.as_ref(), d);
-                if self.text_button(ui, "donante", tr("Cambiar", "Change")) {
+                if self.text_button(ui, "donante", tr("Cambiar", "Change"), true) {
                     self.donor = None;
                     self.sacrifices.clear();
                     self.confirm = false;
@@ -1075,7 +1094,14 @@ impl Menu {
         for &h in &self.sacrifices {
             if let Some(r) = by_handle.get(&h) {
                 relic_title(ui, self.icons.as_ref(), r);
-                if self.text_button(ui, &format!("sacrificio{h:X}"), tr("Quitar", "Remove")) {
+                ui.same_line_with_spacing(0.0, 10.0);
+                ui.text_colored(POINTS, format!("[{}]", points_text(r)));
+                if self.text_button(
+                    ui,
+                    &format!("sacrificio{h:X}"),
+                    tr("Quitar", "Remove"),
+                    true,
+                ) {
                     remove = Some(h);
                 }
             }
@@ -1143,7 +1169,7 @@ impl Menu {
                 }
                 ui.spacing();
                 if !self.confirm {
-                    if ui.button_with_size(tr("Forjar", "Forge"), [140.0, 0.0]) {
+                    if self.text_button(ui, "forjar", tr("Forjar", "Forge"), false) {
                         self.confirm = true;
                     }
                 } else {
@@ -1155,11 +1181,15 @@ impl Menu {
                             "The donor and the 3 sacrifices are destroyed. This can't be undone.",
                         ),
                     );
-                    if ui.button(tr("Confirmar forja", "Confirm forge")) {
+                    if self.text_button(
+                        ui,
+                        "confirmar",
+                        tr("Confirmar forja", "Confirm forge"),
+                        false,
+                    ) {
                         self.start_forge(key);
                     }
-                    ui.same_line();
-                    if ui.button(tr("Cancelar", "Cancel")) {
+                    if self.text_button(ui, "cancelar", tr("Cancelar", "Cancel"), true) {
                         self.confirm = false;
                     }
                 }
@@ -1187,7 +1217,8 @@ impl Menu {
                 .collect();
             let mut list = list;
             self.sort.sort(&mut list);
-            if let Some(h) = self.relic_list(ui, "receptoras", &list, &HashSet::new(), true) {
+            if let Some(h) = self.relic_list(ui, "receptoras", &list, &HashSet::new(), true, false)
+            {
                 self.target = Some(h);
                 self.target_slot = 0;
             }
@@ -1214,7 +1245,7 @@ impl Menu {
                 .collect();
             let mut list = list;
             self.sort.sort(&mut list);
-            if let Some(h) = self.relic_list(ui, "donantes", &list, &HashSet::new(), false) {
+            if let Some(h) = self.relic_list(ui, "donantes", &list, &HashSet::new(), false, false) {
                 self.donor = Some(h);
                 self.donor_slot = 0;
             }
@@ -1241,7 +1272,7 @@ impl Menu {
             .collect();
         let mut list = list;
         self.sort.sort(&mut list);
-        if let Some(h) = self.relic_list(ui, "sacrificios", &list, &chosen, false) {
+        if let Some(h) = self.relic_list(ui, "sacrificios", &list, &chosen, false, true) {
             if let Some(pos) = self.sacrifices.iter().position(|&x| x == h) {
                 self.sacrifices.remove(pos);
             } else if self.sacrifices.len() < 3 {
@@ -1295,10 +1326,13 @@ impl Menu {
             .join(", ")
     }
 
-    /// Botón chico al estilo de los controles del juego ("Change", "Remove"): recuadro fino,
-    /// texto apagado con halo y dorado al pasar el mouse. Va en la misma línea que lo anterior.
-    fn text_button(&self, ui: &Ui, id: &str, label: &str) -> bool {
-        ui.same_line_with_spacing(0.0, 12.0);
+    /// Botón al estilo de los controles del juego ("Change", "Remove", "Forge"): recuadro fino,
+    /// texto apagado con halo y dorado al pasar el mouse. Con `inline`, en la misma línea que lo
+    /// anterior.
+    fn text_button(&self, ui: &Ui, id: &str, label: &str, inline: bool) -> bool {
+        if inline {
+            ui.same_line_with_spacing(0.0, 12.0);
+        }
         let size = ui.calc_text_size(label);
         let pad = [10.0, 2.0];
         let [x, y] = ui.cursor_screen_pos();
@@ -1705,6 +1739,7 @@ impl Menu {
         list: &[&RelicView],
         selected: &HashSet<u32>,
         show_locks: bool,
+        show_points: bool,
     ) -> Option<u32> {
         let mut clicked = None;
         ui.child_window(id).size([0.0, 0.0]).build(|| {
@@ -1782,7 +1817,9 @@ impl Menu {
                         clicked = Some(r.handle);
                     }
                 }
-                if is_selected {
+                // El borde brillante marca las elegidas y, como el cursor del juego, la fila bajo
+                // el mouse (en las tres listas).
+                if is_selected || ui.is_item_hovered() {
                     glow_frame(ui, [x, y], [x + width, y + row_h]);
                 }
                 if let Some(i) = relic_icon {
@@ -1805,6 +1842,11 @@ impl Menu {
                 let draw = ui.get_window_draw_list();
                 draw.add_text([name_x, y], text, &r.name);
                 let mut tag_x = name_x + ui.calc_text_size(&r.name)[0] + 14.0;
+                if show_points {
+                    let tag = format!("[{}]", points_text(r));
+                    draw.add_text([tag_x, y], POINTS, &tag);
+                    tag_x += ui.calc_text_size(&tag)[0] + 10.0;
+                }
                 if r.forged_count() > 0 {
                     let tag = format!("[{} {}]", tr("forjada", "forged"), r.forged_count());
                     draw.add_text([tag_x, y], GOLD, &tag);
@@ -1912,6 +1954,14 @@ fn color_mark(ui: &Ui, at: [f32; 2], color: u8) {
     draw.add_triangle([x - r, y], [x, y + r], [x + r, y], c)
         .filled(true)
         .build();
+}
+
+/// Puntos que da una reliquia como sacrificio (su cantidad de efectos): "2 points".
+fn points_text(r: &RelicView) -> String {
+    match r.size.unwrap_or(0) {
+        1 => tr("1 punto", "1 point").to_string(),
+        n => format!("{n} {}", tr("puntos", "points")),
+    }
 }
 
 /// Borde claro con brillo alrededor de un rectángulo, como el cursor de los menús del juego.
