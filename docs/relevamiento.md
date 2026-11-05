@@ -220,6 +220,14 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - Nombres de efectos por `attachTextId` (`AttachEffectParam+0x1C`), de reliquias por ID de `EquipParamAntique`. Se combinan los FMG que cubren muchos IDs, cuyos textos son mayormente de esos IDs y cortos; los saltos de línea se reemplazan por espacios.
 - Resultado: 2066/2079 efectos (4 FMG) y 849/1397 reliquias (2 FMG; las demás son filas sin uso). Salen en el idioma del juego del jugador.
 
+### Detección de Relic Rites ✔ (2026-11-05)
+
+- **Trampa:** las fotos de globales (`dumpdata` + `tools/diff_globals.py`) dieron `nr+46F92F8` = 0x100 "con el menú abierto" en 5 de 5 fotos, pero cambia frame a frame (el aviso parpadeaba). Con varias fotos seguidas y espaciadas por estado no quedó ninguna marca limpia; lo que cambia son buffers con nombres de recursos (`MENU_ItemIcon_…`, `KG_Key_…`, `cs_c6000`). Ver `tools/globals_text.py`.
+- El perfilador (`tools/profile_diff.py`) tampoco alcanza: el código del menú ocupa muy poco tiempo.
+- **Lo que funcionó:** `watchr` sobre una reliquia con el menú abierto mostró lecturas nuevas desde `nr+920610`, que está en la vtable de **`CS::AntiqueEquipDialog`** (`nr+2C4B078`, 50 métodos; RTTI con `tools/vtable_class.py`). "Antique" = reliquia en el código del juego.
+- `relic_menu.rs` reemplaza los 50 punteros de la vtable por un código que suma 1 a un contador y salta al original; Relic Rites está abierto si el contador cambió en los últimos 300 ms. Verifica el COL de RTTI (`nr+3354BB8`) y el método 42 antes de tocar nada.
+- Probado: fuera de Relic Rites no aparece nada y F7 no hace nada; dentro aparece "[F7] Forge relics" fijo y F7 abre la forja.
+
 ### Saves de prueba
 
 - Respaldos en `data/save/backups/` (no van a git). Para restaurar: con el juego cerrado, copiar sobre `NR_RelicsReforged.sl2` y `.bak`, y **ponerles la fecha actual** (la carpeta tiene `steam_autocloud.vdf`).
@@ -283,9 +291,10 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [x] Comando `forge` (y `forge?` en seco) con `plan_transfer`, probado y guardado en el save.
 - [x] **Favoritas, equipadas, presets y recipientes**: bloqueadas en `forge` (ver arriba).
 - [x] Interfaz dentro del juego: menú F7 (`ui.rs`, Dear ImGui con hudhook 0.9.3 sobre DirectX 12). La fuente de ImGui cubre Latin-1: nada de "→" ni otros símbolos fuera de ese rango.
-- [ ] **Solo en la Roundtable** (regla 11): falta detectar dónde está el jugador; hoy el menú forja en cualquier lado.
+- [x] **Solo en la Roundtable** (regla 11): la forja exige Relic Rites abierto.
 - [x] **Params y nombres sin CSV** (ver arriba): params desde `regulation.bin`, nombres desde los FMG cargados.
-- [~] **Abrir el menú desde Relic Rites**: marca encontrada con `dumpdata` + `tools/diff_globals.py` (5 fotos cerrado/abierto + control con pausa): **`nr+46F92F8` = 0x100 con Relic Rites abierto**, 0 cerrado y 0 con la pausa. Código escrito (aviso "[F7] Forge relics", F7 solo dentro de Relic Rites, forja exige el menú abierto); compila, **falta probarlo en el juego**. Después: estilo visual. Detalle original: detectar en memoria que el menú de Relic Rites está abierto (con `snap`, como las favoritas) y mostrar ahí el acceso a la forja. De paso resuelve "solo en la Roundtable". Después, darle un estilo parecido al del juego.
+- [x] **Abrir el menú desde Relic Rites**: ver "Detección de Relic Rites" arriba.
+- [ ] Estilo visual parecido al del juego.
 - [ ] Seamless Co-op: probar que la forja funcione con el mod de co-op cargado.
 - [ ] **Cuántas entradas tiene la tabla de ítems** y cómo se ve una entrada vacía. Por ahora la DLL recorre hasta 0x2000 entradas y filtra por la forma del registro; encuentra todas las reliquias, pero el largo real sigue sin confirmar.
 - [x] Instalar Rust y me3. Falta Seamless Co-op.

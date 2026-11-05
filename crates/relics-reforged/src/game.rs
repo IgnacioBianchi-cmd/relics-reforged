@@ -41,9 +41,6 @@ const INV_ARRAY_LOW: usize = 0x40;
 const INV_LAST_INDEX: usize = 0x70;
 const INV_ENTRY_SIZE: usize = 20;
 
-const RELIC_RITES_FLAG_RVA: usize = 0x46F_92F8;
-const RELIC_RITES_OPEN_BIT: u32 = 0x100;
-
 /// Slots de reliquia del recipiente equipado ahora (6 handles). Solo se mira esto de
 /// PlayerGameData: más adelante (+0x8FC..) hay una lista con todas las reliquias, que no
 /// significa que estén en uso.
@@ -206,15 +203,10 @@ impl Game {
         (array != 0).then_some(array + i as usize * INV_ENTRY_SIZE)
     }
 
-    /// Marca de "menú de Relic Rites abierto": `nr+46F92F8` vale 0x100 con Relic Rites abierto y 0
-    /// cerrado (también 0 con el menú de pausa). Encontrada con `dumpdata` el 2026-11-04.
-    pub fn relic_rites_flags(&self) -> Option<u32> {
-        read(self.base + RELIC_RITES_FLAG_RVA)
-    }
-
+    /// ¿Está abierto el menú de Relic Rites? (ver `relic_menu`). Ojo: `nr+46F92F8`, que en un
+    /// primer relevamiento parecía una marca, cambia frame a frame y no sirve.
     pub fn relic_rites_open(&self) -> bool {
-        self.relic_rites_flags()
-            .is_some_and(|v| v & RELIC_RITES_OPEN_BIT != 0)
+        crate::relic_menu::is_open()
     }
 
     pub fn game_data_man(&self) -> Option<usize> {

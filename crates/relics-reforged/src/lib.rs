@@ -11,6 +11,7 @@ mod game;
 mod mainthread;
 mod msg;
 mod profiler;
+mod relic_menu;
 mod search;
 mod snap;
 mod tracer;
@@ -117,6 +118,12 @@ fn run(module: usize) {
         }
     };
     log.line(&format!("nightreign.exe en {base:#X}, versión soportada"));
+    match relic_menu::install(base) {
+        Ok(()) => log.line("Detección de Relic Rites instalada (vtable de AntiqueEquipDialog)"),
+        Err(e) => log.line(&format!(
+            "ERROR: no pude instalar la detección de Relic Rites: {e}"
+        )),
+    }
 
     let mut data = load_game_data(&dll_path, &mut log).map(Arc::new);
     let dll_dir = dll_path.parent().unwrap_or(Path::new(".")).to_path_buf();
