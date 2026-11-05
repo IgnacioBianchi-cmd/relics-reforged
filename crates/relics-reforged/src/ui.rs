@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use hudhook::hooks::dx12::ImguiDx12Hooks;
@@ -173,7 +173,7 @@ impl Icons {
 }
 
 /// Una reliquia tal como la muestra el menú.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct RelicView {
     handle: u32,
     /// Tipo de reliquia (`EquipParamAntique`).
@@ -532,6 +532,14 @@ struct Menu {
     group_of: HashMap<i32, i32>,
     /// Familia de efectos → ícono (el de algún efecto de la familia).
     family_icon: HashMap<i32, i32>,
+    /// Lo que está bajo el mouse en este frame y en el anterior (un hash por elemento): al cambiar,
+    /// suena "mover el cursor".
+    hover_now: AtomicU64,
+    hover_prev: AtomicU64,
+    /// Si la forja estaba abierta en el frame anterior (para los sonidos de abrir y cerrar).
+    was_visible: AtomicBool,
+    /// Última relectura de las reliquias.
+    last_refresh: Mutex<Option<std::time::Instant>>,
 }
 
 impl Menu {
@@ -573,7 +581,28 @@ impl Menu {
             effect_search: String::new(),
             group_of,
             family_icon,
+            hover_now: AtomicU64::new(0),
+            hover_prev: AtomicU64::new(0),
+            was_visible: AtomicBool::new(false),
+            last_refresh: Mutex::new(None),
         }
+    }
+
+    /// Marca el elemento bajo el mouse (ver `hover_now`).
+    fn hover(&self, key: &str) {
+        let h = key.bytes().fold(0xCBF2_9CE4_8422_2325u64, |h, b| {
+            (h ^ b as u64).wrapping_mul(0x100_0000_01B3)
+        });
+        self.hover_now.store(h | 1, Ordering::Relaxed);
+    }
+
+    /// Al final del frame: si cambió el elemento bajo el mouse, suena "mover el cursor".
+    fn hover_sound(&self) {
+        let now = self.hover_now.swap(0, Ordering::Relaxed);
+        if now != 0 && now != self.hover_prev.load(Ordering::Relaxed) {
+            crate::sound::cursor();
+        }
+        self.hover_prev.store(now, Ordering::Relaxed);
     }
 
     fn shared(&self) -> std::sync::MutexGuard<'_, Shared> {
@@ -599,15 +628,17 @@ impl Menu {
             let result = load(&game, &data, &dir);
             let mut s = shared.lock().unwrap_or_else(|e| e.into_inner());
             match result {
-                Ok((relics, murk)) => {
+                // Solo si algo cambió: así la relectura periódica no rehace la vista previa.
+                Ok((relics, murk)) if relics != s.relics || murk != s.murk => {
                     s.relics = relics;
                     s.murk = murk;
                     s.load_error = None;
+                    s.preview = None;
                 }
+                Ok(_) => s.load_error = None,
                 Err(e) => s.load_error = Some(e),
             }
             s.loading = false;
-            s.preview = None;
         });
     }
 
@@ -688,6 +719,9 @@ impl Menu {
             let ok = result.is_ok();
             {
                 let mut s = shared.lock().unwrap_or_else(|e| e.into_inner());
+                if result.is_err() {
+                    crate::sound::error();
+                }
                 s.last = Some(result);
                 s.last_at = Some(std::time::Instant::now());
                 s.forging = false;
@@ -800,15 +834,19 @@ impl Menu {
                     close = true;
                 }
                 if refresh {
+                    crate::sound::decide();
                     self.refresh();
                 }
                 if clear {
+                    crate::sound::decide();
                     self.reset_selection();
                 }
                 if reset {
+                    crate::sound::decide();
                     self.filter_reset();
                 }
                 if remove {
+                    crate::sound::decide();
                     self.filters.effects = Default::default();
                     self.picking = None;
                     self.entered = None;
@@ -822,28 +860,39 @@ impl Menu {
                 close = true;
             }
             if self.show_filters && ui.is_key_pressed(KEY_RESET.2) {
+                crate::sound::decide();
                 self.filter_reset();
             }
             if self.show_filters && ui.is_key_pressed(KEY_REMOVE.2) {
+                crate::sound::decide();
                 self.filters.effects = Default::default();
                 self.picking = None;
                 self.entered = None;
             }
             if !self.show_filters && ui.is_key_pressed(KEY_REFRESH.2) {
+                crate::sound::decide();
                 self.refresh();
             }
             if !self.show_filters && ui.is_key_pressed(KEY_CLEAR.2) {
+                crate::sound::decide();
                 self.reset_selection();
             }
             if ui.is_key_pressed(KEY_FILTER.2) {
                 self.show_filters = !self.show_filters;
+                if self.show_filters {
+                    crate::sound::decide();
+                } else {
+                    crate::sound::cancel();
+                }
                 self.picking = None;
                 self.entered = None;
             }
             if ui.is_key_pressed(KEY_SORT.2) {
+                crate::sound::tab();
                 self.sort = self.sort.next();
             }
         }
+        self.hover_sound();
         if close {
             self.visible.store(false, Ordering::Relaxed);
         }
@@ -921,16 +970,50 @@ impl Menu {
             next |= key_prompt(ui, icons, g, k, &sort_label, 1.0);
         }
         if open {
+            if self.show_filters {
+                crate::sound::cancel();
+            } else {
+                crate::sound::decide();
+            }
             self.show_filters = !self.show_filters;
             self.picking = None;
             self.entered = None;
         }
         if next {
+            crate::sound::tab();
             self.sort = self.sort.next();
         }
 
-        if loading {
+        if loading && relics.is_empty() {
             hint(ui, tr("Leyendo reliquias...", "Reading relics..."));
+        }
+        // Relectura cada 2 s: si el jugador equipó o marcó algo, la lista lo refleja.
+        let due = self
+            .last_refresh
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(2));
+        if due && !forging {
+            *self.last_refresh.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some(std::time::Instant::now());
+            self.refresh();
+        }
+        // Lo elegido que ya no existe o pasó a estar en uso sale de la selección.
+        if !relics.is_empty() && !forging {
+            let usable = |h: &u32| by_handle.get(h).is_some_and(|r| r.locked.is_none());
+            if self.target.is_some_and(|h| !by_handle.contains_key(&h)) {
+                self.reset_selection();
+            }
+            if self.donor.is_some_and(|h| !usable(&h)) {
+                self.donor = None;
+                self.sacrifices.clear();
+                self.confirm = false;
+            }
+            let before = self.sacrifices.len();
+            self.sacrifices.retain(usable);
+            if self.sacrifices.len() != before {
+                self.confirm = false;
+            }
         }
         if let Some(e) = &load_error {
             colored_wrapped(
@@ -1291,10 +1374,13 @@ impl Menu {
     /// Q dentro del filtro: del selector de efectos vuelve al filtro, y del filtro a la forja.
     /// `false` si no había filtro abierto.
     fn filter_back(&mut self) -> bool {
-        if self.entered.take().is_some() || self.picking.take().is_some() {
-            return true;
+        let handled = self.entered.take().is_some()
+            || self.picking.take().is_some()
+            || std::mem::take(&mut self.show_filters);
+        if handled {
+            crate::sound::cancel();
         }
-        std::mem::take(&mut self.show_filters)
+        handled
     }
 
     /// 1 dentro del filtro: en el selector limpia esa condición; si no, todo el filtro.
@@ -1339,6 +1425,16 @@ impl Menu {
         let (w, h) = (size[0] + pad[0] * 2.0, size[1] + pad[1] * 2.0);
         let clicked = ui.invisible_button(format!("##btn_{id}"), [w, h]);
         let hovered = ui.is_item_hovered();
+        if hovered {
+            self.hover(&format!("btn_{id}"));
+        }
+        if clicked {
+            if id == "cancelar" {
+                crate::sound::cancel();
+            } else {
+                crate::sound::decide();
+            }
+        }
         let dl = ui.get_window_draw_list();
         dl.add_rect([x, y], [x + w, y + h], [0.08, 0.10, 0.16, 0.75])
             .filled(true)
@@ -1379,6 +1475,12 @@ impl Menu {
         let w = ui.content_region_avail()[0];
         let clicked = ui.invisible_button(format!("##{id}"), [w, h]);
         let hovered = ui.is_item_hovered();
+        if hovered {
+            self.hover(&format!("row_{id}"));
+        }
+        if clicked {
+            crate::sound::decide();
+        }
         let b = (line * 1.05).round();
         let (bx, by) = (x + 6.0, y + ((h - b) * 0.5).round());
         {
@@ -1468,6 +1570,12 @@ impl Menu {
         let w = ui.content_region_avail()[0];
         let clicked = ui.invisible_button(format!("##cond{k}"), [w, h]);
         let hovered = ui.is_item_hovered();
+        if hovered {
+            self.hover(&format!("cond{k}"));
+        }
+        if clicked {
+            crate::sound::decide();
+        }
         let selected = self.picking == Some(k);
         let band = if selected {
             [0.22, 0.28, 0.44, 0.60]
@@ -1815,10 +1923,14 @@ impl Menu {
                         .build()
                     {
                         clicked = Some(r.handle);
+                        crate::sound::decide();
                     }
                 }
                 // El borde brillante marca las elegidas y, como el cursor del juego, la fila bajo
                 // el mouse (en las tres listas).
+                if ui.is_item_hovered() {
+                    self.hover(&format!("{id}{:X}", r.handle));
+                }
                 if is_selected || ui.is_item_hovered() {
                     glow_frame(ui, [x, y], [x + width, y + row_h]);
                 }
@@ -1927,6 +2039,7 @@ impl Menu {
             }
             if changed {
                 self.confirm = false;
+                crate::sound::decide();
             }
         }
     }
@@ -2082,7 +2195,13 @@ impl ImguiRenderLoop for Menu {
             self.draw(ui);
         }
         // Con la forja abierta, el juego no recibe teclado ni mouse (ver `input_block`).
-        crate::input_block::set_menu_open(self.visible.load(Ordering::Relaxed));
+        let open = self.visible.load(Ordering::Relaxed);
+        crate::input_block::set_menu_open(open);
+        match (self.was_visible.swap(open, Ordering::Relaxed), open) {
+            (false, true) => crate::sound::open(),
+            (true, false) => crate::sound::close(),
+            _ => {}
+        }
     }
 
     fn before_render<'a>(

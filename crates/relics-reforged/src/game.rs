@@ -361,21 +361,18 @@ impl Game {
                 ))
             }
         };
-        let places: Vec<String> = refs
-            .into_iter()
-            .filter(|(h, _)| *h == handle)
-            .map(|(_, p)| p)
-            .collect();
-        (!places.is_empty()).then(|| {
-            format!(
-                "{} ({})",
-                tr(
-                    "está equipada o en un preset/recipiente",
-                    "is equipped or in a preset/vessel"
-                ),
-                places.join(", ")
-            )
-        })
+        // "vessel 0x7D0" -> "vessel": el ID interno no le dice nada al jugador.
+        let mut places: Vec<String> = Vec::new();
+        for (_, p) in refs.into_iter().filter(|(h, _)| *h == handle) {
+            let p = p
+                .split_once(" 0x")
+                .map_or(p.clone(), |(kind, _)| kind.to_string());
+            if !places.contains(&p) {
+                places.push(p);
+            }
+        }
+        (!places.is_empty())
+            .then(|| format!("{}: {}", tr("está en uso", "is in use"), places.join(", ")))
     }
 
     /// Busca la entrada de inventario de un handle: (índice, [handle, item, cantidad, x, y]).

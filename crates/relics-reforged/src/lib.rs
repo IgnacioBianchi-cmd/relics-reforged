@@ -15,6 +15,7 @@ mod profiler;
 mod relic_menu;
 mod search;
 mod snap;
+mod sound;
 mod tracer;
 mod ui;
 mod win;
@@ -119,6 +120,10 @@ fn run(module: usize) {
         }
     };
     log.line(&format!("nightreign.exe en {base:#X}, versión soportada"));
+    match sound::install(base) {
+        Ok(()) => log.line("Sonidos de menú del juego listos (nr+870290)"),
+        Err(e) => log.line(&format!("ERROR: sin sonidos de menú: {e}")),
+    }
     match input_block::install() {
         Ok(()) => log.line("Bloqueo de teclado y mouse del juego instalado (DirectInput 8)"),
         Err(e) => log.line(&format!(
@@ -258,6 +263,9 @@ fn log_hits(log: &mut Log, base: usize) {
             hit.regs[6],
             stack.join(" ")
         ));
+        if hit.mem != [0; 4] {
+            log.line(&format!("           [rcx]: {:016X?}", hit.mem));
+        }
     }
 }
 

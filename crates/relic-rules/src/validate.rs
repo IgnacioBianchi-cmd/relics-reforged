@@ -34,11 +34,16 @@ pub enum Violation {
         slot: usize,
     },
     UnknownEffect(EffectId),
-    DuplicateEffect(EffectId),
+    DuplicateEffect {
+        effect: EffectId,
+        name: String,
+    },
     CompatibilityClash {
         a: EffectId,
         b: EffectId,
         compatibility_id: i32,
+        a_name: String,
+        b_name: String,
     },
     /// El efecto no está en ninguna tabla de slot de este tipo de reliquia.
     NotInPool {
@@ -82,15 +87,36 @@ impl fmt::Display for Violation {
             }
             Violation::UnknownEffect(id) if es => write!(f, "efecto desconocido ({id})"),
             Violation::UnknownEffect(id) => write!(f, "unknown effect ({id})"),
-            Violation::DuplicateEffect(id) if es => write!(f, "el efecto {id} está repetido"),
-            Violation::DuplicateEffect(id) => write!(f, "effect {id} is repeated"),
-            Violation::CompatibilityClash { a, b, .. } if es => write!(
-                f,
-                "los efectos {a} y {b} no pueden ir juntos en una reliquia"
-            ),
-            Violation::CompatibilityClash { a, b, .. } => {
-                write!(f, "effects {a} and {b} can't be on the same relic")
+            Violation::DuplicateEffect { effect, name } if es => {
+                write!(f, "\"{}\" está repetido", label(*effect, name))
             }
+            Violation::DuplicateEffect { effect, name } => {
+                write!(f, "\"{}\" is repeated", label(*effect, name))
+            }
+            Violation::CompatibilityClash {
+                a,
+                b,
+                a_name,
+                b_name,
+                ..
+            } if es => write!(
+                f,
+                "\"{}\" y \"{}\" no pueden ir juntos en una reliquia (son variantes del mismo efecto)",
+                label(*a, a_name),
+                label(*b, b_name)
+            ),
+            Violation::CompatibilityClash {
+                a,
+                b,
+                a_name,
+                b_name,
+                ..
+            } => write!(
+                f,
+                "\"{}\" and \"{}\" can't be on the same relic (they are variants of the same effect)",
+                label(*a, a_name),
+                label(*b, b_name)
+            ),
             Violation::NotInPool { effect, name } => {
                 let name = if name.is_empty() {
                     effect.to_string()
@@ -131,6 +157,15 @@ impl fmt::Display for Violation {
 
 impl std::error::Error for Violation {}
 
+/// Nombre del efecto para los mensajes, o su ID si no tiene.
+fn label(id: EffectId, name: &str) -> String {
+    if name.is_empty() {
+        id.to_string()
+    } else {
+        name.to_string()
+    }
+}
+
 /// Verifica que la reliquia sea una combinación que el juego podría generar.
 pub fn validate(data: &GameData, relic: &Relic) -> Result<(), Violation> {
     let size = match relic_kind(data, relic.item_id) {
@@ -163,7 +198,10 @@ pub fn validate(data: &GameData, relic: &Relic) -> Result<(), Violation> {
         let info_a = data.effects.get(&a).ok_or(Violation::UnknownEffect(a))?;
         for &b in &effects[i + 1..] {
             if a == b {
-                return Err(Violation::DuplicateEffect(a));
+                return Err(Violation::DuplicateEffect {
+                    effect: a,
+                    name: info_a.name.clone(),
+                });
             }
             let info_b = data.effects.get(&b).ok_or(Violation::UnknownEffect(b))?;
             if info_a.compatibility_id != -1 && info_a.compatibility_id == info_b.compatibility_id {
@@ -171,6 +209,8 @@ pub fn validate(data: &GameData, relic: &Relic) -> Result<(), Violation> {
                     a,
                     b,
                     compatibility_id: info_a.compatibility_id,
+                    a_name: info_a.name.clone(),
+                    b_name: info_b.name.clone(),
                 });
             }
         }

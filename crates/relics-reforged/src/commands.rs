@@ -83,6 +83,31 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
         ["set!", h, slots @ ..] => set(ctx, parse_handle(h)?, slots, true),
         ["watch", h] => watch(ctx, parse_handle(h)?, false),
         ["watchr", h] => watch(ctx, parse_handle(h)?, true),
+        // Sonido de menú del juego: se <id> [prioridad]
+        ["se", id, rest @ ..] => {
+            let id: i32 = id.parse().map_err(|_| "ID inválido")?;
+            let priority: i32 = match rest.first() {
+                Some(p) => p.parse().map_err(|_| "prioridad inválida")?,
+                None => 10,
+            };
+            crate::sound::play(id, priority);
+            Ok(format!("sonido {id} pedido (prioridad {priority})"))
+        }
+        // Ejecución de código: watchx <rva> [largo en hex]
+        ["watchx", rva, rest @ ..] => {
+            let base = ctx.game.base();
+            let size = win::pe_info(base).map_or(0, |(_, s)| s as usize);
+            let rva = usize::from_str_radix(rva.trim_start_matches("nr+"), 16)
+                .map_err(|_| "RVA inválida")?;
+            let len = match rest.first() {
+                Some(l) => usize::from_str_radix(l, 16).map_err(|_| "largo inválido")?,
+                None => 1,
+            };
+            tracer::watch_exec(base + rva, len, (base, base + size))?;
+            Ok(format!(
+                "vigilando la ejecución de nr+{rva:X} ({len:#X} bytes)"
+            ))
+        }
         ["profile", secs] => profile(ctx, parse_u32(secs)?),
         ["unwatch"] => {
             tracer::unwatch();

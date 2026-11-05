@@ -53,11 +53,16 @@ pub struct Hit {
     pub write: bool,
     /// Cuántas veces pasó esa misma instrucción (se agrupa por RIP y tipo de acceso).
     pub count: u32,
+    /// Al vigilar ejecución: los primeros 32 bytes a los que apunta rcx (el primer argumento).
+    pub mem: [usize; 4],
 }
 
 static INSTALL: Once = Once::new();
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static READ_MODE: AtomicBool = AtomicBool::new(false);
+/// Agrupar también por las primeras direcciones de la pila (para vigilar la ejecución de una
+/// función y ver todos sus llamadores distintos).
+static GROUP_BY_STACK: AtomicBool = AtomicBool::new(false);
 static PAGE: AtomicUsize = AtomicUsize::new(0);
 static PROTECT: AtomicUsize = AtomicUsize::new(0);
 static START: AtomicUsize = AtomicUsize::new(0);
@@ -128,11 +133,20 @@ pub fn watch(start: usize, len: usize, module: (usize, usize), reads: bool) -> R
     Ok(())
 }
 
+/// Vigila la ejecución de código en `[start, start + len)`: anota cada llamador distinto (por
+/// RIP y las primeras direcciones de la pila), con registros y pila.
+pub fn watch_exec(start: usize, len: usize, module: (usize, usize)) -> Result<(), String> {
+    watch(start, len, module, true)?;
+    GROUP_BY_STACK.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
 /// Deja de vigilar y saca la guarda de la página.
 pub fn unwatch() {
     if !ACTIVE.swap(false, Ordering::SeqCst) {
         return;
     }
+    GROUP_BY_STACK.store(false, Ordering::SeqCst);
     let page = PAGE.load(Ordering::Relaxed);
     let protect = PROTECT.load(Ordering::Relaxed) as u32;
     let mut old = 0;
@@ -212,9 +226,12 @@ unsafe fn record(ctx: *mut u8, addr: usize, write: bool) {
         return;
     };
     let rip = reg(CTX_RIP);
-    if let Some(h) = hits.iter_mut().find(|h| h.rip == rip && h.write == write) {
-        h.count = h.count.saturating_add(1);
-        return;
+    let by_stack = GROUP_BY_STACK.load(Ordering::Relaxed);
+    if !by_stack {
+        if let Some(h) = hits.iter_mut().find(|h| h.rip == rip && h.write == write) {
+            h.count = h.count.saturating_add(1);
+            return;
+        }
     }
     if hits.len() >= MAX_HITS {
         DROPPED.fetch_add(1, Ordering::Relaxed);
@@ -242,11 +259,29 @@ unsafe fn record(ctx: *mut u8, addr: usize, write: bool) {
             }
         }
     }
+    let mem = if by_stack {
+        win::read::<[usize; 4]>(reg(CTX_RCX)).unwrap_or_default()
+    } else {
+        [0; 4]
+    };
+    if by_stack {
+        let key = stack_len.min(4);
+        if let Some(h) = hits.iter_mut().find(|h| {
+            h.rip == rip
+                && h.mem == mem
+                && h.stack_len.min(4) == key
+                && h.stack[..key] == stack[..key]
+        }) {
+            h.count = h.count.saturating_add(1);
+            return;
+        }
+    }
     hits.push(Hit {
         thread: win::GetCurrentThreadId(),
         rip,
         write,
         count: 1,
+        mem,
         addr,
         regs: [
             reg(CTX_RCX),

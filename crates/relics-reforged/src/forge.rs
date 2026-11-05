@@ -149,10 +149,13 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
             } else {
                 format!("{} {}", tr("el sacrificio", "sacrifice"), i - 1)
             };
+            let name = data
+                .relic_types
+                .get(&s.live.item_id)
+                .map_or_else(|| format!("{:08X}", s.handle), |t| t.name.clone());
             return Err(format!(
-                "{}: {role} ({:08X}) {reason}",
+                "{}: {role} ({name}) {reason}",
                 tr("no se puede forjar", "can't forge"),
-                s.handle
             ));
         }
     }

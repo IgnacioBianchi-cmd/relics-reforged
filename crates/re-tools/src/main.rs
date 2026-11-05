@@ -5,6 +5,7 @@
 //! disasm <volcado> fn <rva>...           función que contiene cada RVA (según .pdata), desensamblada
 //! disasm <volcado> at <rva> <antes> <después>   bytes alrededor de una RVA, sin buscar la función
 //! disasm <volcado> callers <rva>...      instrucciones `call rel32` que llaman a esa RVA
+//! disasm <volcado> refs <rva>...         instrucciones con un operando RIP-relativo a esa RVA
 //! ```
 //!
 //! Las RVAs van en hex (con o sin `0x`, o como `nr+69E73B`).
@@ -97,6 +98,34 @@ impl Image {
                 let _ = write!(out, "    ; {note}");
             }
             out.push('\n');
+        }
+        out
+    }
+
+    /// Instrucciones con un operando RIP-relativo a `target` (por ejemplo `lea rcx,[texto]`),
+    /// decodificando cada función de `.pdata`.
+    fn refs(&self, target: u32) -> Vec<u32> {
+        let mut out = Vec::new();
+        for &(s, e) in &self.functions {
+            let e = e.min(self.bytes.len() as u32);
+            if s >= e {
+                continue;
+            }
+            let mut dec = Decoder::with_ip(
+                64,
+                &self.bytes[s as usize..e as usize],
+                s as u64,
+                DecoderOptions::NONE,
+            );
+            let mut instr = Instruction::default();
+            while dec.can_decode() {
+                dec.decode_out(&mut instr);
+                if instr.is_ip_rel_memory_operand()
+                    && instr.ip_rel_memory_address() == target as u64
+                {
+                    out.push(instr.ip() as u32);
+                }
+            }
         }
         out
     }
@@ -286,6 +315,18 @@ fn main() {
                         .function_of(c)
                         .map_or("?".to_string(), |(s, _)| format!("nr+{s:X}"));
                     println!("  nr+{c:X} (en {f})");
+                }
+            }
+        }
+        "refs" => {
+            for target in rest.iter().map(|s| parse_rva(s)) {
+                let refs = image.refs(target);
+                println!("nr+{target:X}: {} referencias", refs.len());
+                for r in refs {
+                    let f = image
+                        .function_of(r)
+                        .map_or("?".to_string(), |(s, _)| format!("nr+{s:X}"));
+                    println!("  nr+{r:X} (en {f})");
                 }
             }
         }

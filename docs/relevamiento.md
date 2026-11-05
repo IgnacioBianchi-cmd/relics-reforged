@@ -250,6 +250,14 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - `input_block.rs` crea un teclado propio para conseguir la vtable de los dispositivos de `dinput8.dll` (la comparten todos, también los del juego) y reemplaza `GetDeviceState` (9) y `GetDeviceData` (10), en la variante ANSI y la Unicode. Con la forja abierta llaman al original y después devuelven "nada apretado" y "sin eventos". Al cerrar sigue bloqueando hasta que se suelten todas las teclas (o 1,5 s), para que la Q con la que se cierra no le llegue al juego.
 - Probado: con la forja abierta Relic Rites no se mueve con ninguna tecla, y Q vuelve a Relic Rites sin cerrarlo.
 
+### Sonidos de menú del juego ✔ (2026-11-05)
+
+- Audio con **Wwise** (clases `MoWwiseManImp`, `CSSoundImp`, `CSFD4SystemSoundIns`; vtable de esta última en `nr+2CB61E8`, constructor `nr+EE7A90`).
+- Los menús piden sus sonidos con **`nr+870290`** (292 llamadas en el código de menús): recibe una estructura de 24 bytes `{i32 id, i32 prioridad, i32 canal, pad, puntero a etiqueta UTF-16}`. Canal 1 = cola de un sonido por frame en `nr+39AA560` (gana la prioridad más alta); la procesa `nr+8701D0`, que llama a `nr+870840(canal, id)`.
+- IDs y prioridades vistos en Relic Rites (con su etiqueta japonesa): 0 cursor (カーソル移動, 0), 100 confirmar (決定, 2), 200 cancelar (キャンセル, 2), 500 cambiar de pestaña (タブ移動, 1), 600 error (エラー, 2), 1000 abrir menú (メニューオープン, 10), 1020 cerrar menú (メニュークローズ, 0).
+- Cómo se encontró: `watchx` (vigilar la ejecución de una función con `PAGE_GUARD`, agrupando por pila y guardando 32 bytes de `[rcx]`) sobre el constructor y después sobre `nr+870290`; el comando `se <id>` los reproduce para probarlos. La parte de arriba del camino está ofuscada (protección del juego); leerla estática no sirvió.
+- `sound.rs` verifica el prólogo de `nr+870290` antes de usarla y la llama desde el hilo de render (solo escribe la cola).
+
 ### Íconos del juego ✔ (2026-11-05)
 
 - Cada efecto tiene su ícono en `AttachEffectParam.statusIconId` (offset 0x28; 65 distintos): `MENU_StatusIcon_<id>`, 80x80. Cada reliquia, en `EquipParamAntique.iconId` (offset 0x1C): `MENU_ItemIcon_<id>`, 160x160. La imagen de la reliquia ya muestra el color, el tamaño (cristal o nido chico, mediano o grande) y si es Deep (espinas azules), así que no hacen falta marcas propias.
