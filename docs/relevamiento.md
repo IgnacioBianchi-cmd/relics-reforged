@@ -236,6 +236,15 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - Los recipientes de los bloqueos se muestran sin su ID interno ("vessel", no "vessel 0xBB9"); el comando `locks` sigue mostrando el ID.
 - **Pantalla completa** (2026-11-05): el menú tapa Relic Rites salvo su encabezado (y = 118 a 1080p), con "/ Relic Forge" al lado de "Relic Rites" y su propia barra de controles ("F7:Back", "Esc:Back"; Esc no cierra mientras se escribe en el filtro). Los márgenes copian los paneles del juego; las medidas salen de capturas a 1920x1080 y escalan con el alto.
 
+- **Estilo del juego** (2026-11-05): los paneles usan sprites de Relic Rites (`MENU_In_bg_05` de fondo, `MENU_In_Line_02` arriba, `MENU_In_Line_00` bajo los títulos) en vez de bordes de ImGui, con margen interno de 20x16. El fondo general es 86-90% opaco; los paneles, más (tapan Relic Rites). Barra de abajo: Q (volver a Relic Rites), R (refrescar), C (empezar de nuevo); F7 y Esc también vuelven. Arriba de la lista: búsqueda, 4 (filtro) y 5 (orden: encontrado, nombre, color, tamaño).
+- **Filtro** (tecla 4): ocupa el panel izquierdo, como en el juego. Se marca lo que se quiere ver (Favorites; Red/Blue/Yellow/Green; Small/Medium/Large; Relic/Depths Relic); en cada grupo, sin nada marcado pasa todo. Q lo cierra y 1 lo limpia. Falta el filtro por efecto (hasta 3): el juego lo arma con `AttachEffectFilterParam`, `AttachEffectFilterCategoryParam` y `AttachEffectFilterSubCategoryParam`, y cada efecto apunta a su entrada con `AttachEffectParam.attachFilterParamId`.
+
+### Teclado y mouse del juego bloqueados con la forja abierta ✔ (2026-11-05)
+
+- El juego lee teclado y mouse con **DirectInput 8** (`DirectInput8Create` en el ejecutable), no con mensajes de ventana: el filtro de mensajes de hudhook no alcanzaba y las teclas de la forja también le llegaban a Relic Rites (el 4 abría su filtro; el 2 y el 3 marcan favoritas y guardan presets).
+- `input_block.rs` crea un teclado propio para conseguir la vtable de los dispositivos de `dinput8.dll` (la comparten todos, también los del juego) y reemplaza `GetDeviceState` (9) y `GetDeviceData` (10), en la variante ANSI y la Unicode. Con la forja abierta llaman al original y después devuelven "nada apretado" y "sin eventos". Al cerrar sigue bloqueando hasta que se suelten todas las teclas (o 1,5 s), para que la Q con la que se cierra no le llegue al juego.
+- Probado: con la forja abierta Relic Rites no se mueve con ninguna tecla, y Q vuelve a Relic Rites sin cerrarlo.
+
 ### Íconos del juego ✔ (2026-11-05)
 
 - Cada efecto tiene su ícono en `AttachEffectParam.statusIconId` (offset 0x28; 65 distintos): `MENU_StatusIcon_<id>`, 80x80. Cada reliquia, en `EquipParamAntique.iconId` (offset 0x1C): `MENU_ItemIcon_<id>`, 160x160. La imagen de la reliquia ya muestra el color, el tamaño (cristal o nido chico, mediano o grande) y si es Deep (espinas azules), así que no hacen falta marcas propias.

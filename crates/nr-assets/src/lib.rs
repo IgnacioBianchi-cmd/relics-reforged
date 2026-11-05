@@ -516,41 +516,51 @@ pub fn load_menu_icons(game: &Path, wanted: &[String]) -> Result<IconAtlas> {
     let tpf = files.read_dcx("/menu/01_common_h.tpf.dcx")?;
     let textures = tpf_textures(&tpf)?;
 
-    // Acomoda los íconos en filas de un atlas de 2048 de ancho.
+    // Acomoda los íconos en filas de un atlas de 2048 de ancho. Los más grandes que `MAX_SIDE`
+    // (fondos y líneas de los paneles) se achican a la mitad las veces que haga falta.
     const WIDTH: u32 = 2048;
-    let mut found: Vec<(&String, &Sprite)> = wanted
+    const MAX_SIDE: u32 = 1024;
+    let mut found: Vec<(&String, &Sprite, u32)> = wanted
         .iter()
         .filter_map(|n| sprites.get(n).map(|s| (n, s)))
+        .map(|(n, s)| {
+            let mut div = 1;
+            while s.w / div > MAX_SIDE || s.h / div > MAX_SIDE {
+                div *= 2;
+            }
+            (n, s, div)
+        })
         .collect();
-    found.sort_by(|a, b| b.1.h.cmp(&a.1.h).then(a.0.cmp(b.0)));
+    found.sort_by(|a, b| (b.1.h / b.2).cmp(&(a.1.h / a.2)).then(a.0.cmp(b.0)));
     found.dedup_by(|a, b| a.0 == b.0);
     let (mut cx, mut cy, mut row_h) = (0u32, 0u32, 0u32);
     let mut placed = Vec::with_capacity(found.len());
-    for (name, s) in found {
-        if cx + s.w > WIDTH {
+    for (name, s, div) in found {
+        let (w, h) = (s.w / div, s.h / div);
+        if cx + w > WIDTH {
             cx = 0;
             cy += row_h;
             row_h = 0;
         }
-        placed.push((name.clone(), s, cx, cy));
-        cx += s.w;
-        row_h = row_h.max(s.h);
+        placed.push((name.clone(), s, div, cx, cy));
+        cx += w;
+        row_h = row_h.max(h);
     }
     let height = (cy + row_h).max(4);
     let mut rgba = vec![0u8; (WIDTH * height * 4) as usize];
     let mut rects = HashMap::new();
-    for (name, s, px, py) in placed {
+    for (name, s, div, px, py) in placed {
         let Some(dds) = textures.get(&s.atlas) else {
             continue;
         };
-        let pixels = decode_bc7_crop(dds, s.x, s.y, s.w, s.h)?;
-        for row in 0..s.h {
-            let src = (row * s.w * 4) as usize;
+        let pixels = shrink(&decode_bc7_crop(dds, s.x, s.y, s.w, s.h)?, s.w, s.h, div);
+        let (w, h) = (s.w / div, s.h / div);
+        for row in 0..h {
+            let src = (row * w * 4) as usize;
             let dst = (((py + row) * WIDTH + px) * 4) as usize;
-            rgba[dst..dst + (s.w * 4) as usize]
-                .copy_from_slice(&pixels[src..src + (s.w * 4) as usize]);
+            rgba[dst..dst + (w * 4) as usize].copy_from_slice(&pixels[src..src + (w * 4) as usize]);
         }
-        rects.insert(name, [px, py, s.w, s.h]);
+        rects.insert(name, [px, py, w, h]);
     }
     Ok(IconAtlas {
         width: WIDTH,
@@ -558,6 +568,37 @@ pub fn load_menu_icons(game: &Path, wanted: &[String]) -> Result<IconAtlas> {
         rgba,
         rects,
     })
+}
+
+/// Achica una imagen RGBA `div` veces promediando bloques de `div`x`div` (con el color
+/// premultiplicado por el alfa, para que los bordes transparentes no se oscurezcan).
+fn shrink(rgba: &[u8], w: u32, h: u32, div: u32) -> Vec<u8> {
+    if div == 1 {
+        return rgba.to_vec();
+    }
+    let (nw, nh) = (w / div, h / div);
+    let mut out = Vec::with_capacity((nw * nh * 4) as usize);
+    for y in 0..nh {
+        for x in 0..nw {
+            let mut sum = [0u32; 4];
+            for dy in 0..div {
+                for dx in 0..div {
+                    let i = (((y * div + dy) * w + x * div + dx) * 4) as usize;
+                    let a = rgba[i + 3] as u32;
+                    for c in 0..3 {
+                        sum[c] += rgba[i + c] as u32 * a;
+                    }
+                    sum[3] += a;
+                }
+            }
+            let a = sum[3];
+            for c in sum.iter().take(3) {
+                out.push(c.checked_div(a).unwrap_or(0) as u8);
+            }
+            out.push((a / (div * div)) as u8);
+        }
+    }
+    out
 }
 
 #[cfg(test)]

@@ -57,7 +57,7 @@ pub fn install(base: usize) -> Result<(), String> {
         t.extend_from_slice(&[0x48, 0xB8]); // mov rax, método original
         t.extend_from_slice(&(original as u64).to_le_bytes());
         t.extend_from_slice(&[0xFF, 0xE0]); // jmp rax
-        // SAFETY: memoria nuestra, recién reservada, con lugar para todos los ganchos.
+                                            // SAFETY: memoria nuestra, recién reservada, con lugar para todos los ganchos.
         unsafe {
             std::ptr::copy_nonoverlapping(t.as_ptr(), (code + i * THUNK) as *mut u8, t.len())
         };

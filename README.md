@@ -22,6 +22,8 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Menú dentro del juego (F7 en Relic Rites, ImGui con hudhook, a pantalla completa y con el estilo del juego) | ✔ probado: forja desde el menú guardada en el save |
 | Íconos del juego (reliquias, efectos y teclas), leídos de los `data*.bdt` instalados | ✔ probado en el juego |
 | Botón "F7 :Forge relics" en la barra de controles de Relic Rites | ✔ probado en inglés (en otro idioma va arriba a la derecha) |
+| Teclado y mouse del juego bloqueados con la forja abierta (DirectInput) | ✔ probado en el juego |
+| Búsqueda, filtro como el del juego (color, tamaño, tipo, favoritas) y orden | ✔ probado; falta el filtro por efecto |
 | Params desde `regulation.bin` y nombres desde los textos del juego (sin CSV) | ✔ probado en el juego |
 | Solo en la Roundtable (con Relic Rites abierto) | ✔ probado en el juego |
 | Seamless Co-op | pendiente |
@@ -61,7 +63,7 @@ cargo build --release -p relics-reforged
 
 Después, doble clic en `me3/relics-reforged-dev.me3`. El log queda en `target/release/relics_reforged.log`.
 
-El menú y sus mensajes salen en inglés o en español según el idioma del juego (por defecto, inglés; ver `relic_rules::lang`). En el juego, con **Relic Rites** abierto en la Roundtable, **F7** (o un clic en "F7 :Forge relics") abre el menú a pantalla completa: a la izquierda receptora y efecto a reemplazar, donante y efecto a transferir, 3 sacrificios, vista previa y forja (con doble confirmación); a la derecha, la lista de reliquias del paso actual, con la imagen de cada reliquia y el ícono de cada efecto. F7 o Esc vuelven a Relic Rites. Para pruebas sin menú está el archivo de comandos (`crates/relics-reforged/src/commands.rs`).
+El menú y sus mensajes salen en inglés o en español según el idioma del juego (por defecto, inglés; ver `relic_rules::lang`). En el juego, con **Relic Rites** abierto en la Roundtable, **F7** (o un clic en "F7 :Forge relics") abre el menú a pantalla completa: a la izquierda receptora y efecto a reemplazar, donante y efecto a transferir, 3 sacrificios, vista previa y forja (con doble confirmación); a la derecha, la lista de reliquias del paso actual, con la imagen de cada reliquia y el ícono de cada efecto. Q (o F7, o Esc) vuelve a Relic Rites; R refresca y C empieza de nuevo. Arriba de la lista: búsqueda, 4 abre el filtro (en el panel izquierdo) y 5 cambia el orden. Con la forja abierta, el juego no recibe teclado ni mouse. Para pruebas sin menú está el archivo de comandos (`crates/relics-reforged/src/commands.rs`).
 
 ## Reglas de balance (por defecto)
 

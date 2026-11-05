@@ -8,6 +8,7 @@
 mod commands;
 mod forge;
 mod game;
+mod input_block;
 mod mainthread;
 mod msg;
 mod profiler;
@@ -118,6 +119,12 @@ fn run(module: usize) {
         }
     };
     log.line(&format!("nightreign.exe en {base:#X}, versión soportada"));
+    match input_block::install() {
+        Ok(()) => log.line("Bloqueo de teclado y mouse del juego instalado (DirectInput 8)"),
+        Err(e) => log.line(&format!(
+            "ERROR: no pude instalar el bloqueo de teclado y mouse: {e}"
+        )),
+    }
     match relic_menu::install(base) {
         Ok(()) => log.line("Detección de Relic Rites instalada (vtable de AntiqueEquipDialog)"),
         Err(e) => log.line(&format!(

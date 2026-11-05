@@ -51,7 +51,20 @@ pub fn start(module: usize, game: Game, data: Arc<GameData>, dll_dir: PathBuf) {
 
 /// Glifo de la tecla F7 en el atlas del juego (mismo estilo que F1/F2 en Relic Rites).
 const KEY_ICON: &str = "KG_Key_F7";
-const ESC_ICON: &str = "KG_Key_Esc";
+/// Fondo de panel con bordes difuminados y la línea blanca con brillo de arriba de los paneles
+/// de Relic Rites; una línea fina para separar secciones.
+const PANEL_BG: &str = "MENU_In_bg_05";
+const PANEL_LINE: &str = "MENU_In_Line_02";
+const SEP_LINE: &str = "MENU_In_Line_00";
+/// Teclas de los controles propios: (glifo, tecla, tecla de ImGui).
+const KEY_BACK: (&str, &str, Key) = ("KG_Key_Q", "Q", Key::Q);
+const KEY_REFRESH: (&str, &str, Key) = ("KG_Key_R", "R", Key::R);
+const KEY_CLEAR: (&str, &str, Key) = ("KG_Key_C", "C", Key::C);
+const KEY_FILTER: (&str, &str, Key) = ("KG_Key_4", "4", Key::Alpha4);
+const KEY_SORT: (&str, &str, Key) = ("KG_Key_5", "5", Key::Alpha5);
+const KEY_RESET: (&str, &str, Key) = ("KG_Key_1", "1", Key::Alpha1);
+/// Texto de los controles: un blanco apagado, como el del juego.
+const PROMPT_TEXT: [f32; 4] = [0.74, 0.74, 0.72, 1.0];
 
 fn status_icon(id: i32) -> String {
     format!("MENU_StatusIcon_{id}")
@@ -75,7 +88,21 @@ fn load_icons(data: &GameData, out: Arc<Mutex<Option<IconAtlas>>>) {
                 .filter(|t| t.icon_id >= 0)
                 .map(|t| item_icon(t.icon_id)),
         )
-        .chain([KEY_ICON.to_string(), ESC_ICON.to_string()])
+        .chain(
+            [
+                KEY_ICON,
+                PANEL_BG,
+                PANEL_LINE,
+                SEP_LINE,
+                KEY_BACK.0,
+                KEY_REFRESH.0,
+                KEY_CLEAR.0,
+                KEY_FILTER.0,
+                KEY_SORT.0,
+                KEY_RESET.0,
+            ]
+            .map(String::from),
+        )
         .collect();
     wanted.sort();
     wanted.dedup();
@@ -159,6 +186,9 @@ struct RelicView {
     forged: Vec<bool>,
     /// Por qué no se puede donar ni sacrificar (favorita, equipada, preset, recipiente).
     locked: Option<String>,
+    /// Orden en que se encontró (el del inventario del juego); `u32::MAX` si no se sabe.
+    order: u32,
+    favorite: bool,
 }
 
 impl RelicView {
@@ -199,9 +229,10 @@ fn key_prompt(
     let text = if ui.is_item_hovered() {
         GOLD
     } else {
-        [0.90, 0.90, 0.88, 1.0]
+        PROMPT_TEXT
     };
-    let shadow = [0.0, 0.0, 0.0, 0.8];
+    // Sombra difusa alrededor del texto (varias copias corridas), como los controles del juego.
+    let shadow = [0.0, 0.0, 0.0, 0.16];
     let label_at = [p[0] + box_w + gap, p[1] + (box_h - label_size[1]) * 0.5];
     let mut texts = vec![(label_at, label.as_str())];
     if !glyph.is_some_and(|i| i.draw(ui, key_icon, p, [box_w, box_h])) {
@@ -218,7 +249,21 @@ fn key_prompt(
     }
     let draw = ui.get_window_draw_list();
     for (at, t) in texts {
-        draw.add_text([at[0] + 1.0 * s, at[1] + 1.0 * s], shadow, t);
+        // Un anillo de copias oscuras a 1 y 2,5 px: un halo, no un borde marcado.
+        for r in [1.0, 2.5] {
+            for (dx, dy) in [
+                (1.0, 0.0),
+                (0.7, 0.7),
+                (0.0, 1.0),
+                (-0.7, 0.7),
+                (-1.0, 0.0),
+                (-0.7, -0.7),
+                (0.0, -1.0),
+                (0.7, -0.7),
+            ] {
+                draw.add_text([at[0] + dx * r * s, at[1] + dy * r * s], shadow, t);
+            }
+        }
         draw.add_text(at, text, t);
     }
     clicked
@@ -334,6 +379,78 @@ unsafe impl Sync for TitleFont {}
 
 type SelectionKey = (u32, usize, u32, usize, [u32; 3]);
 
+/// Filtro de la lista, como el de Relic Rites: se marca lo que se quiere ver. En cada grupo, sin
+/// nada marcado no se filtra; con algo marcado, solo pasa lo marcado.
+#[derive(Clone, Copy, PartialEq, Default)]
+struct Filters {
+    favorites: bool,
+    /// Por `relicColor`: rojo (Burning), azul (Drizzly), amarillo (Luminous), verde (Tranquil).
+    colors: [bool; 4],
+    /// Chica, mediana, grande.
+    sizes: [bool; 3],
+    /// Reliquia normal, reliquia de las profundidades (Deep).
+    kinds: [bool; 2],
+}
+
+/// ¿Pasa por un grupo del filtro? Sin nada marcado, todo pasa.
+fn passes(group: &[bool], index: Option<usize>) -> bool {
+    !group.iter().any(|b| *b) || index.and_then(|i| group.get(i)).copied().unwrap_or(false)
+}
+
+impl Filters {
+    /// Cuántas opciones están marcadas.
+    fn active(&self) -> usize {
+        let on = |v: &[bool]| v.iter().filter(|b| **b).count();
+        self.favorites as usize + on(&self.colors) + on(&self.sizes) + on(&self.kinds)
+    }
+
+    fn accepts(&self, r: &RelicView) -> bool {
+        (!self.favorites || r.favorite)
+            && passes(&self.colors, Some(r.color as usize))
+            && passes(&self.sizes, r.size.map(|n| n.wrapping_sub(1)))
+            && passes(&self.kinds, Some(r.deep as usize))
+    }
+}
+
+/// Orden de la lista.
+#[derive(Clone, Copy, PartialEq)]
+enum SortBy {
+    Found,
+    Name,
+    Color,
+    Size,
+}
+
+impl SortBy {
+    fn label(self) -> &'static str {
+        match self {
+            SortBy::Found => tr("orden encontrado", "order found"),
+            SortBy::Name => tr("nombre", "name"),
+            SortBy::Color => tr("color", "color"),
+            SortBy::Size => tr("tamaño", "size"),
+        }
+    }
+
+    fn next(self) -> SortBy {
+        match self {
+            SortBy::Found => SortBy::Name,
+            SortBy::Name => SortBy::Color,
+            SortBy::Color => SortBy::Size,
+            SortBy::Size => SortBy::Found,
+        }
+    }
+
+    fn sort(self, list: &mut [&RelicView]) {
+        match self {
+            SortBy::Found => list.sort_by_key(|r| (r.order, r.handle)),
+            SortBy::Name => list.sort_by(|a, b| a.name.cmp(&b.name).then(a.order.cmp(&b.order))),
+            SortBy::Color => list.sort_by_key(|r| (r.color, r.order)),
+            // Las grandes primero.
+            SortBy::Size => list.sort_by_key(|r| (std::cmp::Reverse(r.size), r.order)),
+        }
+    }
+}
+
 struct Menu {
     visible: AtomicBool,
     game: Game,
@@ -353,6 +470,10 @@ struct Menu {
     /// Atlas leído del juego, esperando que el hilo de render lo suba a la GPU.
     pending_icons: Arc<Mutex<Option<IconAtlas>>>,
     icons: Option<Icons>,
+    filters: Filters,
+    sort: SortBy,
+    /// El panel izquierdo muestra el filtro en vez de la selección (tecla 4).
+    show_filters: bool,
 }
 
 impl Menu {
@@ -374,6 +495,9 @@ impl Menu {
             prompt_font: None,
             pending_icons: Arc::default(),
             icons: None,
+            filters: Filters::default(),
+            sort: SortBy::Found,
+            show_filters: false,
         }
     }
 
@@ -516,12 +640,12 @@ impl Menu {
         bg.add_rect_filled_multicolor(
             [0.0, top],
             [w, h],
-            [0.05, 0.06, 0.10, 0.97],
-            [0.05, 0.06, 0.10, 0.97],
-            [0.02, 0.03, 0.05, 0.98],
-            [0.02, 0.03, 0.05, 0.98],
+            [0.05, 0.06, 0.10, 0.86],
+            [0.05, 0.06, 0.10, 0.86],
+            [0.02, 0.03, 0.05, 0.90],
+            [0.02, 0.03, 0.05, 0.90],
         );
-        bg.add_line([0.0, top], [w, top], [0.45, 0.40, 0.28, 0.55])
+        bg.add_line([0.0, top], [w, top], [0.80, 0.82, 0.90, 0.18])
             .thickness(1.0)
             .build();
         // Título de la sección al lado de "Relic Rites".
@@ -555,15 +679,77 @@ impl Menu {
                 let _f = self.prompt_font.map(|f| ui.push_font(f.0));
                 ui.set_window_font_scale(s);
                 ui.set_cursor_screen_pos([48.0 * s, h - 80.0 * s]);
-                let icons = self.icons.as_ref();
-                close |= key_prompt(ui, icons, KEY_ICON, TOGGLE_KEY_NAME, tr("Volver", "Back"), s);
-                ui.same_line_with_spacing(0.0, 14.0 * s);
-                close |= key_prompt(ui, icons, ESC_ICON, "Esc", tr("Volver", "Back"), s);
+                // Un solo "volver": F7 y Esc hacen lo mismo que Q, pero no se muestran. Con el filtro
+                // abierto, Q lo cierra y 1 lo limpia (como en Relic Rites).
+                let (mut back, mut refresh, mut clear, mut reset) = (false, false, false, false);
+                {
+                    let icons = self.icons.as_ref();
+                    let (g, k, _) = KEY_BACK;
+                    if self.show_filters {
+                        back |= key_prompt(ui, icons, g, k, tr("Volver", "Back"), s);
+                        ui.same_line_with_spacing(0.0, 14.0 * s);
+                        let (g, k, _) = KEY_RESET;
+                        reset |= key_prompt(ui, icons, g, k, tr("Limpiar", "Reset"), s);
+                    } else {
+                        back |= key_prompt(
+                            ui,
+                            icons,
+                            g,
+                            k,
+                            tr("Volver a Relic Rites", "Back to Relic Rites"),
+                            s,
+                        );
+                        ui.same_line_with_spacing(0.0, 14.0 * s);
+                        let (g, k, _) = KEY_REFRESH;
+                        refresh |= key_prompt(ui, icons, g, k, tr("Refrescar", "Refresh"), s);
+                        ui.same_line_with_spacing(0.0, 14.0 * s);
+                        let (g, k, _) = KEY_CLEAR;
+                        clear |=
+                            key_prompt(ui, icons, g, k, tr("Empezar de nuevo", "Start over"), s);
+                    }
+                }
                 ui.set_window_font_scale(1.0);
+                if back {
+                    if self.show_filters {
+                        self.show_filters = false;
+                    } else {
+                        close = true;
+                    }
+                }
+                if refresh {
+                    self.refresh();
+                }
+                if clear {
+                    self.reset_selection();
+                }
+                if reset {
+                    self.filters = Filters::default();
+                }
             });
-        // Esc también vuelve (salvo que se esté escribiendo en el filtro: ahí lo usa ImGui).
-        if ui.is_key_pressed(Key::Escape) && !ui.io().want_text_input {
-            close = true;
+        // Teclas (no mientras se escribe en el filtro: ahí las usa ImGui).
+        if !ui.io().want_text_input {
+            if ui.is_key_pressed(Key::Escape) || ui.is_key_pressed(KEY_BACK.2) {
+                if self.show_filters {
+                    self.show_filters = false;
+                } else {
+                    close = true;
+                }
+            }
+            if self.show_filters && ui.is_key_pressed(KEY_RESET.2) {
+                self.filters = Filters::default();
+            }
+            if !self.show_filters && ui.is_key_pressed(KEY_REFRESH.2) {
+                self.refresh();
+            }
+            if !self.show_filters && ui.is_key_pressed(KEY_CLEAR.2) {
+                self.reset_selection();
+            }
+            if ui.is_key_pressed(KEY_FILTER.2) {
+                self.show_filters = !self.show_filters;
+            }
+            if ui.is_key_pressed(KEY_SORT.2) {
+                self.sort = self.sort.next();
+            }
         }
         if close {
             self.visible.store(false, Ordering::Relaxed);
@@ -575,7 +761,18 @@ impl Menu {
         let _f = self.title_font.map(|f| ui.push_font(f.0));
         ui.text_colored(GOLD, title);
         drop(_f);
-        ui.separator();
+        // Línea fina del juego en vez del separador de ImGui.
+        let p = ui.cursor_screen_pos();
+        let w = ui.content_region_avail()[0];
+        if self
+            .icons
+            .as_ref()
+            .is_some_and(|i| i.draw(ui, SEP_LINE, [p[0], p[1] + 1.0], [w, 3.0]))
+        {
+            ui.dummy([w, 8.0]);
+        } else {
+            ui.separator();
+        }
     }
 
     fn draw_contents(&mut self, ui: &Ui) {
@@ -594,26 +791,49 @@ impl Menu {
         };
         let by_handle: HashMap<u32, &RelicView> = relics.iter().map(|r| (r.handle, r)).collect();
 
-        // Encabezado: murk, cantidad, botones y filtro.
+        // Columnas, como Relic Rites: la selección a la izquierda y la lista a la derecha.
+        let [x0, y0] = ui.cursor_screen_pos();
+        let avail = ui.content_region_avail();
+        let gap = 24.0;
+        let left_w = (avail[0] * 0.42).max(340.0);
+        let right_x = x0 + left_w + gap;
+        let right_w = avail[0] - left_w - gap;
+
+        // Encabezado izquierdo: murk y cantidad.
         ui.text_colored(GOLD, format!("Murk  {murk}"));
         ui.same_line_with_spacing(0.0, 28.0);
         ui.text_disabled(format!("{}: {}", tr("Reliquias", "Relics"), relics.len()));
-        ui.same_line_with_spacing(0.0, 28.0);
-        if ui.button(tr("Refrescar", "Refresh")) {
-            self.refresh();
-        }
+        // Encabezado derecho, arriba de la lista (como el de la grilla del juego): texto a
+        // buscar, filtros (4) y orden (5).
         ui.same_line();
-        if ui.button(tr("Empezar de nuevo", "Start over")) {
-            self.reset_selection();
-        }
-        ui.same_line_with_spacing(0.0, 28.0);
-        ui.set_next_item_width(-1.0);
+        ui.set_cursor_screen_pos([right_x, y0]);
+        ui.set_next_item_width(right_w * 0.42);
         ui.input_text("##filtro", &mut self.filter)
-            .hint(tr(
-                "Filtrar por nombre o efecto",
-                "Filter by name or effect",
-            ))
+            .hint(tr("Buscar por nombre o efecto", "Search by name or effect"))
             .build();
+        let n = self.filters.active();
+        let filter_label = match n {
+            0 => tr("Filtrar", "Filter").to_string(),
+            n => format!("{} ({n})", tr("Filtrar", "Filter")),
+        };
+        let sort_label = format!("{}: {}", tr("Orden", "Sort"), self.sort.label());
+        let (mut open, mut next) = (false, false);
+        {
+            let icons = self.icons.as_ref();
+            ui.same_line_with_spacing(0.0, 20.0);
+            let (g, k, _) = KEY_FILTER;
+            open |= key_prompt(ui, icons, g, k, &filter_label, 1.0);
+            ui.same_line_with_spacing(0.0, 20.0);
+            let (g, k, _) = KEY_SORT;
+            next |= key_prompt(ui, icons, g, k, &sort_label, 1.0);
+        }
+        if open {
+            self.show_filters = !self.show_filters;
+        }
+        if next {
+            self.sort = self.sort.next();
+        }
+
         if loading {
             hint(ui, tr("Leyendo reliquias...", "Reading relics..."));
         }
@@ -635,19 +855,30 @@ impl Menu {
         if forging {
             ui.text_colored(GOLD, tr("Forjando...", "Forging..."));
         }
-        ui.spacing();
+        ui.dummy([0.0, 6.0]);
 
-        // Dos columnas, como Relic Rites: la selección a la izquierda y la lista a la derecha.
-        let avail = ui.content_region_avail();
-        let left_w = (avail[0] * 0.42).max(340.0);
+        // Paneles: el marco se dibuja atrás y el contenido va en ventanas hijas transparentes,
+        // con margen para que los títulos no queden pegados al borde.
+        let [px, py] = ui.cursor_screen_pos();
+        let panel_h = ui.content_region_avail()[1];
+        self.panel_frame(ui, [px, py], [px + left_w, py + panel_h]);
+        self.panel_frame(ui, [right_x, py], [right_x + right_w, py + panel_h]);
+        let _bg = ui.push_style_color(imgui::StyleColor::ChildBg, [0.0, 0.0, 0.0, 0.0]);
+        let _pad = ui.push_style_var(imgui::StyleVar::WindowPadding([20.0, 16.0]));
         ui.child_window("izquierda")
-            .size([left_w, 0.0])
-            .border(true)
-            .build(|| self.draw_left(ui, &by_handle, preview.as_ref(), preview_busy, forging));
-        ui.same_line_with_spacing(0.0, 24.0);
+            .size([left_w, panel_h])
+            .always_use_window_padding(true)
+            .build(|| {
+                if self.show_filters {
+                    self.draw_filters(ui);
+                } else {
+                    self.draw_left(ui, &by_handle, preview.as_ref(), preview_busy, forging);
+                }
+            });
+        ui.same_line_with_spacing(0.0, gap);
         ui.child_window("derecha")
-            .size([0.0, 0.0])
-            .border(true)
+            .size([right_w, panel_h])
+            .always_use_window_padding(true)
             .build(|| self.draw_right(ui, &relics));
     }
 
@@ -805,7 +1036,11 @@ impl Menu {
                 for line in msg.lines() {
                     match line.strip_prefix(EFFECT_LINE) {
                         Some(e) => {
-                            let color = if Some(&e.to_string()) == moved { GOLD } else { text };
+                            let color = if Some(&e.to_string()) == moved {
+                                GOLD
+                            } else {
+                                text
+                            };
                             self.effect_line(ui, icon_of.get(e).copied(), color, e);
                         }
                         None => ui.text_wrapped(line),
@@ -858,6 +1093,8 @@ impl Menu {
                 .iter()
                 .filter(|r| r.size.is_some() && self.matches_filter(r))
                 .collect();
+            let mut list = list;
+            self.sort.sort(&mut list);
             if let Some(h) = self.relic_list(ui, "receptoras", &list, &HashSet::new(), true) {
                 self.target = Some(h);
                 self.target_slot = 0;
@@ -883,6 +1120,8 @@ impl Menu {
                         && self.matches_filter(r)
                 })
                 .collect();
+            let mut list = list;
+            self.sort.sort(&mut list);
             if let Some(h) = self.relic_list(ui, "donantes", &list, &HashSet::new(), false) {
                 self.donor = Some(h);
                 self.donor_slot = 0;
@@ -908,6 +1147,8 @@ impl Menu {
                     && (chosen.contains(&r.handle) || self.matches_filter(r))
             })
             .collect();
+        let mut list = list;
+        self.sort.sort(&mut list);
         if let Some(h) = self.relic_list(ui, "sacrificios", &list, &chosen, false) {
             if let Some(pos) = self.sacrifices.iter().position(|&x| x == h) {
                 self.sacrifices.remove(pos);
@@ -920,7 +1161,96 @@ impl Menu {
 
     fn matches_filter(&self, r: &RelicView) -> bool {
         let f = self.filter.trim().to_lowercase();
-        f.is_empty() || r.label().to_lowercase().contains(&f)
+        self.filters.accepts(r) && (f.is_empty() || r.label().to_lowercase().contains(&f))
+    }
+
+    /// Subtítulo dentro de un panel (como "Characteristics" en el filtro del juego).
+    fn subsection(&self, ui: &Ui, title: &str) {
+        ui.spacing();
+        ui.text_colored([0.78, 0.80, 0.88, 1.0], title);
+        let p = ui.cursor_screen_pos();
+        let w = ui.content_region_avail()[0];
+        if !self
+            .icons
+            .as_ref()
+            .is_some_and(|i| i.draw(ui, SEP_LINE, [p[0], p[1]], [w, 2.0]))
+        {
+            ui.separator();
+        }
+        ui.dummy([w, 4.0]);
+    }
+
+    /// El filtro ocupa el panel izquierdo (tecla 4), como en Relic Rites.
+    fn draw_filters(&mut self, ui: &Ui) {
+        self.section(ui, tr("Filtro", "Filter"));
+        hint(
+            ui,
+            tr(
+                "Marcá lo que querés ver. En cada grupo, sin nada marcado se muestra todo.",
+                "Check what you want to see. In each group, with nothing checked everything is shown.",
+            ),
+        );
+        ui.spacing();
+        ui.checkbox(tr("Favoritas", "Favorites"), &mut self.filters.favorites);
+        self.subsection(ui, tr("Características", "Characteristics"));
+        let colors = [
+            tr("Roja", "Red"),
+            tr("Azul", "Blue"),
+            tr("Amarilla", "Yellow"),
+            tr("Verde", "Green"),
+        ];
+        for (i, name) in colors.iter().enumerate() {
+            ui.checkbox(name, &mut self.filters.colors[i]);
+        }
+        self.subsection(ui, tr("Tamaño", "Size"));
+        let sizes = [
+            tr("Chica", "Small"),
+            tr("Mediana", "Medium"),
+            tr("Grande", "Large"),
+        ];
+        for (i, name) in sizes.iter().enumerate() {
+            ui.checkbox(name, &mut self.filters.sizes[i]);
+        }
+        self.subsection(ui, tr("Tipo", "Type"));
+        ui.checkbox(tr("Reliquia", "Relic"), &mut self.filters.kinds[0]);
+        ui.checkbox(
+            tr("Reliquia de las profundidades", "Depths Relic"),
+            &mut self.filters.kinds[1],
+        );
+    }
+
+    /// Panel al estilo de Relic Rites: fondo oscuro difuminado y la línea blanca con brillo
+    /// arriba (sprites del juego; si no están, un fondo y una línea simples).
+    fn panel_frame(&self, ui: &Ui, min: [f32; 2], max: [f32; 2]) {
+        let (w, h) = (max[0] - min[0], max[1] - min[1]);
+        let icons = self.icons.as_ref();
+        // El fondo tiene los bordes difuminados: se agranda para que la parte pareja cubra
+        // el panel.
+        let (ex, ey) = (w * 0.06, h * 0.06);
+        // Base pareja: tapa Relic Rites, que sigue dibujándose detrás.
+        ui.get_window_draw_list()
+            .add_rect(min, max, [0.02, 0.03, 0.05, 0.62])
+            .filled(true)
+            .build();
+        if !icons.is_some_and(|i| {
+            i.draw(
+                ui,
+                PANEL_BG,
+                [min[0] - ex, min[1] - ey],
+                [w + ex * 2.0, h + ey * 2.0],
+            )
+        }) {
+            ui.get_window_draw_list()
+                .add_rect(min, max, [0.03, 0.04, 0.07, 0.55])
+                .filled(true)
+                .build();
+        }
+        let line_h = (w / icons.map_or(1.0, |i| i.aspect(PANEL_LINE))).min(56.0);
+        if !icons.is_some_and(|i| i.draw(ui, PANEL_LINE, [min[0], min[1] - 2.0], [w, line_h])) {
+            ui.get_window_draw_list()
+                .add_line(min, [max[0], min[1]], [0.80, 0.82, 0.90, 0.35])
+                .build();
+        }
     }
 
     /// Un efecto de la vista previa: su ícono (si hay) y el texto, que baja de línea si no entra.
@@ -966,7 +1296,11 @@ impl Menu {
                 let icons = self.icons.as_ref();
                 let relic_icon = icons.filter(|i| i.has(&item_icon(r.icon)));
                 let pic = if relic_icon.is_some() { 60.0 } else { 0.0 };
-                let name_x = if relic_icon.is_some() { x + pic + 8.0 } else { x + 20.0 };
+                let name_x = if relic_icon.is_some() {
+                    x + pic + 8.0
+                } else {
+                    x + 20.0
+                };
                 let effect_x = if relic_icon.is_some() {
                     name_x + line + 6.0
                 } else {
@@ -984,7 +1318,11 @@ impl Menu {
                     for (j, l) in wrap_text(ui, e, wrap_w).into_iter().enumerate() {
                         // Las continuaciones van un poco más adentro.
                         let indent = if j == 0 { 0.0 } else { 14.0 };
-                        let icon = if j == 0 { r.effect_icons.get(i).copied() } else { None };
+                        let icon = if j == 0 {
+                            r.effect_icons.get(i).copied()
+                        } else {
+                            None
+                        };
                         effect_lines.push((indent, color, l, icon));
                     }
                 }
@@ -999,7 +1337,12 @@ impl Menu {
                     clicked = Some(r.handle);
                 }
                 if let Some(i) = relic_icon {
-                    i.draw(ui, &item_icon(r.icon), [x, y + (row_h - pic) * 0.5], [pic, pic]);
+                    i.draw(
+                        ui,
+                        &item_icon(r.icon),
+                        [x, y + (row_h - pic) * 0.5],
+                        [pic, pic],
+                    );
                 } else {
                     color_mark(ui, [x + 4.0, y + 3.0 + line * 0.5], r.color);
                 }
@@ -1168,6 +1511,7 @@ impl ImguiRenderLoop for Menu {
             if self.visible.swap(false, Ordering::Relaxed) {
                 self.reset_selection();
             }
+            crate::input_block::set_menu_open(false);
             return;
         }
         let hint_clicked = !self.visible.load(Ordering::Relaxed)
@@ -1187,6 +1531,8 @@ impl ImguiRenderLoop for Menu {
         if self.visible.load(Ordering::Relaxed) {
             self.draw(ui);
         }
+        // Con la forja abierta, el juego no recibe teclado ni mouse (ver `input_block`).
+        crate::input_block::set_menu_open(self.visible.load(Ordering::Relaxed));
     }
 
     fn before_render<'a>(
@@ -1198,7 +1544,11 @@ impl ImguiRenderLoop for Menu {
         ctx.io_mut().mouse_draw_cursor = self.visible.load(Ordering::Relaxed);
         // El atlas de íconos llega de otro hilo; se sube a la GPU una sola vez.
         if self.icons.is_none() {
-            let atlas = self.pending_icons.lock().unwrap_or_else(|e| e.into_inner()).take();
+            let atlas = self
+                .pending_icons
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
             if let Some(atlas) = atlas {
                 match render_context.load_texture(&atlas.rgba, atlas.width, atlas.height) {
                     Ok(texture) => {
@@ -1264,9 +1614,11 @@ fn load(
     }
     let registry = forge::ForgedRegistry::load(dir);
     let mut order: HashMap<u32, u32> = HashMap::new();
+    let mut favorites = HashSet::new();
     for (_, entry) in game.inventory_entries() {
         order.insert(entry[0], entry[3]);
         if is_favorite(&entry) {
+            favorites.insert(entry[0]);
             locks
                 .entry(entry[0])
                 .or_default()
@@ -1312,6 +1664,8 @@ fn load(
                 effects,
                 effect_icons,
                 locked: locks.get(&r.handle).map(|p| p.join(", ")),
+                order: order.get(&r.handle).copied().unwrap_or(u32::MAX),
+                favorite: favorites.contains(&r.handle),
             }
         })
         .collect();
@@ -1356,10 +1710,11 @@ pub(crate) fn clean_name(raw: &str) -> String {
 /// Colores oscuros con bordes dorados, parecidos a los menús del juego.
 fn apply_theme(style: &mut imgui::Style) {
     use imgui::StyleColor as C;
-    let gold_line = [0.45, 0.40, 0.28, 0.55];
+    // Líneas blancas apagadas, como los bordes de los menús del juego (antes, doradas).
+    let gold_line = [0.80, 0.82, 0.90, 0.22];
     for (c, v) in [
         (C::WindowBg, [0.06, 0.07, 0.10, 0.94]),
-        (C::ChildBg, [0.08, 0.09, 0.13, 0.70]),
+        (C::ChildBg, [0.0, 0.0, 0.0, 0.0]),
         (C::PopupBg, [0.07, 0.08, 0.11, 0.96]),
         (C::Border, gold_line),
         (C::Separator, gold_line),
