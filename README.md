@@ -27,7 +27,7 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Búsqueda, filtro como el del juego (color, tamaño, tipo, favoritas) y orden | ✔ probado, con filtro por efecto (hasta 3 condiciones, categorías del juego) |
 | Params desde `regulation.bin` y nombres desde los textos del juego (sin CSV) | ✔ probado en el juego |
 | Solo en la Roundtable (con Relic Rites abierto) | ✔ probado en el juego |
-| Seamless Co-op | pendiente |
+| Seamless Co-op (perfil `me3/relics-reforged-seamless.me3`, con `load_early`) | ✔ probado: forja guardada en el save de Seamless |
 
 ## Estructura
 
@@ -75,4 +75,4 @@ Están en `Rules` (`crates/relic-rules/src/transfer.rs`) y se pueden ajustar.
 | Sacrificios por transferencia | 3 (chica = 1 punto, mediana = 2, grande = 3) |
 | Puntos mínimos (receptora de 1 / 2 / 3 efectos) | 3 / 5 / 7 |
 | Murk (receptora de 1 / 2 / 3 efectos) | 2.500 / 5.000 / 10.000, ×2 si es Deep |
-| Efectos forjados por reliquia (1 / 2 / 3 efectos) | 1 / 1 / 2 |
+| Forjas por reliquia (1 / 2 / 3 efectos); cuenta también reforjar un efecto ya forjado | 1 / 1 / 2 |

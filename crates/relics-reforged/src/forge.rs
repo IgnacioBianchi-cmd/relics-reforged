@@ -26,8 +26,8 @@ use crate::mainthread;
 
 pub const FORGED_FILE: &str = "relics_reforged_forjas.txt";
 
-/// Efectos forjados por número de orden de la reliquia.
-pub struct ForgedRegistry(BTreeMap<u32, Vec<EffectId>>);
+/// Por número de orden de la reliquia: (efectos forjados, cantidad de forjas).
+pub struct ForgedRegistry(BTreeMap<u32, (Vec<EffectId>, usize)>);
 
 impl ForgedRegistry {
     pub fn load(dir: &Path) -> ForgedRegistry {
@@ -38,27 +38,43 @@ impl ForgedRegistry {
                 let Some(Ok(key)) = parts.next().map(|k| u32::from_str_radix(k, 16)) else {
                     continue;
                 };
-                let effects: Vec<EffectId> = parts.filter_map(|e| e.parse().ok()).collect();
-                map.insert(key, effects);
+                // "#N" = cantidad de forjas; las líneas viejas no la tienen y se cuentan por
+                // sus efectos.
+                let mut count = None;
+                let mut effects: Vec<EffectId> = Vec::new();
+                for part in parts {
+                    match part.strip_prefix('#') {
+                        Some(n) => count = n.parse().ok(),
+                        None => effects.extend(part.parse::<EffectId>().ok()),
+                    }
+                }
+                let count = count.unwrap_or(effects.len());
+                map.insert(key, (effects, count));
             }
         }
         ForgedRegistry(map)
     }
 
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
-        let mut text = String::from("# orden_de_inventario(hex) efectos_forjados...\n");
-        for (key, effects) in &self.0 {
-            if effects.is_empty() {
+        let mut text =
+            String::from("# orden_de_inventario(hex) efectos_forjados... #cantidad_de_forjas\n");
+        for (key, (effects, count)) in &self.0 {
+            if effects.is_empty() && *count == 0 {
                 continue;
             }
             let list: Vec<String> = effects.iter().map(|e| e.to_string()).collect();
-            text.push_str(&format!("{key:X} {}\n", list.join(" ")));
+            text.push_str(&format!("{key:X} {} #{count}\n", list.join(" ")));
         }
         std::fs::write(dir.join(FORGED_FILE), text)
     }
 
     pub fn get(&self, key: u32) -> &[EffectId] {
-        self.0.get(&key).map_or(&[], |v| v.as_slice())
+        self.0.get(&key).map_or(&[], |v| v.0.as_slice())
+    }
+
+    /// Cuántas veces se forjó la reliquia.
+    pub fn count(&self, key: u32) -> usize {
+        self.0.get(&key).map_or(0, |v| v.1)
     }
 }
 
@@ -176,6 +192,7 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
             target: &relics[1],
             target_slot: target_slot - 1,
             target_forged: registry.get(target_order),
+            target_forge_count: registry.count(target_order),
             sacrifices: &sacrifice_refs,
             available_murk: murk,
         },
@@ -216,25 +233,25 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
         .map_or(tr("La receptora", "The target").to_string(), |t| {
             t.name.clone()
         });
-    let forged_note = |forged: &[EffectId]| {
+    let forged_note = |count: usize| {
         let limit = Rules::default().forge_limit[relics[1].effect_count().clamp(1, 3) - 1];
-        format!("{}/{limit}", forged.len())
+        format!("{count}/{limit}")
     };
     if dry_run {
         let (names, cost, points, note) = (
             names(&plan.new_target),
             plan.murk_cost,
             plan.sacrifice_points,
-            forged_note(&plan.new_target_forged),
+            forged_note(plan.new_target_forge_count),
         );
         return Ok(match lang::get() {
             Lang::Es => format!(
                 "{relic_name} quedaría así:{names}\nCosto: {cost} de murk ({murk} -> {new_murk})\n\
-                 Sacrificios: {points} puntos\nEfectos forjados: {note}{upgrade_note}"
+                 Sacrificios: {points} puntos\nForjas: {note}{upgrade_note}"
             ),
             Lang::En => format!(
                 "{relic_name} would become:{names}\nCost: {cost} murk ({murk} -> {new_murk})\n\
-                 Sacrifices: {points} points\nForged effects: {note}{upgrade_note}"
+                 Sacrifices: {points} points\nForges: {note}{upgrade_note}"
             ),
         });
     }
@@ -342,9 +359,10 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     )?;
     applied?;
 
-    registry
-        .0
-        .insert(target_order, plan.new_target_forged.clone());
+    registry.0.insert(
+        target_order,
+        (plan.new_target_forged.clone(), plan.new_target_forge_count),
+    );
     for s in snaps.iter().filter(|s| s.handle != target) {
         registry.0.remove(&s.order);
     }
@@ -356,17 +374,17 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     let (names, cost, note, ids) = (
         names(&plan.new_target),
         plan.murk_cost,
-        forged_note(&plan.new_target_forged),
+        forged_note(plan.new_target_forge_count),
         &plan.new_target_forged,
     );
     Ok(match lang::get() {
         Lang::Es => format!(
             "Forja hecha: {relic_name} ahora tiene:{names}\nMurk {murk} -> {new_murk} \
-             (costo {cost}). Efectos forjados: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}"
+             (costo {cost}). Forjas: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}"
         ),
         Lang::En => format!(
             "Forge done: {relic_name} now has:{names}\nMurk {murk} -> {new_murk} \
-             (cost {cost}). Forged effects: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}"
+             (cost {cost}). Forges: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}"
         ),
     })
 }

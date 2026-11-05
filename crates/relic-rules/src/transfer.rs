@@ -24,7 +24,8 @@ pub struct Rules {
     pub murk_cost: [u32; 3],
     /// Multiplicador de murk si la receptora es Deep.
     pub deep_murk_multiplier: u32,
-    /// Máximo de efectos forjados según el tamaño de la receptora (1, 2, 3 efectos).
+    /// Máximo de forjas por reliquia según el tamaño de la receptora (1, 2, 3 efectos). Cuenta
+    /// cada forja, también la que pisa un efecto ya forjado.
     pub forge_limit: [usize; 3],
 }
 
@@ -51,6 +52,8 @@ pub struct TransferRequest<'a> {
     pub target_slot: usize,
     /// Efectos de la receptora que ya fueron forjados (los registra el mod, no el juego).
     pub target_forged: &'a [EffectId],
+    /// Cuántas veces ya se forjó la receptora.
+    pub target_forge_count: usize,
     pub sacrifices: &'a [&'a Relic],
     pub available_murk: u32,
 }
@@ -62,6 +65,8 @@ pub struct TransferPlan {
     pub new_target: Relic,
     /// Efectos forjados de la receptora después de la transferencia.
     pub new_target_forged: Vec<EffectId>,
+    /// Forjas de la receptora después de esta.
+    pub new_target_forge_count: usize,
     pub murk_cost: u32,
     /// Puntos que aportan los sacrificios (informativo, para la interfaz).
     pub sacrifice_points: u32,
@@ -277,7 +282,13 @@ pub fn plan_transfer(
         });
     }
 
-    // Límite de forja, contado por ID de efecto (el orden de los slots cambia al normalizar).
+    // Límite de forja: cuántas veces se forjó la reliquia, pise o no un efecto ya forjado.
+    let limit = rules.forge_limit[size - 1];
+    if req.target_forge_count >= limit {
+        return Err(TransferError::ForgeLimitReached { limit });
+    }
+    // Efectos forjados (para marcarlos): los que siguen en la reliquia, menos el pisado, más el
+    // nuevo.
     let present: Vec<EffectId> = req.target.effects().collect();
     let mut forged: Vec<EffectId> = req
         .target_forged
@@ -288,10 +299,6 @@ pub fn plan_transfer(
     forged.push(moved_effect);
     forged.sort_unstable();
     forged.dedup();
-    let limit = rules.forge_limit[size - 1];
-    if forged.len() > limit {
-        return Err(TransferError::ForgeLimitReached { limit });
-    }
 
     // Murk.
     let mut murk_cost = rules.murk_cost[size - 1];
@@ -331,6 +338,7 @@ pub fn plan_transfer(
     Ok(TransferPlan {
         new_target,
         new_target_forged: forged,
+        new_target_forge_count: req.target_forge_count + 1,
         murk_cost,
         sacrifice_points: points,
         upgraded_from,
@@ -421,6 +429,7 @@ mod tests {
             target: &f.target,
             target_slot: 2, // pisa el 16
             target_forged: forged,
+            target_forge_count: forged.len(),
             sacrifices: sacs,
             available_murk: 50_000,
         }
@@ -462,6 +471,7 @@ mod tests {
                 target: &target,
                 target_slot: 0,
                 target_forged: &[],
+                target_forge_count: 0,
                 sacrifices: &sac_refs,
                 available_murk: 50_000,
             },
@@ -492,11 +502,19 @@ mod tests {
             plan_transfer(&data, &Rules::default(), &request(&f, &sacs, &[11, 12])).unwrap_err();
         assert_eq!(err, TransferError::ForgeLimitReached { limit: 2 });
 
-        // Reforjar un slot ya forjado (pisar el 12) sí se puede.
+        // Con 2 forjas tampoco se puede reforjar un efecto ya forjado (pisar el 12): el límite
+        // cuenta forjas, no efectos.
         let mut req = request(&f, &sacs, &[11, 12]);
         req.target_slot = 1;
+        let err = plan_transfer(&data, &Rules::default(), &req).unwrap_err();
+        assert_eq!(err, TransferError::ForgeLimitReached { limit: 2 });
+
+        // Con 1 forja (el 12), reforjar ese mismo slot cuenta como la segunda.
+        let mut req = request(&f, &sacs, &[12]);
+        req.target_slot = 1;
         let plan = plan_transfer(&data, &Rules::default(), &req).unwrap();
-        assert_eq!(plan.new_target_forged, vec![10, 11]);
+        assert_eq!(plan.new_target_forged, vec![10]);
+        assert_eq!(plan.new_target_forge_count, 2);
     }
 
     #[test]
@@ -566,6 +584,7 @@ mod tests {
             target: &target,
             target_slot: 0, // pisa el potenciado 20
             target_forged: &[],
+            target_forge_count: 0,
             sacrifices: &sacs,
             available_murk: 50_000,
         };

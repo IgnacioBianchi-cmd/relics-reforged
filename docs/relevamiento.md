@@ -250,6 +250,13 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - `input_block.rs` crea un teclado propio para conseguir la vtable de los dispositivos de `dinput8.dll` (la comparten todos, también los del juego) y reemplaza `GetDeviceState` (9) y `GetDeviceData` (10), en la variante ANSI y la Unicode. Con la forja abierta llaman al original y después devuelven "nada apretado" y "sin eventos". Al cerrar sigue bloqueando hasta que se suelten todas las teclas (o 1,5 s), para que la Q con la que se cierra no le llegue al juego.
 - Probado: con la forja abierta Relic Rites no se mueve con ninguna tecla, y Q vuelve a Relic Rites sin cerrarlo.
 
+### Seamless Co-op ✔ (2026-11-05)
+
+- Probado con Seamless Co-op 1.1.3 (`nrsc.dll`) y me3: la forja funciona y persiste.
+- Perfil `me3/relics-reforged-seamless.me3`. Seamless necesita **`load_early = true`** en me3; sin eso se cierra con "Method SignIn is not available... make sure seamless co-op is loaded early".
+- Para no tocar ningún save real, la prueba usa una copia de Seamless (`herramientas/seamless-test`, fuera de git) con `save_file_extension = rrtest`. Seamless **no usa** el `savefile` de me3: guarda en `NR0000.<extensión>` (acá `NR0000.rrtest`, armado copiando el save de prueba). La copia de la carpeta del juego queda con `co2` para jugar normal con `nrsc_launcher.exe`.
+- Pendiente: el registro de forjas (`relics_reforged_forjas.txt`) está junto a la DLL y se indexa por número de orden de inventario, no por save: con dos saves (normal y Seamless) las marcas de uno aparecen en el otro.
+
 ### Sonidos de menú del juego ✔ (2026-11-05)
 
 - Audio con **Wwise** (clases `MoWwiseManImp`, `CSSoundImp`, `CSFD4SystemSoundIns`; vtable de esta última en `nr+2CB61E8`, constructor `nr+EE7A90`).

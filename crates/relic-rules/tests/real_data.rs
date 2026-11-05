@@ -297,6 +297,7 @@ fn transferencias_entre_reliquias_reales() {
                         target,
                         target_slot,
                         target_forged: &[],
+                        target_forge_count: 0,
                         sacrifices: &sacs,
                         available_murk: 1_000_000,
                     };

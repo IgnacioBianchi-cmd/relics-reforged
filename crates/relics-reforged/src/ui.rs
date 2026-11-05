@@ -195,6 +195,8 @@ struct RelicView {
     families: Vec<i32>,
     /// Por slot: si ese efecto ya fue forjado por el mod.
     forged: Vec<bool>,
+    /// Cuántas veces se forjó la reliquia.
+    forge_count: usize,
     /// Por qué no se puede donar ni sacrificar (favorita, equipada, preset, recipiente).
     locked: Option<String>,
     /// Orden en que se encontró (el del inventario del juego); `u32::MAX` si no se sabe.
@@ -207,8 +209,16 @@ impl RelicView {
         format!("{}  ·  {}", self.name, self.effects.join("  |  "))
     }
 
+    /// Cuántas veces se forjó (cuenta para el límite, aunque se haya pisado un efecto forjado).
     fn forged_count(&self) -> usize {
-        self.forged.iter().filter(|f| **f).count()
+        self.forge_count
+    }
+
+    /// Ya no se puede forjar como receptora (sí sirve como donante o sacrificio).
+    fn at_forge_limit(&self) -> bool {
+        self.size.is_some_and(|n| {
+            self.forge_count >= relic_rules::Rules::default().forge_limit[n.clamp(1, 3) - 1]
+        })
     }
 }
 
@@ -1302,8 +1312,13 @@ impl Menu {
             self.sort.sort(&mut list);
             if let Some(h) = self.relic_list(ui, "receptoras", &list, &HashSet::new(), true, false)
             {
-                self.target = Some(h);
-                self.target_slot = 0;
+                // Una reliquia que ya llegó al límite de forjas no puede ser receptora.
+                if relics.iter().any(|r| r.handle == h && r.at_forge_limit()) {
+                    crate::sound::error();
+                } else {
+                    self.target = Some(h);
+                    self.target_slot = 0;
+                }
             }
             return;
         }
@@ -1965,6 +1980,12 @@ impl Menu {
                     tag_x += ui.calc_text_size(&tag)[0] + 10.0;
                 }
                 if show_locks {
+                    // En la lista de receptoras: si ya llegó al límite de forjas.
+                    if r.at_forge_limit() {
+                        let tag = format!("[{}]", tr("límite de forjas", "forge limit reached"));
+                        draw.add_text([tag_x, y], RED, &tag);
+                        tag_x += ui.calc_text_size(&tag)[0] + 10.0;
+                    }
                     if let Some(why) = &r.locked {
                         let tag = format!("[{}: {why}]", tr("en uso", "in use"));
                         draw.add_text([tag_x, y], RED, &tag);
@@ -2309,6 +2330,7 @@ fn load(
                 .filter_map(|s| Some(effect_text(data, s.effect?, s.curse)))
                 .collect();
             let forged_ids = order.get(&r.handle).map_or(&[][..], |o| registry.get(*o));
+            let forge_count = order.get(&r.handle).map_or(0, |o| registry.count(*o));
             let forged = relic
                 .slots
                 .iter()
@@ -2334,6 +2356,7 @@ fn load(
                 item_id: r.item_id,
                 effect_ids: relic.slots.iter().filter_map(|s| s.effect).collect(),
                 forged,
+                forge_count,
                 name: kind.map_or("?".into(), |t| t.name.clone()),
                 color: kind.map_or(u8::MAX, |t| t.color),
                 icon: kind.map_or(-1, |t| t.icon_id),

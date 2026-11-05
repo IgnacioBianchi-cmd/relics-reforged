@@ -1,0 +1,20 @@
+profileVersion = "v1"
+
+# Prueba de la forja con Seamless Co-op. Usa la copia de Seamless de herramientas/seamless-test
+# (save_file_extension = rrtest), así no toca ningún save real ni el .co2 de juego normal.
+# Seamless no usa el nombre de `savefile`: guarda en NR0000.<extensión> (acá, NR0000.rrtest, que se
+# armó copiando el save de prueba NR_RelicsReforged.sl2). `savefile` queda por si se carga sin Seamless.
+savefile = "NR_RelicsReforged.sl2"
+
+[[supports]]
+game = "nightreign"
+
+[[natives]]
+path = '../herramientas/seamless-test/SeamlessCoop/nrsc.dll'
+# Seamless tiene que cargarse antes de que arranque el juego (si no: "Method SignIn is not
+# available... make sure seamless co-op is loaded early").
+load_early = true
+
+# DLL compilada en modo release (cargo build --release).
+[[natives]]
+path = '../target/release/relics_reforged.dll'
