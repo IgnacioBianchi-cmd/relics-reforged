@@ -8,7 +8,7 @@ use std::fmt;
 
 use crate::lang::{self, tr, Lang};
 
-use crate::data::{EffectId, GameData};
+use crate::data::{EffectId, GameData, ItemId, TableId};
 use crate::relic::{relic_kind, Relic, RelicKind};
 use crate::validate::{normalize, validate, Violation};
 
@@ -65,6 +65,9 @@ pub struct TransferPlan {
     pub murk_cost: u32,
     /// Puntos que aportan los sacrificios (informativo, para la interfaz).
     pub sacrifice_points: u32,
+    /// Si la receptora pasa a la versión nueva de su tipo (ver [`newer_twin`]): el tipo que
+    /// tenía. El tipo nuevo es `new_target.item_id`.
+    pub upgraded_from: Option<ItemId>,
 }
 
 /// Qué reliquia del pedido tiene el problema.
@@ -302,18 +305,71 @@ pub fn plan_transfer(
         });
     }
 
-    // Resultado: el efecto viaja con su maldición, se reordena y tiene que ser legal.
+    // Resultado: el efecto viaja con su maldición, se reordena y tiene que ser legal. Si no lo
+    // es con el tipo de la receptora pero sí con su versión nueva, la receptora pasa a esa versión
+    // (por ejemplo, un efecto de Scholar en una Grand Luminous Scene anterior a sus tablas nuevas).
     let mut new_target = req.target.clone();
     new_target.slots[req.target_slot] = moved;
     normalize(data, &mut new_target);
-    validate(data, &new_target).map_err(TransferError::ResultInvalid)?;
+    let mut upgraded_from = None;
+    if let Err(v) = validate(data, &new_target) {
+        let mut upgraded = new_target.clone();
+        match newer_twin(data, new_target.item_id) {
+            Some(twin) => {
+                upgraded.item_id = twin;
+                normalize(data, &mut upgraded);
+                if validate(data, &upgraded).is_err() {
+                    return Err(TransferError::ResultInvalid(v));
+                }
+                upgraded_from = Some(new_target.item_id);
+                new_target = upgraded;
+            }
+            None => return Err(TransferError::ResultInvalid(v)),
+        }
+    }
 
     Ok(TransferPlan {
         new_target,
         new_target_forged: forged,
         murk_cost,
         sacrifice_points: points,
+        upgraded_from,
     })
+}
+
+/// La versión nueva de un tipo de reliquia, si la hay: el tipo `item_id + 100`, aleatorio, con el
+/// mismo color, tamaño y si es Deep, y con tablas de efectos y de maldiciones que incluyen todo lo
+/// de las del tipo viejo (así toda reliquia válida del tipo viejo lo sigue siendo).
+///
+/// En Nightreign 1.3.3.0 son las escenas 100-135 → 200-235: mismo nombre, color e ícono, tablas
+/// 100/200/300 → 110/210/310, que suman los efectos de los personajes del DLC (Scholar,
+/// Undertaker). Las reliquias que el jugador tiene de antes de ese cambio son del tipo viejo.
+pub fn newer_twin(data: &GameData, item_id: ItemId) -> Option<ItemId> {
+    let twin = item_id.checked_add(100)?;
+    let (old, new) = (
+        data.relic_types.get(&item_id)?,
+        data.relic_types.get(&twin)?,
+    );
+    let same_kind = matches!(
+        (relic_kind(data, item_id), relic_kind(data, twin)),
+        (RelicKind::Random { deep: a, size: x }, RelicKind::Random { deep: b, size: y })
+            if a == b && x == y
+    );
+    let covers = |a: TableId, b: TableId| -> bool {
+        match (a < 0, b < 0) {
+            (true, true) => true,
+            (false, false) => match (data.tables.get(&a), data.tables.get(&b)) {
+                (Some(old), Some(new)) => old.is_subset(new),
+                _ => false,
+            },
+            _ => false,
+        }
+    };
+    let tables_ok = (0..3).all(|i| {
+        covers(old.slot_tables[i], new.slot_tables[i])
+            && covers(old.curse_tables[i], new.curse_tables[i])
+    });
+    (same_kind && old.color == new.color && tables_ok).then_some(twin)
 }
 
 fn random_kind(data: &GameData, relic: &Relic, role: Role) -> Result<(bool, usize), TransferError> {
@@ -381,6 +437,38 @@ mod tests {
         assert_eq!(plan.new_target_forged, vec![10]);
         assert_eq!(plan.murk_cost, 10_000);
         assert_eq!(plan.sacrifice_points, 7);
+        assert_eq!(validate(&data, &plan.new_target), Ok(()));
+    }
+
+    #[test]
+    fn version_nueva_del_tipo() {
+        let data = sample_data();
+        assert_eq!(newer_twin(&data, 3), Some(103));
+        // El 1 + 100 no existe; el 2 + 100 tampoco.
+        assert_eq!(newer_twin(&data, 1), None);
+
+        // El efecto 20 no está en la tabla del tipo 3, pero sí en la del 103: la receptora pasa
+        // al tipo nuevo.
+        let donor = Relic::new(103, [Slot::new(20, None), Slot::EMPTY, Slot::EMPTY]);
+        let target = small(10);
+        let sacs = [small(11), small(12), small(14)];
+        let sac_refs: Vec<&Relic> = sacs.iter().collect();
+        let plan = plan_transfer(
+            &data,
+            &Rules::default(),
+            &TransferRequest {
+                donor: &donor,
+                donor_slot: 0,
+                target: &target,
+                target_slot: 0,
+                target_forged: &[],
+                sacrifices: &sac_refs,
+                available_murk: 50_000,
+            },
+        )
+        .unwrap();
+        assert_eq!(plan.upgraded_from, Some(3));
+        assert_eq!(plan.new_target.item_id, 103);
         assert_eq!(validate(&data, &plan.new_target), Ok(()));
     }
 

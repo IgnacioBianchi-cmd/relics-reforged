@@ -184,6 +184,19 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     ))?;
     let (effects, curses) = plan.new_target.to_raw();
     let new_murk = murk - plan.murk_cost;
+    // Si la receptora pasa a la versión nueva de su tipo, se avisa y se escribe el tipo nuevo.
+    let upgrade = plan.upgraded_from.map(|_| plan.new_target.item_id);
+    let upgrade_note = match plan.upgraded_from {
+        Some(old) => format!(
+            "\n{} ({old} -> {})",
+            tr(
+                "La reliquia pasa a su versión nueva (las tablas actuales, con los efectos de los personajes nuevos).",
+                "The relic is updated to its newer version (the current tables, with the newer characters' effects).",
+            ),
+            plan.new_target.item_id
+        ),
+        None => String::new(),
+    };
     // Un efecto por línea (con su maldición), para que el menú los muestre apilados.
     let names = |r: &Relic| -> String {
         r.slots
@@ -214,11 +227,11 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
         return Ok(match lang::get() {
             Lang::Es => format!(
                 "{relic_name} quedaría así:{names}\nCosto: {cost} de murk ({murk} -> {new_murk})\n\
-                 Sacrificios: {points} puntos\nEfectos forjados: {note}"
+                 Sacrificios: {points} puntos\nEfectos forjados: {note}{upgrade_note}"
             ),
             Lang::En => format!(
                 "{relic_name} would become:{names}\nCost: {cost} murk ({murk} -> {new_murk})\n\
-                 Sacrifices: {points} points\nForged effects: {note}"
+                 Sacrifices: {points} points\nForged effects: {note}{upgrade_note}"
             ),
         });
     }
@@ -298,6 +311,15 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
                 )
                 .into());
             }
+            if let Some(item_id) = upgrade {
+                if !game.write_item_id(target, item_id) {
+                    return Err(tr(
+                        "ATENCIÓN: no se pudo cambiar el tipo de la receptora; la forja quedó a medias",
+                        "WARNING: could not update the target's type; the forge is incomplete",
+                    )
+                    .into());
+                }
+            }
             let murk_addr = game.murk_addr().ok_or(tr(
                 "ATENCIÓN: no se encontró el murk",
                 "WARNING: murk not found",
@@ -337,11 +359,11 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     Ok(match lang::get() {
         Lang::Es => format!(
             "Forja hecha: {relic_name} ahora tiene:{names}\nMurk {murk} -> {new_murk} \
-             (costo {cost}). Efectos forjados: {note}. [{target:08X}, {ids:?}]{registry_note}"
+             (costo {cost}). Efectos forjados: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}"
         ),
         Lang::En => format!(
             "Forge done: {relic_name} now has:{names}\nMurk {murk} -> {new_murk} \
-             (cost {cost}). Forged effects: {note}. [{target:08X}, {ids:?}]{registry_note}"
+             (cost {cost}). Forged effects: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}"
         ),
     })
 }

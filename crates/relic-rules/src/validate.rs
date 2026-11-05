@@ -5,7 +5,10 @@
 //! 2. Tiene exactamente un efecto por slot con tabla, en los primeros slots, sin huecos.
 //! 3. Ninguna maldición sin efecto.
 //! 4. Sin efectos repetidos ni dos efectos con el mismo `compatibilityId`.
-//! 5. Existe una asignación 1 a 1 de efectos a tablas de slot donde cada efecto está en su
+//! 5. Cada efecto está en alguna tabla de slot del tipo (si no, se dice cuál: hay tipos con el
+//!    mismo nombre y tablas distintas, por ejemplo las Grand Luminous Scene 120/123/126, con
+//!    tablas 100/200/300 sin los efectos de Scholar ni Undertaker, y las 220/223/226 con
+//!    tablas 110/210/310 que sí los tienen), y existe una asignación 1 a 1 de efectos a tablas de slot donde cada efecto está en su
 //!    tabla y su maldición cumple la tabla de maldición del slot (si la hay, la maldición es
 //!    obligatoria y tiene que estar en ella; si no la hay, no puede haber maldición).
 //! 6. Los efectos están ordenados por (`overrideEffectId`, ID), como los ordena el juego.
@@ -36,6 +39,11 @@ pub enum Violation {
         a: EffectId,
         b: EffectId,
         compatibility_id: i32,
+    },
+    /// El efecto no está en ninguna tabla de slot de este tipo de reliquia.
+    NotInPool {
+        effect: EffectId,
+        name: String,
     },
     NoValidAssignment,
     WrongOrder,
@@ -82,6 +90,24 @@ impl fmt::Display for Violation {
             ),
             Violation::CompatibilityClash { a, b, .. } => {
                 write!(f, "effects {a} and {b} can't be on the same relic")
+            }
+            Violation::NotInPool { effect, name } => {
+                let name = if name.is_empty() {
+                    effect.to_string()
+                } else {
+                    name.clone()
+                };
+                if es {
+                    write!(
+                        f,
+                        "\"{name}\" no puede salir en este tipo de reliquia: sus tablas de efectos no lo incluyen (hay reliquias con el mismo nombre de una versión anterior, sin los efectos de los personajes nuevos)"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "\"{name}\" can't roll on this type of relic: its effect tables don't include it (some relics with the same name are an older version, without the newer characters' effects)"
+                    )
+                }
             }
             Violation::NoValidAssignment => write!(
                 f,
@@ -150,8 +176,19 @@ pub fn validate(data: &GameData, relic: &Relic) -> Result<(), Violation> {
         }
     }
 
-    // 5: asignación de efectos a tablas de slot.
+    // 5: cada efecto en alguna tabla del tipo, y asignación de efectos a tablas de slot.
     let tables: Vec<usize> = (0..3).filter(|&i| rt.slot_tables[i] >= 0).collect();
+    for &e in &effects {
+        if !tables
+            .iter()
+            .any(|&t| data.table_contains(rt.slot_tables[t], e))
+        {
+            return Err(Violation::NotInPool {
+                effect: e,
+                name: data.effects[&e].name.clone(),
+            });
+        }
+    }
     let fits = |slot: &Slot, table_idx: usize| -> bool {
         let effect = slot.effect.expect("slots[..size] ya verificados");
         if !data.table_contains(rt.slot_tables[table_idx], effect) {
@@ -290,6 +327,17 @@ mod tests {
                 found: 2
             })
         );
+    }
+
+    #[test]
+    fn efecto_fuera_de_las_tablas_del_tipo() {
+        let data = sample_data();
+        // Tipo 3: un slot con la tabla 110; el efecto 20 solo está en la tabla 200.
+        let r = Relic::new(3, [Slot::new(20, None), Slot::EMPTY, Slot::EMPTY]);
+        assert!(matches!(
+            validate(&data, &r),
+            Err(Violation::NotInPool { effect: 20, .. })
+        ));
     }
 
     #[test]

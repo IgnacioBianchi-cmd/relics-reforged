@@ -106,8 +106,12 @@ pub enum Panel {
     /// En los slots de arriba (reliquias equipadas): "F:OK Q:Close ... M:All Presets".
     Slots,
     /// En la grilla de la derecha: recorriéndola ("1:Swap screen 3:Save as Preset M:All
-    /// Presets") o eligiendo la reliquia para un slot (solo "1:Swap screen").
+    /// Presets") o eligiendo la reliquia para un slot (solo "1:Swap screen"). También el filtro
+    /// y los presets del juego cuentan así.
     Right,
+    /// Otra pantalla de Relic Rites, por ejemplo "Change vessels": los métodos 38 a 41 no se
+    /// llaman.
+    Other,
 }
 
 struct PanelSample {
@@ -120,7 +124,8 @@ struct PanelSample {
 static PANEL: Mutex<Option<PanelSample>> = Mutex::new(None);
 
 /// Panel con el cursor, según cuántas veces por frame se llama a los métodos 38 a 41 (comparado
-/// con el 42, que va una vez por frame): el doble con el cursor a la derecha. Medido el
+/// con el 42, que va una vez por frame): una vez en los slots, el doble con el cursor a la
+/// derecha (y en el filtro y los presets del juego), ninguna en "Change vessels". Medido el
 /// 2026-11-05 con 9 mediciones de 1 s alternando slots, grilla y elección (59 contra 119 por
 /// segundo); en la memoria de la ventana no apareció ningún valor estable para esto. Se
 /// recalcula cada 200 ms; `None` hasta tener la primera medición.
@@ -147,8 +152,10 @@ pub fn panel() -> Option<Panel> {
         let per_frame = d_right as f64 / (RIGHT_METHODS.len() as u64 * d_known) as f64;
         s.panel = Some(if per_frame > 1.5 {
             Panel::Right
-        } else {
+        } else if per_frame > 0.5 {
             Panel::Slots
+        } else {
+            Panel::Other
         });
     }
     s.at = now;

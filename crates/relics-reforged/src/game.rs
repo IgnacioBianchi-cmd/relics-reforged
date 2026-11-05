@@ -185,6 +185,27 @@ impl Game {
             && write(object + SP_COUNT_IN_OBJECT, sp_effects.len() as u32)
     }
 
+    /// Cambia el tipo de una reliquia (fila de `EquipParamAntique`) en los tres lugares donde está:
+    /// el registro del objeto (+4 y +8, como en el save) y su entrada de inventario. Se usa al
+    /// pasar una reliquia a la versión nueva de su tipo (`relic_rules::newer_twin`).
+    pub fn write_item_id(&self, handle: u32, item_id: u32) -> bool {
+        let Some((object, _)) = self.relic_by_handle(handle) else {
+            return false;
+        };
+        let Some(inv) = self.equip_game_data().map(|e| e + INVENTORY_IN_EQUIP) else {
+            return false;
+        };
+        let Some(entry) = self
+            .inventory_entry(handle)
+            .and_then(|(index, _)| self.inventory_entry_addr(inv, index))
+        else {
+            return false;
+        };
+        let raw = item_id | 0x8000_0000;
+        let rec = object + RECORD_IN_OBJECT;
+        write(rec + 4, raw) && write(rec + 8, raw) && write(entry + 4, raw)
+    }
+
     /// Dirección de EquipGameData (PlayerGameData + 0x1D8), lo que recibe `RemoveItem`.
     fn equip_game_data(&self) -> Option<usize> {
         let game_data_man: usize = read(self.base + GAME_DATA_MAN_RVA)?;

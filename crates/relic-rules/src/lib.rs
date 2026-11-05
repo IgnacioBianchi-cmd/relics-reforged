@@ -24,7 +24,9 @@ pub use data::{
 };
 pub use regulation::RegulationError;
 pub use relic::{relic_kind, Relic, RelicKind, Slot};
-pub use transfer::{plan_transfer, Role, Rules, TransferError, TransferPlan, TransferRequest};
+pub use transfer::{
+    newer_twin, plan_transfer, Role, Rules, TransferError, TransferPlan, TransferRequest,
+};
 pub use validate::{normalize, validate, Violation};
 
 #[cfg(test)]

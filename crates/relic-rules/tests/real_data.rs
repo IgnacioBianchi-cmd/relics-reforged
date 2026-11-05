@@ -107,6 +107,21 @@ fn regulation_coincide_con_los_csv() {
 
     assert_eq!(reg.tables, csv.tables, "tablas de efectos");
 
+    // Versión nueva de los tipos: las 36 escenas 100-135 pasan a 200-235 (mismo color, tamaño y
+    // tablas que incluyen las viejas); ningún otro tipo tiene.
+    let mut twins: Vec<(u32, u32)> = reg
+        .relic_types
+        .keys()
+        .filter_map(|&id| relic_rules::newer_twin(&reg, id).map(|t| (id, t)))
+        .collect();
+    twins.sort();
+    assert_eq!(twins.len(), 36, "tipos con versión nueva: {twins:?}");
+    assert!(
+        twins
+            .iter()
+            .all(|&(a, b)| (100..=135).contains(&a) && b == a + 100),
+        "{twins:?}"
+    );
     // Filtro por efecto: cada familia usada por un efecto existe, y cada familia y grupo
     // apuntan a algo que existe.
     let f = &reg.effect_filters;

@@ -45,6 +45,7 @@ pub fn sample_data() -> GameData {
     for (table, effects) in [
         (100, &normal_pool[..]),
         (110, &normal_pool[..]),
+        (111, &[10, 11, 12, 13, 14, 15, 16, 20][..]),
         (200, &[20, 21][..]),
         (210, &[22, 23][..]),
         (300, &[30, 31][..]),
@@ -68,6 +69,8 @@ pub fn sample_data() -> GameData {
         relic(2, true, [200, 210, -1], [300, -1, -1]),
         relic(3, false, [110, -1, -1], [-1, -1, -1]),
         relic(9, false, [900, -1, -1], [-1, -1, -1]),
+        // Versión nueva del tipo 3: su tabla suma el efecto 20.
+        relic(103, false, [111, -1, -1], [-1, -1, -1]),
     ] {
         data.relic_types.insert(rt.id, rt);
     }

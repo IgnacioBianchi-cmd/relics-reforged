@@ -63,6 +63,7 @@ const KEY_CLEAR: (&str, &str, Key) = ("KG_Key_C", "C", Key::C);
 const KEY_FILTER: (&str, &str, Key) = ("KG_Key_4", "4", Key::Alpha4);
 const KEY_SORT: (&str, &str, Key) = ("KG_Key_5", "5", Key::Alpha5);
 const KEY_RESET: (&str, &str, Key) = ("KG_Key_1", "1", Key::Alpha1);
+const KEY_REMOVE: (&str, &str, Key) = ("KG_Key_2", "2", Key::Alpha2);
 /// Texto de los controles: un blanco apagado, como el del juego.
 const PROMPT_TEXT: [f32; 4] = [0.74, 0.74, 0.72, 1.0];
 
@@ -100,6 +101,7 @@ fn load_icons(data: &GameData, out: Arc<Mutex<Option<IconAtlas>>>) {
                 KEY_FILTER.0,
                 KEY_SORT.0,
                 KEY_RESET.0,
+                KEY_REMOVE.0,
             ]
             .map(String::from),
         )
@@ -171,6 +173,10 @@ impl Icons {
 #[derive(Clone)]
 struct RelicView {
     handle: u32,
+    /// Tipo de reliquia (`EquipParamAntique`).
+    item_id: u32,
+    /// Efectos, en el mismo orden que `effects`.
+    effect_ids: Vec<u32>,
     name: String,
     /// `None` si no es aleatoria (no sirve para forjar).
     size: Option<usize>,
@@ -398,6 +404,14 @@ struct Filters {
     kinds: [bool; 2],
 }
 
+/// Qué se clickeó en una fila de [`Menu::check_row`].
+#[derive(Clone, Copy, PartialEq)]
+enum RowClick {
+    None,
+    Toggle,
+    Arrow,
+}
+
 /// Algo elegido en una condición de efecto.
 #[derive(Clone, Copy, PartialEq)]
 enum EffectCond {
@@ -507,11 +521,13 @@ struct Menu {
     show_filters: bool,
     /// Condición de efecto que se está editando (0 a 2): el panel izquierdo muestra el selector.
     picking: Option<usize>,
-    /// Grupos desplegados en el selector de efectos.
-    expanded: HashSet<i32>,
+    /// Grupo abierto en el selector de efectos (como "Attributes »" en el juego).
+    entered: Option<i32>,
     effect_search: String,
     /// Familia de efectos → grupo, para el filtro por efecto.
     group_of: HashMap<i32, i32>,
+    /// Familia de efectos → ícono (el de algún efecto de la familia).
+    family_icon: HashMap<i32, i32>,
 }
 
 impl Menu {
@@ -522,6 +538,12 @@ impl Menu {
             .iter()
             .map(|f| (f.id, f.group))
             .collect();
+        let mut family_icon = HashMap::new();
+        for e in data.effects.values() {
+            if e.filter_id >= 0 && e.icon_id >= 0 {
+                family_icon.entry(e.filter_id).or_insert(e.icon_id);
+            }
+        }
         Menu {
             visible: AtomicBool::new(false),
             game,
@@ -543,9 +565,10 @@ impl Menu {
             sort: SortBy::Found,
             show_filters: false,
             picking: None,
-            expanded: HashSet::new(),
+            entered: None,
             effect_search: String::new(),
             group_of,
+            family_icon,
         }
     }
 
@@ -730,6 +753,7 @@ impl Menu {
                 // Un solo "volver": F7 y Esc hacen lo mismo que Q, pero no se muestran. Con el filtro
                 // abierto, Q lo cierra y 1 lo limpia (como en Relic Rites).
                 let (mut back, mut refresh, mut clear, mut reset) = (false, false, false, false);
+                let mut remove = false;
                 {
                     let icons = self.icons.as_ref();
                     let (g, k, _) = KEY_BACK;
@@ -738,6 +762,16 @@ impl Menu {
                         ui.same_line_with_spacing(0.0, 14.0 * s);
                         let (g, k, _) = KEY_RESET;
                         reset |= key_prompt(ui, icons, g, k, tr("Limpiar", "Reset"), s);
+                        ui.same_line_with_spacing(0.0, 14.0 * s);
+                        let (g, k, _) = KEY_REMOVE;
+                        remove |= key_prompt(
+                            ui,
+                            icons,
+                            g,
+                            k,
+                            tr("Quitar condiciones", "Remove conditions"),
+                            s,
+                        );
                     } else {
                         back |= key_prompt(
                             ui,
@@ -769,6 +803,11 @@ impl Menu {
                 if reset {
                     self.filter_reset();
                 }
+                if remove {
+                    self.filters.effects = Default::default();
+                    self.picking = None;
+                    self.entered = None;
+                }
             });
         // Teclas (no mientras se escribe en el filtro: ahí las usa ImGui).
         if !ui.io().want_text_input {
@@ -780,6 +819,11 @@ impl Menu {
             if self.show_filters && ui.is_key_pressed(KEY_RESET.2) {
                 self.filter_reset();
             }
+            if self.show_filters && ui.is_key_pressed(KEY_REMOVE.2) {
+                self.filters.effects = Default::default();
+                self.picking = None;
+                self.entered = None;
+            }
             if !self.show_filters && ui.is_key_pressed(KEY_REFRESH.2) {
                 self.refresh();
             }
@@ -789,6 +833,7 @@ impl Menu {
             if ui.is_key_pressed(KEY_FILTER.2) {
                 self.show_filters = !self.show_filters;
                 self.picking = None;
+                self.entered = None;
             }
             if ui.is_key_pressed(KEY_SORT.2) {
                 self.sort = self.sort.next();
@@ -873,6 +918,7 @@ impl Menu {
         if open {
             self.show_filters = !self.show_filters;
             self.picking = None;
+            self.entered = None;
         }
         if next {
             self.sort = self.sort.next();
@@ -913,9 +959,7 @@ impl Menu {
             .size([left_w, panel_h])
             .always_use_window_padding(true)
             .build(|| {
-                if let (true, Some(k)) = (self.show_filters, self.picking) {
-                    self.draw_effect_picker(ui, k);
-                } else if self.show_filters {
+                if self.show_filters {
                     self.draw_filters(ui);
                 } else {
                     self.draw_left(ui, &by_handle, preview.as_ref(), preview_busy, forging);
@@ -925,7 +969,11 @@ impl Menu {
         ui.child_window("derecha")
             .size([right_w, panel_h])
             .always_use_window_padding(true)
-            .build(|| self.draw_right(ui, &relics));
+            .build(|| match (self.show_filters, self.picking) {
+                // Como en el juego: la lista de efectos aparece al lado del filtro.
+                (true, Some(k)) => self.draw_effect_picker(ui, k),
+                _ => self.draw_right(ui, &relics),
+            });
     }
 
     fn draw_left(
@@ -948,13 +996,12 @@ impl Menu {
             ),
             Some(t) => {
                 relic_title(ui, self.icons.as_ref(), t);
-                ui.same_line();
-                if ui.small_button(format!("{}##receptora", tr("cambiar", "change"))) {
+                if self.text_button(ui, "receptora", tr("Cambiar", "Change")) {
                     self.reset_selection();
                     return;
                 }
                 hint(ui, tr("Efecto que se reemplaza:", "Effect to replace:"));
-                self.slot_picker(ui, "r", t, true);
+                self.slot_picker(ui, "r", t, true, None);
             }
         }
         ui.spacing();
@@ -976,10 +1023,10 @@ impl Menu {
                     "Choose it from the list on the right. It is destroyed.",
                 ),
             ),
-            (Some(_), Some(d)) => {
+            (Some(t), Some(d)) => {
+                let target_item = by_handle.get(&t).map(|t| t.item_id);
                 relic_title(ui, self.icons.as_ref(), d);
-                ui.same_line();
-                if ui.small_button(format!("{}##donante", tr("cambiar", "change"))) {
+                if self.text_button(ui, "donante", tr("Cambiar", "Change")) {
                     self.donor = None;
                     self.sacrifices.clear();
                     self.confirm = false;
@@ -992,7 +1039,7 @@ impl Menu {
                         "Effect to transfer (with its curse):",
                     ),
                 );
-                self.slot_picker(ui, "d", d, false);
+                self.slot_picker(ui, "d", d, false, target_item);
             }
         }
         ui.spacing();
@@ -1028,8 +1075,7 @@ impl Menu {
         for &h in &self.sacrifices {
             if let Some(r) = by_handle.get(&h) {
                 relic_title(ui, self.icons.as_ref(), r);
-                ui.same_line();
-                if ui.small_button(format!("x##sacrificio{h:X}")) {
+                if self.text_button(ui, &format!("sacrificio{h:X}"), tr("Quitar", "Remove")) {
                     remove = Some(h);
                 }
             }
@@ -1214,7 +1260,7 @@ impl Menu {
     /// Q dentro del filtro: del selector de efectos vuelve al filtro, y del filtro a la forja.
     /// `false` si no había filtro abierto.
     fn filter_back(&mut self) -> bool {
-        if self.picking.take().is_some() {
+        if self.entered.take().is_some() || self.picking.take().is_some() {
             return true;
         }
         std::mem::take(&mut self.show_filters)
@@ -1249,141 +1295,321 @@ impl Menu {
             .join(", ")
     }
 
-    /// Selector de una condición de efecto (como "Select Effect" en Relic Rites): categorías del
-    /// juego, cada grupo se puede marcar entero o desplegar para marcar familias sueltas.
-    fn draw_effect_picker(&mut self, ui: &Ui, k: usize) {
-        self.section(
-            ui,
-            &format!("{} {}", tr("Efecto, condición", "Effect, condition"), k + 1),
-        );
-        hint(
-            ui,
-            tr(
-                "Marcá grupos o efectos: la reliquia tiene que tener alguno de los marcados.",
-                "Check groups or effects: the relic must have one of the checked ones.",
-            ),
-        );
-        ui.text_disabled(format!(
-            "{}: {}",
-            tr("Marcados", "Selected"),
-            self.filters.effects[k].len()
-        ));
-        ui.set_next_item_width(-1.0);
-        ui.input_text("##buscar_efecto", &mut self.effect_search)
-            .hint(tr("Buscar efecto", "Search effect"))
+    /// Botón chico al estilo de los controles del juego ("Change", "Remove"): recuadro fino,
+    /// texto apagado con halo y dorado al pasar el mouse. Va en la misma línea que lo anterior.
+    fn text_button(&self, ui: &Ui, id: &str, label: &str) -> bool {
+        ui.same_line_with_spacing(0.0, 12.0);
+        let size = ui.calc_text_size(label);
+        let pad = [10.0, 2.0];
+        let [x, y] = ui.cursor_screen_pos();
+        let (w, h) = (size[0] + pad[0] * 2.0, size[1] + pad[1] * 2.0);
+        let clicked = ui.invisible_button(format!("##btn_{id}"), [w, h]);
+        let hovered = ui.is_item_hovered();
+        let dl = ui.get_window_draw_list();
+        dl.add_rect([x, y], [x + w, y + h], [0.08, 0.10, 0.16, 0.75])
+            .filled(true)
+            .rounding(3.0)
             .build();
-        let search = self.effect_search.trim().to_lowercase();
+        let border = if hovered {
+            [0.86, 0.91, 1.0, 0.95]
+        } else {
+            [0.55, 0.60, 0.74, 0.75]
+        };
+        dl.add_rect([x, y], [x + w, y + h], border)
+            .rounding(3.0)
+            .thickness(1.2)
+            .build();
+        let at = [x + pad[0], y + pad[1]];
+        for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+            dl.add_text([at[0] + dx, at[1] + dy], [0.0, 0.0, 0.0, 0.25], label);
+        }
+        dl.add_text(at, if hovered { GOLD } else { PROMPT_TEXT }, label);
+        clicked
+    }
+
+    /// Fila al estilo de los menús del juego: casillero, ícono opcional y texto, con la fila
+    /// entera clickeable. Con `arrow` (grupos del selector de efectos), muestra "»" a la derecha:
+    /// el casillero marca y el resto de la fila devuelve [`RowClick::Arrow`] (abrir el grupo).
+    fn check_row(
+        &self,
+        ui: &Ui,
+        id: &str,
+        on: bool,
+        icon: Option<String>,
+        text: &str,
+        arrow: bool,
+    ) -> RowClick {
+        let line = ui.text_line_height();
+        let h = line + 16.0;
+        let [x, y] = ui.cursor_screen_pos();
+        let w = ui.content_region_avail()[0];
+        let clicked = ui.invisible_button(format!("##{id}"), [w, h]);
+        let hovered = ui.is_item_hovered();
+        let b = (line * 1.05).round();
+        let (bx, by) = (x + 6.0, y + ((h - b) * 0.5).round());
+        {
+            let dl = ui.get_window_draw_list();
+            if hovered {
+                dl.add_rect([x, y], [x + w, y + h], [0.30, 0.36, 0.52, 0.28])
+                    .filled(true)
+                    .build();
+            }
+            // Casillero como el del juego: fondo azul oscuro, borde claro y tilde blanco azulado
+            // con un brillo alrededor.
+            dl.add_rect([bx, by], [bx + b, by + b], [0.08, 0.10, 0.16, 0.92])
+                .filled(true)
+                .rounding(2.0)
+                .build();
+            dl.add_rect([bx, by], [bx + b, by + b], [0.55, 0.60, 0.74, 0.80])
+                .rounding(2.0)
+                .thickness(1.5)
+                .build();
+            if on {
+                let p = |fx: f32, fy: f32| [bx + b * fx, by + b * fy];
+                for (color, width) in [
+                    ([0.50, 0.66, 1.00, 0.22], 6.0),
+                    ([0.88, 0.93, 1.00, 1.00], 2.2),
+                ] {
+                    dl.add_line(p(0.20, 0.52), p(0.42, 0.74), color)
+                        .thickness(width)
+                        .build();
+                    dl.add_line(p(0.42, 0.74), p(0.82, 0.24), color)
+                        .thickness(width)
+                        .build();
+                }
+            }
+        }
+        let mut tx = bx + b + 12.0;
+        if let (Some(icons), Some(name)) = (self.icons.as_ref(), icon) {
+            let size = (line * 1.25).round();
+            if icons.draw(ui, &name, [tx, y + (h - size) * 0.5], [size, size]) {
+                tx += size + 10.0;
+            }
+        }
+        let dl = ui.get_window_draw_list();
+        dl.add_text([tx, y + (h - line) * 0.5], [0.86, 0.86, 0.84, 1.0], text);
+        if arrow {
+            dl.add_text(
+                [x + w - 30.0, y + (h - line) * 0.5],
+                [0.78, 0.80, 0.88, 1.0],
+                "»",
+            );
+        }
+        match clicked {
+            false => RowClick::None,
+            true if arrow && ui.io().mouse_pos[0] > bx + b + 6.0 => RowClick::Arrow,
+            true => RowClick::Toggle,
+        }
+    }
+
+    /// Encabezado de grupo en franja, como "Characteristics" en el filtro del juego.
+    fn band_header(&self, ui: &Ui, title: &str) {
+        let line = ui.text_line_height();
+        let h = line + 12.0;
+        let [x, y] = ui.cursor_screen_pos();
+        let w = ui.content_region_avail()[0];
+        ui.dummy([w, h]);
+        let dl = ui.get_window_draw_list();
+        dl.add_rect_filled_multicolor(
+            [x, y],
+            [x + w, y + h],
+            [0.12, 0.15, 0.24, 0.55],
+            [0.12, 0.15, 0.24, 0.0],
+            [0.12, 0.15, 0.24, 0.0],
+            [0.12, 0.15, 0.24, 0.55],
+        );
+        dl.add_text([x + 6.0, y + 6.0], [0.78, 0.80, 0.88, 1.0], title);
+        drop(dl);
+        if let Some(i) = self.icons.as_ref() {
+            i.draw(ui, SEP_LINE, [x, y + h - 2.0], [w, 2.0]);
+        }
+    }
+
+    /// Una condición de efecto en franja ("Condition 1 | Vigor" o "No Conditions"), como en el
+    /// filtro del juego. `true` si se hizo clic.
+    fn cond_row(&self, ui: &Ui, k: usize) -> bool {
+        let line = ui.text_line_height();
+        let h = line + 20.0;
+        let [x, y] = ui.cursor_screen_pos();
+        let w = ui.content_region_avail()[0];
+        let clicked = ui.invisible_button(format!("##cond{k}"), [w, h]);
+        let hovered = ui.is_item_hovered();
+        let selected = self.picking == Some(k);
+        let band = if selected {
+            [0.22, 0.28, 0.44, 0.60]
+        } else if hovered {
+            [0.17, 0.21, 0.32, 0.50]
+        } else {
+            [0.09, 0.11, 0.17, 0.50]
+        };
+        let dl = ui.get_window_draw_list();
+        dl.add_rect([x, y + 2.0], [x + w, y + h - 2.0], band)
+            .filled(true)
+            .build();
+        let ty = y + (h - line) * 0.5;
+        let cond = &self.filters.effects[k];
+        if cond.is_empty() {
+            let text = tr("Sin condiciones", "No Conditions");
+            let tw = ui.calc_text_size(text)[0];
+            dl.add_text(
+                [x + (w - tw) * 0.5, ty],
+                ui.style_color(imgui::StyleColor::TextDisabled),
+                text,
+            );
+        } else {
+            let head = format!("{} {}", tr("Condición", "Condition"), k + 1);
+            dl.add_text([x + 10.0, ty], [0.86, 0.86, 0.84, 1.0], &head);
+            let label = self.cond_label(cond);
+            let lx = x + 10.0 + ui.calc_text_size(&head)[0] + 30.0;
+            let room = (x + w - 10.0 - lx).max(40.0);
+            let shown = wrap_text(ui, &label, room)
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            let shown = if shown.len() < label.len() {
+                format!("{shown}...")
+            } else {
+                shown
+            };
+            dl.add_text([lx, ty], [0.92, 0.92, 0.90, 1.0], &shown);
+        }
+        clicked
+    }
+
+    /// Selector de una condición de efecto, en el panel derecho (como "Select Effect" en Relic
+    /// Rites): primero los grupos por categoría (el casillero marca el grupo entero y » lo abre),
+    /// y adentro de un grupo, sus efectos con ícono.
+    fn draw_effect_picker(&mut self, ui: &Ui, k: usize) {
         let data = self.data.clone();
         let f = &data.effect_filters;
+        let search = self.effect_search.trim().to_lowercase();
+        let entered = self
+            .entered
+            .and_then(|id| f.groups.iter().find(|g| g.id == id));
+        // Encabezado: título y cantidad marcada, como "Selected 1 / 17".
+        let (title, count) = match entered {
+            Some(g) => {
+                let total = f.families.iter().filter(|x| x.group == g.id).count();
+                let on = self.filters.effects[k]
+                    .iter()
+                    .filter(|c| match c {
+                        EffectCond::Family(id) => self.group_of.get(id) == Some(&g.id),
+                        EffectCond::Group(id) => *id == g.id,
+                    })
+                    .count();
+                (g.name.clone(), format!("{on} / {total}"))
+            }
+            None => (
+                format!("{} {}", tr("Condición", "Condition"), k + 1),
+                self.filters.effects[k].len().to_string(),
+            ),
+        };
+        let [x, y] = ui.cursor_screen_pos();
+        let w = ui.content_region_avail()[0];
+        self.section(ui, &title);
+        let label = format!("{}  {count}", tr("Marcados", "Selected"));
+        let lw = ui.calc_text_size(&label)[0];
+        ui.get_window_draw_list()
+            .add_text([x + w - lw, y + 2.0], [0.78, 0.80, 0.88, 1.0], &label);
+        if entered.is_none() {
+            ui.set_next_item_width(-1.0);
+            ui.input_text("##buscar_efecto", &mut self.effect_search)
+                .hint(tr("Buscar efecto", "Search effect"))
+                .build();
+        }
         ui.child_window("efectos").size([0.0, 0.0]).build(|| {
-            for cat in &f.categories {
-                let groups: Vec<_> = f
+            let toggle = |cond: &mut Vec<EffectCond>, c: EffectCond| {
+                if let Some(pos) = cond.iter().position(|x| *x == c) {
+                    cond.remove(pos);
+                } else {
+                    cond.push(c);
+                }
+            };
+            let family_row = |this: &mut Menu, fam: &relic_rules::FilterFamily| {
+                let on = this.filters.effects[k].contains(&EffectCond::Family(fam.id));
+                let icon = this.family_icon.get(&fam.id).map(|&i| status_icon(i));
+                let id = format!("f{}", fam.id);
+                if this.check_row(ui, &id, on, icon, &fam.name, false) == RowClick::Toggle {
+                    toggle(&mut this.filters.effects[k], EffectCond::Family(fam.id));
+                }
+            };
+            if let Some(g) = entered {
+                // Adentro de un grupo: "Todas" marca el grupo entero.
+                let on = self.filters.effects[k].contains(&EffectCond::Group(g.id));
+                let all = tr("Todas las opciones", "All Options");
+                if self.check_row(ui, &format!("all{}", g.id), on, None, all, false)
+                    == RowClick::Toggle
+                {
+                    toggle(&mut self.filters.effects[k], EffectCond::Group(g.id));
+                }
+                for fam in f
+                    .families
+                    .iter()
+                    .filter(|x| x.group == g.id && !x.name.is_empty())
+                {
+                    family_row(self, fam);
+                }
+                return;
+            }
+            if !search.is_empty() {
+                // Con búsqueda: los efectos que coinciden, de todos los grupos.
+                for fam in f
+                    .families
+                    .iter()
+                    .filter(|x| !x.name.is_empty() && x.name.to_lowercase().contains(&search))
+                {
+                    family_row(self, fam);
+                }
+                return;
+            }
+            for cat in f.categories.iter().filter(|c| !c.name.is_empty()) {
+                self.band_header(ui, &cat.name);
+                for g in f
                     .groups
                     .iter()
                     .filter(|g| g.category == cat.id && !g.name.is_empty())
-                    .collect();
-                // Con búsqueda, solo los grupos con alguna familia que coincida.
-                let matching = |g: &&relic_rules::FilterGroup| {
-                    search.is_empty()
-                        || g.name.to_lowercase().contains(&search)
-                        || f.families
-                            .iter()
-                            .any(|x| x.group == g.id && x.name.to_lowercase().contains(&search))
-                };
-                let groups: Vec<_> = groups.into_iter().filter(matching).collect();
-                if groups.is_empty() || cat.name.is_empty() {
-                    continue;
-                }
-                self.subsection(ui, &cat.name);
-                for g in groups {
-                    let cond = &mut self.filters.effects[k];
-                    let mut on = cond.contains(&EffectCond::Group(g.id));
-                    if ui.checkbox(format!("{}##g{}", g.name, g.id), &mut on) {
-                        cond.retain(|c| *c != EffectCond::Group(g.id));
-                        if on {
-                            cond.push(EffectCond::Group(g.id));
+                {
+                    let on = self.filters.effects[k].contains(&EffectCond::Group(g.id));
+                    match self.check_row(ui, &format!("g{}", g.id), on, None, &g.name, true) {
+                        RowClick::Toggle => {
+                            toggle(&mut self.filters.effects[k], EffectCond::Group(g.id))
                         }
+                        RowClick::Arrow => self.entered = Some(g.id),
+                        RowClick::None => {}
                     }
-                    ui.same_line();
-                    let open = self.expanded.contains(&g.id) || !search.is_empty();
-                    let arrow = if open { "v" } else { ">>" };
-                    if ui.small_button(format!("{arrow}##e{}", g.id))
-                        && !self.expanded.remove(&g.id)
-                    {
-                        self.expanded.insert(g.id);
-                    }
-                    if !open {
-                        continue;
-                    }
-                    ui.indent_by(28.0);
-                    for fam in f.families.iter().filter(|x| {
-                        x.group == g.id
-                            && !x.name.is_empty()
-                            && (search.is_empty() || x.name.to_lowercase().contains(&search))
-                    }) {
-                        let cond = &mut self.filters.effects[k];
-                        let mut on = cond.contains(&EffectCond::Family(fam.id));
-                        if ui.checkbox(format!("{}##f{}", fam.name, fam.id), &mut on) {
-                            cond.retain(|c| *c != EffectCond::Family(fam.id));
-                            if on {
-                                cond.push(EffectCond::Family(fam.id));
-                            }
-                        }
-                    }
-                    ui.unindent_by(28.0);
                 }
             }
         });
     }
 
-    /// Subtítulo dentro de un panel (como "Characteristics" en el filtro del juego).
-    fn subsection(&self, ui: &Ui, title: &str) {
-        ui.spacing();
-        ui.text_colored([0.78, 0.80, 0.88, 1.0], title);
-        let p = ui.cursor_screen_pos();
-        let w = ui.content_region_avail()[0];
-        if !self
-            .icons
-            .as_ref()
-            .is_some_and(|i| i.draw(ui, SEP_LINE, [p[0], p[1]], [w, 2.0]))
-        {
-            ui.separator();
-        }
-        ui.dummy([w, 4.0]);
-    }
-
-    /// El filtro ocupa el panel izquierdo (tecla 4), como en Relic Rites.
+    /// El filtro ocupa el panel izquierdo (tecla 4), como en Relic Rites: las 3 condiciones de
+    /// efecto arriba y después favoritas, color, tamaño y tipo.
     fn draw_filters(&mut self, ui: &Ui) {
         self.section(ui, tr("Filtro", "Filter"));
-        hint(
-            ui,
-            tr(
-                "Marcá lo que querés ver. En cada grupo, sin nada marcado se muestra todo.",
-                "Check what you want to see. In each group, with nothing checked everything is shown.",
-            ),
-        );
-        // Condiciones de efecto, como "Select Effect / No Conditions" en el juego.
-        self.subsection(ui, tr("Efectos", "Effects"));
         for k in 0..3 {
-            let cond = &self.filters.effects[k];
-            let label = if cond.is_empty() {
-                tr("Sin condiciones", "No conditions").to_string()
-            } else {
-                self.cond_label(cond)
-            };
-            let color = if cond.is_empty() {
-                ui.style_color(imgui::StyleColor::TextDisabled)
-            } else {
-                GOLD
-            };
-            let _c = ui.push_style_color(imgui::StyleColor::Text, color);
-            if ui.selectable(format!("{}. {label}##cond{k}", k + 1)) {
-                self.picking = Some(k);
+            if self.cond_row(ui, k) {
+                self.picking = if self.picking == Some(k) {
+                    None
+                } else {
+                    Some(k)
+                };
+                self.entered = None;
             }
         }
-        ui.spacing();
-        ui.checkbox(tr("Favoritas", "Favorites"), &mut self.filters.favorites);
-        self.subsection(ui, tr("Características", "Characteristics"));
+        ui.dummy([0.0, 6.0]);
+        let f = self.filters.clone();
+        if self.check_row(
+            ui,
+            "fav",
+            f.favorites,
+            None,
+            tr("Favoritas", "Favorites"),
+            false,
+        ) == RowClick::Toggle
+        {
+            self.filters.favorites = !self.filters.favorites;
+        }
+        self.band_header(ui, tr("Características", "Characteristics"));
         let colors = [
             tr("Roja", "Red"),
             tr("Azul", "Blue"),
@@ -1391,23 +1617,37 @@ impl Menu {
             tr("Verde", "Green"),
         ];
         for (i, name) in colors.iter().enumerate() {
-            ui.checkbox(name, &mut self.filters.colors[i]);
+            if self.check_row(ui, &format!("c{i}"), f.colors[i], None, name, false)
+                == RowClick::Toggle
+            {
+                self.filters.colors[i] = !self.filters.colors[i];
+            }
         }
-        self.subsection(ui, tr("Tamaño", "Size"));
+        self.band_header(ui, tr("Tamaño", "Size"));
         let sizes = [
             tr("Chica", "Small"),
             tr("Mediana", "Medium"),
             tr("Grande", "Large"),
         ];
         for (i, name) in sizes.iter().enumerate() {
-            ui.checkbox(name, &mut self.filters.sizes[i]);
+            if self.check_row(ui, &format!("s{i}"), f.sizes[i], None, name, false)
+                == RowClick::Toggle
+            {
+                self.filters.sizes[i] = !self.filters.sizes[i];
+            }
         }
-        self.subsection(ui, tr("Tipo", "Type"));
-        ui.checkbox(tr("Reliquia", "Relic"), &mut self.filters.kinds[0]);
-        ui.checkbox(
+        self.band_header(ui, tr("Tipo", "Type"));
+        let kinds = [
+            tr("Reliquia", "Relic"),
             tr("Reliquia de las profundidades", "Depths Relic"),
-            &mut self.filters.kinds[1],
-        );
+        ];
+        for (i, name) in kinds.iter().enumerate() {
+            if self.check_row(ui, &format!("t{i}"), f.kinds[i], None, name, false)
+                == RowClick::Toggle
+            {
+                self.filters.kinds[i] = !self.filters.kinds[i];
+            }
+        }
     }
 
     /// Panel al estilo de Relic Rites: fondo oscuro difuminado y la línea blanca con brillo
@@ -1519,13 +1759,31 @@ impl Menu {
                 }
                 let lines = 1 + effect_lines.len().max(1);
                 let row_h = (line * lines as f32 + 6.0).max(pic + 4.0);
-                if ui
-                    .selectable_config(format!("##{id}{:X}", r.handle))
-                    .selected(selected.contains(&r.handle))
-                    .size([0.0, row_h])
-                    .build()
+                // Sin el relleno azul de ImGui: elegida = borde claro con brillo, como el cursor
+                // de Relic Rites; al pasar el mouse, un relleno tenue.
+                let is_selected = selected.contains(&r.handle);
                 {
-                    clicked = Some(r.handle);
+                    let clear = [0.0, 0.0, 0.0, 0.0];
+                    let _h = ui.push_style_color(imgui::StyleColor::Header, clear);
+                    let _hh = ui.push_style_color(
+                        imgui::StyleColor::HeaderHovered,
+                        [0.30, 0.36, 0.52, 0.20],
+                    );
+                    let _ha = ui.push_style_color(
+                        imgui::StyleColor::HeaderActive,
+                        [0.30, 0.36, 0.52, 0.30],
+                    );
+                    if ui
+                        .selectable_config(format!("##{id}{:X}", r.handle))
+                        .selected(is_selected)
+                        .size([0.0, row_h])
+                        .build()
+                    {
+                        clicked = Some(r.handle);
+                    }
+                }
+                if is_selected {
+                    glow_frame(ui, [x, y], [x + width, y + row_h]);
                 }
                 if let Some(i) = relic_icon {
                     i.draw(
@@ -1567,7 +1825,9 @@ impl Menu {
     }
 
     /// Botones de radio con los efectos de una reliquia (y su maldición, si tiene).
-    fn slot_picker(&mut self, ui: &Ui, id: &str, r: &RelicView, target: bool) {
+    /// `pool`: tipo de la receptora, para avisar qué efectos de la donante no pueden salir en
+    /// ella (no están en ninguna de sus tablas).
+    fn slot_picker(&mut self, ui: &Ui, id: &str, r: &RelicView, target: bool, pool: Option<u32>) {
         let slots = r.size.unwrap_or(0);
         for i in 0..slots {
             let mut text = r
@@ -1601,6 +1861,28 @@ impl Menu {
                 *value = i;
                 changed = true;
             }
+            // Con la versión nueva del tipo de la receptora también vale (se convierte al forjar).
+            let pool = pool.map(|p| relic_rules::newer_twin(&self.data, p).unwrap_or(p));
+            let fits = match (
+                pool.and_then(|p| self.data.relic_types.get(&p)),
+                r.effect_ids.get(i),
+            ) {
+                (Some(rt), Some(&e)) => rt
+                    .slot_tables
+                    .iter()
+                    .any(|&t| self.data.table_contains(t, e)),
+                _ => true,
+            };
+            if !fits {
+                colored_wrapped(
+                    ui,
+                    RED,
+                    tr(
+                        "No puede salir en la receptora: sus tablas no incluyen este efecto.",
+                        "Can't roll on the target: its tables don't include this effect.",
+                    ),
+                );
+            }
             if changed {
                 self.confirm = false;
             }
@@ -1629,6 +1911,28 @@ fn color_mark(ui: &Ui, at: [f32; 2], color: u8) {
         .build();
     draw.add_triangle([x - r, y], [x, y + r], [x + r, y], c)
         .filled(true)
+        .build();
+}
+
+/// Borde claro con brillo alrededor de un rectángulo, como el cursor de los menús del juego.
+fn glow_frame(ui: &Ui, min: [f32; 2], max: [f32; 2]) {
+    let dl = ui.get_window_draw_list();
+    dl.add_rect(min, max, [0.40, 0.55, 0.95, 0.10])
+        .filled(true)
+        .build();
+    for (grow, alpha) in [(5.0, 0.06), (3.5, 0.10), (2.0, 0.18)] {
+        dl.add_rect(
+            [min[0] - grow, min[1] - grow],
+            [max[0] + grow, max[1] + grow],
+            [0.55, 0.70, 1.0, alpha],
+        )
+        .rounding(3.0)
+        .thickness(2.0)
+        .build();
+    }
+    dl.add_rect(min, max, [0.86, 0.91, 1.0, 0.95])
+        .rounding(2.0)
+        .thickness(1.5)
         .build();
 }
 
@@ -1705,14 +2009,19 @@ impl ImguiRenderLoop for Menu {
             crate::input_block::set_menu_open(false);
             return;
         }
-        let hint_clicked = !self.visible.load(Ordering::Relaxed)
+        // La forja solo se ofrece en la pantalla principal de Relic Rites (cursor en los slots):
+        // no mientras se elige o se mira una reliquia en la grilla.
+        let visible = self.visible.load(Ordering::Relaxed);
+        let panel = crate::relic_menu::panel();
+        let offered = !visible && panel == Some(crate::relic_menu::Panel::Slots);
+        let hint_clicked = offered
             && draw_hint(
                 ui,
                 self.prompt_font.or(self.title_font),
                 self.icons.as_ref(),
-                crate::relic_menu::panel(),
+                panel,
             );
-        if ui.is_key_pressed(TOGGLE_KEY) || hint_clicked {
+        if (ui.is_key_pressed(TOGGLE_KEY) && (visible || offered)) || hint_clicked {
             let now = !self.visible.load(Ordering::Relaxed);
             self.visible.store(now, Ordering::Relaxed);
             if now {
@@ -1853,6 +2162,8 @@ fn load(
             let kind = data.relic_types.get(&r.item_id);
             RelicView {
                 handle: r.handle,
+                item_id: r.item_id,
+                effect_ids: relic.slots.iter().filter_map(|s| s.effect).collect(),
                 forged,
                 name: kind.map_or("?".into(), |t| t.name.clone()),
                 color: kind.map_or(u8::MAX, |t| t.color),
@@ -1931,7 +2242,7 @@ fn apply_theme(style: &mut imgui::Style) {
         (C::FrameBg, [0.10, 0.11, 0.16, 1.0]),
         (C::FrameBgHovered, [0.16, 0.18, 0.26, 1.0]),
         (C::FrameBgActive, [0.20, 0.23, 0.32, 1.0]),
-        (C::CheckMark, GOLD),
+        (C::CheckMark, [0.82, 0.88, 1.0, 1.0]),
         (C::ScrollbarBg, [0.05, 0.06, 0.08, 0.6]),
         (C::ScrollbarGrab, [0.30, 0.28, 0.22, 0.8]),
         (C::ScrollbarGrabHovered, [0.42, 0.38, 0.28, 0.9]),
