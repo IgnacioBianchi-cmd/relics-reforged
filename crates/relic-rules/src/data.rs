@@ -31,6 +31,8 @@ pub struct EffectInfo {
     pub passive_sp_effects: Vec<u32>,
     /// ID del nombre en los textos del juego (`attachTextId`).
     pub text_id: i32,
+    /// Ícono del efecto en los menús (`statusIconId`): `MENU_StatusIcon_<id>`. -1 = sin ícono.
+    pub icon_id: i32,
 }
 
 /// Una fila de `EquipParamAntique` reducida a lo que usan las reglas.
@@ -45,6 +47,8 @@ pub struct RelicType {
     pub slot_tables: [TableId; 3],
     /// Tabla de maldición de cada slot (`attachEffectTableId_curse1..3`).
     pub curse_tables: [TableId; 3],
+    /// Ícono de la reliquia (`iconId`): `MENU_ItemIcon_<id>`.
+    pub icon_id: i32,
 }
 
 /// Todos los datos del juego que necesita el motor.
@@ -109,6 +113,7 @@ impl GameData {
                         is_debuff: row.int("isDebuff")? != 0,
                         passive_sp_effects,
                         text_id: row.int("attachTextId")? as i32,
+                        icon_id: row.int("statusIconId")? as i32,
                     },
                 );
             }
@@ -137,6 +142,7 @@ impl GameData {
                             t("attachEffectTableId_curse2")?,
                             t("attachEffectTableId_curse3")?,
                         ],
+                        icon_id: row.int("iconId")? as i32,
                     },
                 );
             }

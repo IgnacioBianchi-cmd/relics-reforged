@@ -232,6 +232,7 @@ impl GameData {
                     is_debuff: row[0x21] != 0,
                     passive_sp_effects,
                     text_id: i32_le(row, 0x1C)?,
+                    icon_id: i32_le(row, 0x28)?,
                 },
             );
         }
@@ -251,6 +252,7 @@ impl GameData {
                     color: row[0x04],
                     slot_tables: [t(0x10)?, t(0x14)?, t(0x18)?],
                     curse_tables: [t(0x20)?, t(0x24)?, t(0x28)?],
+                    icon_id: i32_le(row, 0x1C)?,
                 },
             );
         }

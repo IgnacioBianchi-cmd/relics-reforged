@@ -16,6 +16,8 @@ use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter};
 use relic_rules::lang::tr;
 use relic_rules::{relic_kind, EffectId, GameData, Relic, RelicKind};
 
+use nr_assets::IconAtlas;
+
 use crate::forge::{self, Order};
 use crate::game::{is_favorite, Game};
 
@@ -30,8 +32,11 @@ const EFFECT: [f32; 4] = [0.72, 0.71, 0.66, 1.0];
 
 /// Arranca el overlay en un hilo propio.
 pub fn start(module: usize, game: Game, data: Arc<GameData>, dll_dir: PathBuf) {
+    let pending: Arc<Mutex<Option<IconAtlas>>> = Arc::default();
+    load_icons(&data, pending.clone());
     std::thread::spawn(move || {
-        let menu = Menu::new(game, data, dll_dir);
+        let mut menu = Menu::new(game, data, dll_dir);
+        menu.pending_icons = pending;
         let result = Hudhook::builder()
             .with::<ImguiDx12Hooks>(menu)
             .with_hmodule(HINSTANCE(module as *mut _))
@@ -44,6 +49,97 @@ pub fn start(module: usize, game: Game, data: Arc<GameData>, dll_dir: PathBuf) {
     });
 }
 
+/// Glifo de la tecla F7 en el atlas del juego (mismo estilo que F1/F2 en Relic Rites).
+const KEY_ICON: &str = "KG_Key_F7";
+const ESC_ICON: &str = "KG_Key_Esc";
+
+fn status_icon(id: i32) -> String {
+    format!("MENU_StatusIcon_{id}")
+}
+
+fn item_icon(id: i32) -> String {
+    format!("MENU_ItemIcon_{id}")
+}
+
+/// Saca del juego instalado los íconos de efectos y reliquias (y el de la tecla F7), en un hilo
+/// aparte: tarda unos segundos y lee ~70 MB. Mientras tanto, el menú se dibuja sin íconos.
+fn load_icons(data: &GameData, out: Arc<Mutex<Option<IconAtlas>>>) {
+    let mut wanted: Vec<String> = data
+        .effects
+        .values()
+        .filter(|e| e.icon_id >= 0)
+        .map(|e| status_icon(e.icon_id))
+        .chain(
+            data.relic_types
+                .values()
+                .filter(|t| t.icon_id >= 0)
+                .map(|t| item_icon(t.icon_id)),
+        )
+        .chain([KEY_ICON.to_string(), ESC_ICON.to_string()])
+        .collect();
+    wanted.sort();
+    wanted.dedup();
+    std::thread::spawn(move || {
+        let Some(game_dir) = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(PathBuf::from))
+        else {
+            return;
+        };
+        let start = std::time::Instant::now();
+        match nr_assets::load_menu_icons(&game_dir, &wanted) {
+            Ok(atlas) => {
+                crate::log_event(&format!(
+                    "Íconos: {} de {} leídos del juego en {:.1} s ({}x{})",
+                    atlas.rects.len(),
+                    wanted.len(),
+                    start.elapsed().as_secs_f32(),
+                    atlas.width,
+                    atlas.height
+                ));
+                *out.lock().unwrap_or_else(|e| e.into_inner()) = Some(atlas);
+            }
+            Err(e) => crate::log_event(&format!(
+                "Íconos: no pude leerlos del juego ({e}); el menú sigue sin íconos"
+            )),
+        }
+    });
+}
+
+/// El atlas de íconos ya subido a la GPU.
+struct Icons {
+    texture: imgui::TextureId,
+    size: [f32; 2],
+    rects: HashMap<String, [u32; 4]>,
+}
+
+impl Icons {
+    /// Dibuja el ícono `name` en el rectángulo dado. `false` si no existe.
+    fn draw(&self, ui: &Ui, name: &str, min: [f32; 2], size: [f32; 2]) -> bool {
+        let Some(&[x, y, w, h]) = self.rects.get(name) else {
+            return false;
+        };
+        let [aw, ah] = self.size;
+        ui.get_window_draw_list()
+            .add_image(self.texture, min, [min[0] + size[0], min[1] + size[1]])
+            .uv_min([x as f32 / aw, y as f32 / ah])
+            .uv_max([(x + w) as f32 / aw, (y + h) as f32 / ah])
+            .build();
+        true
+    }
+
+    fn has(&self, name: &str) -> bool {
+        self.rects.contains_key(name)
+    }
+
+    /// Relación ancho/alto del ícono.
+    fn aspect(&self, name: &str) -> f32 {
+        self.rects
+            .get(name)
+            .map_or(1.0, |&[_, _, w, h]| w as f32 / h.max(1) as f32)
+    }
+}
+
 /// Una reliquia tal como la muestra el menú.
 #[derive(Clone)]
 struct RelicView {
@@ -54,7 +150,11 @@ struct RelicView {
     deep: bool,
     /// `relicColor`: 0 Burning, 1 Drizzly, 2 Luminous, 3 Tranquil.
     color: u8,
+    /// Ícono de la reliquia (`iconId` de `EquipParamAntique`).
+    icon: i32,
     effects: Vec<String>,
+    /// Ícono de cada efecto (`statusIconId`), en el mismo orden que `effects`. -1 = sin ícono.
+    effect_icons: Vec<i32>,
     /// Por slot: si ese efecto ya fue forjado por el mod.
     forged: Vec<bool>,
     /// Por qué no se puede donar ni sacrificar (favorita, equipada, preset, recipiente).
@@ -71,25 +171,112 @@ impl RelicView {
     }
 }
 
-/// Aviso chico, abajo a la derecha, mientras Relic Rites está abierto.
-fn draw_hint(ui: &Ui) {
+/// Un control al estilo del juego: la tecla (su glifo, si está en los íconos) y el texto al
+/// lado, en la posición del cursor. Usa la fuente actual. Devuelve `true` si se hizo clic.
+fn key_prompt(
+    ui: &Ui,
+    icons: Option<&Icons>,
+    key_icon: &str,
+    key: &str,
+    label: &str,
+    s: f32,
+) -> bool {
+    let label = format!(":{label}");
+    let key_size = ui.calc_text_size(key);
+    let label_size = ui.calc_text_size(&label);
+    let glyph = icons.filter(|i| i.has(key_icon));
+    let box_h = label_size[1] + 6.0 * s;
+    let box_w = match glyph {
+        Some(i) => box_h * i.aspect(key_icon),
+        None => (key_size[0] + 12.0 * s).max(box_h),
+    };
+    let gap = 3.0 * s;
+    let p = ui.cursor_screen_pos();
+    let clicked = ui.invisible_button(
+        format!("##prompt_{key}"),
+        [box_w + gap + label_size[0], box_h],
+    );
+    let text = if ui.is_item_hovered() {
+        GOLD
+    } else {
+        [0.90, 0.90, 0.88, 1.0]
+    };
+    let shadow = [0.0, 0.0, 0.0, 0.8];
+    let label_at = [p[0] + box_w + gap, p[1] + (box_h - label_size[1]) * 0.5];
+    let mut texts = vec![(label_at, label.as_str())];
+    if !glyph.is_some_and(|i| i.draw(ui, key_icon, p, [box_w, box_h])) {
+        ui.get_window_draw_list()
+            .add_rect(p, [p[0] + box_w, p[1] + box_h], [0.80, 0.80, 0.78, 0.9])
+            .rounding(3.0 * s)
+            .thickness(1.5 * s)
+            .build();
+        let key_at = [
+            p[0] + (box_w - key_size[0]) * 0.5,
+            p[1] + (box_h - key_size[1]) * 0.5,
+        ];
+        texts.push((key_at, key));
+    }
+    let draw = ui.get_window_draw_list();
+    for (at, t) in texts {
+        draw.add_text([at[0] + 1.0 * s, at[1] + 1.0 * s], shadow, t);
+        draw.add_text(at, text, t);
+    }
+    clicked
+}
+
+/// Control "F7 :Forge relics" mientras Relic Rites está abierto. Con el juego en inglés y el
+/// panel conocido, va en la barra de controles del juego, justo después de "M:All Presets" (la
+/// barra es más larga con el cursor en los slots que en la grilla). Si no, va una fila arriba
+/// del grupo de abajo a la derecha, donde no tapa nada. Devuelve `true` si se hizo clic.
+fn draw_hint(
+    ui: &Ui,
+    font: Option<TitleFont>,
+    icons: Option<&Icons>,
+    panel: Option<crate::relic_menu::Panel>,
+) -> bool {
+    use crate::relic_menu::Panel;
     let [w, h] = ui.io().display_size;
+    // Las medidas salen de capturas a 1920x1080; la interfaz del juego escala con el alto y se
+    // centra en horizontal.
+    let s = h / 1080.0;
+    let x = |px: f32| w * 0.5 + (px - 960.0) * s;
+    let y = |px: f32| h * 0.5 + (px - 540.0) * s;
+    // Fin de "M:All Presets" en la barra de abajo a la izquierda (solo medido con el juego en
+    // inglés): la barra es más larga con el cursor en los slots. Eligiendo la reliquia para un
+    // slot la barra es solo "1:Swap screen", pero no se distingue de recorrer la grilla: ahí el
+    // botón queda en la misma barra, con un hueco a la izquierda.
+    let after_presets = match (relic_rules::lang::get(), panel) {
+        (relic_rules::lang::Lang::En, Some(Panel::Slots)) => Some(1010.0),
+        (relic_rules::lang::Lang::En, Some(Panel::Right)) => Some(527.0),
+        _ => None,
+    };
+    let (pos, pivot) = match after_presets {
+        Some(px) => ([x(px), y(1015.0)], [0.0, 0.5]),
+        None => ([x(1790.0), y(972.0)], [1.0, 0.5]),
+    };
+    let mut clicked = false;
+    let _pad = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0, 0.0]));
     ui.window("##relics_reforged_hint")
-        .position([w - 24.0, h - 24.0], Condition::Always)
-        .position_pivot([1.0, 1.0])
-        .bg_alpha(0.6)
+        .position(pos, Condition::Always)
+        .position_pivot(pivot)
         .no_decoration()
-        .no_inputs()
+        .draw_background(false)
+        .no_nav()
+        .focus_on_appearing(false)
         .always_auto_resize(true)
         .build(|| {
-            ui.text_colored(
-                GOLD,
-                format!(
-                    "[{TOGGLE_KEY_NAME}] {}",
-                    tr("Forjar reliquias", "Forge relics")
-                ),
+            let _f = font.map(|f| ui.push_font(f.0));
+            ui.set_window_font_scale(s);
+            clicked = key_prompt(
+                ui,
+                icons,
+                KEY_ICON,
+                TOGGLE_KEY_NAME,
+                tr("Forjar reliquias", "Forge relics"),
+                s,
             );
         });
+    clicked
 }
 
 /// Parte un texto en líneas que entren en `width` (corta por palabras).
@@ -162,6 +349,10 @@ struct Menu {
     confirm: bool,
     /// Fuente de los títulos de sección (Palatino en negrita), si se pudo cargar.
     title_font: Option<TitleFont>,
+    prompt_font: Option<TitleFont>,
+    /// Atlas leído del juego, esperando que el hilo de render lo suba a la GPU.
+    pending_icons: Arc<Mutex<Option<IconAtlas>>>,
+    icons: Option<Icons>,
 }
 
 impl Menu {
@@ -180,6 +371,9 @@ impl Menu {
             sacrifices: Vec::new(),
             confirm: false,
             title_font: None,
+            prompt_font: None,
+            pending_icons: Arc::default(),
+            icons: None,
         }
     }
 
@@ -311,21 +505,67 @@ impl Menu {
         self.reset_selection();
     }
 
+    /// El menú ocupa la pantalla de Relic Rites (salvo su encabezado), como si fuera una sección
+    /// más del mismo menú. Abajo lleva su propia barra de controles, como la del juego.
     fn draw(&mut self, ui: &Ui) {
         let [w, h] = ui.io().display_size;
-        let size = [
-            (w * 0.72).clamp(860.0_f32.min(w - 40.0), w - 40.0),
-            (h * 0.78).clamp(560.0_f32.min(h - 40.0), h - 40.0),
-        ];
-        let mut open = true;
-        ui.window("Relics Reforged")
-            .size(size, Condition::Appearing)
-            .position([w * 0.5, h * 0.5], Condition::Appearing)
-            .position_pivot([0.5, 0.5])
-            .collapsible(false)
-            .opened(&mut open)
-            .build(|| self.draw_contents(ui));
-        if !open {
+        let s = h / 1080.0;
+        // Encabezado del juego ("Relic Rites", arriba a la izquierda): queda a la vista.
+        let top = (118.0 * s).round();
+        let bg = ui.get_background_draw_list();
+        bg.add_rect_filled_multicolor(
+            [0.0, top],
+            [w, h],
+            [0.05, 0.06, 0.10, 0.97],
+            [0.05, 0.06, 0.10, 0.97],
+            [0.02, 0.03, 0.05, 0.98],
+            [0.02, 0.03, 0.05, 0.98],
+        );
+        bg.add_line([0.0, top], [w, top], [0.45, 0.40, 0.28, 0.55])
+            .thickness(1.0)
+            .build();
+        // Título de la sección al lado de "Relic Rites".
+        {
+            let _f = self.prompt_font.map(|f| ui.push_font(f.0));
+            let title = tr("Forja de reliquias", "Relic Forge");
+            let at = [290.0 * s, 67.0 * s - ui.text_line_height() * 0.5];
+            bg.add_text(at, [0.55, 0.54, 0.50, 1.0], "/");
+            bg.add_text([at[0] + 22.0 * s, at[1]], GOLD, title);
+        }
+        drop(bg);
+
+        let mut close = false;
+        let _pad = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0, 0.0]));
+        ui.window("##relics_reforged")
+            .position([0.0, top], Condition::Always)
+            .size([w, h - top], Condition::Always)
+            .no_decoration()
+            .draw_background(false)
+            .movable(false)
+            .bring_to_front_on_focus(false)
+            .build(|| {
+                // Mismos márgenes que los paneles de Relic Rites.
+                let margin = 45.0 * s;
+                let bar = 80.0 * s;
+                ui.set_cursor_screen_pos([margin, top + 16.0 * s]);
+                ui.child_window("contenido")
+                    .size([w - margin * 2.0, h - top - 16.0 * s - bar])
+                    .build(|| self.draw_contents(ui));
+                // Barra de controles, a la altura de la del juego.
+                let _f = self.prompt_font.map(|f| ui.push_font(f.0));
+                ui.set_window_font_scale(s);
+                ui.set_cursor_screen_pos([48.0 * s, h - 80.0 * s]);
+                let icons = self.icons.as_ref();
+                close |= key_prompt(ui, icons, KEY_ICON, TOGGLE_KEY_NAME, tr("Volver", "Back"), s);
+                ui.same_line_with_spacing(0.0, 14.0 * s);
+                close |= key_prompt(ui, icons, ESC_ICON, "Esc", tr("Volver", "Back"), s);
+                ui.set_window_font_scale(1.0);
+            });
+        // Esc también vuelve (salvo que se esté escribiendo en el filtro: ahí lo usa ImGui).
+        if ui.is_key_pressed(Key::Escape) && !ui.io().want_text_input {
+            close = true;
+        }
+        if close {
             self.visible.store(false, Ordering::Relaxed);
         }
     }
@@ -404,7 +644,7 @@ impl Menu {
             .size([left_w, 0.0])
             .border(true)
             .build(|| self.draw_left(ui, &by_handle, preview.as_ref(), preview_busy, forging));
-        ui.same_line();
+        ui.same_line_with_spacing(0.0, 24.0);
         ui.child_window("derecha")
             .size([0.0, 0.0])
             .border(true)
@@ -430,7 +670,7 @@ impl Menu {
                 ),
             ),
             Some(t) => {
-                relic_title(ui, t);
+                relic_title(ui, self.icons.as_ref(), t);
                 ui.same_line();
                 if ui.small_button(format!("{}##receptora", tr("cambiar", "change"))) {
                     self.reset_selection();
@@ -460,7 +700,7 @@ impl Menu {
                 ),
             ),
             (Some(_), Some(d)) => {
-                relic_title(ui, d);
+                relic_title(ui, self.icons.as_ref(), d);
                 ui.same_line();
                 if ui.small_button(format!("{}##donante", tr("cambiar", "change"))) {
                     self.donor = None;
@@ -510,7 +750,7 @@ impl Menu {
         let mut remove = None;
         for &h in &self.sacrifices {
             if let Some(r) = by_handle.get(&h) {
-                relic_title(ui, r);
+                relic_title(ui, self.icons.as_ref(), r);
                 ui.same_line();
                 if ui.small_button(format!("x##sacrificio{h:X}")) {
                     remove = Some(h);
@@ -549,12 +789,25 @@ impl Menu {
                     .donor
                     .and_then(|h| by_handle.get(&h))
                     .and_then(|d| d.effects.get(self.donor_slot));
+                // Ícono de cada efecto, por su texto (salen de la receptora o de la donante).
+                let icon_of: HashMap<&str, i32> = [self.target, self.donor]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|h| by_handle.get(&h))
+                    .flat_map(|r| {
+                        r.effects
+                            .iter()
+                            .map(String::as_str)
+                            .zip(r.effect_icons.iter().copied())
+                    })
+                    .collect();
+                let text = ui.style_color(imgui::StyleColor::Text);
                 for line in msg.lines() {
                     match line.strip_prefix(EFFECT_LINE) {
-                        Some(e) if Some(&e.to_string()) == moved => {
-                            colored_wrapped(ui, GOLD, &format!("   {e}"))
+                        Some(e) => {
+                            let color = if Some(&e.to_string()) == moved { GOLD } else { text };
+                            self.effect_line(ui, icon_of.get(e).copied(), color, e);
                         }
-                        Some(e) => ui.text_wrapped(format!("   {e}")),
                         None => ui.text_wrapped(line),
                     }
                 }
@@ -670,7 +923,19 @@ impl Menu {
         f.is_empty() || r.label().to_lowercase().contains(&f)
     }
 
-    /// Lista seleccionable de reliquias, con la marca de color de cada una. Devuelve el handle
+    /// Un efecto de la vista previa: su ícono (si hay) y el texto, que baja de línea si no entra.
+    fn effect_line(&self, ui: &Ui, icon: Option<i32>, color: [f32; 4], text: &str) {
+        let p = ui.cursor_screen_pos();
+        let h = ui.text_line_height();
+        let drawn = self.icons.as_ref().is_some_and(|icons| {
+            icon.is_some_and(|id| icons.draw(ui, &status_icon(id), [p[0] + 8.0, p[1]], [h, h]))
+        });
+        ui.dummy([if drawn { h + 8.0 } else { 14.0 }, h]);
+        ui.same_line();
+        colored_wrapped(ui, color, text);
+    }
+
+    /// Lista seleccionable de reliquias, con el ícono de cada una. Devuelve el handle
     /// clickeado.
     fn relic_list(
         &self,
@@ -696,9 +961,20 @@ impl Menu {
                 // selectable vacío del alto de la fila.
                 let [x, y] = ui.cursor_screen_pos();
                 let width = ui.content_region_avail()[0];
-                let effect_x = x + 32.0;
+                // Con íconos: la imagen de la reliquia a la izquierda (muestra color, tamaño y
+                // si es Deep, como en el juego) y el ícono de cada efecto antes del texto.
+                let icons = self.icons.as_ref();
+                let relic_icon = icons.filter(|i| i.has(&item_icon(r.icon)));
+                let pic = if relic_icon.is_some() { 60.0 } else { 0.0 };
+                let name_x = if relic_icon.is_some() { x + pic + 8.0 } else { x + 20.0 };
+                let effect_x = if relic_icon.is_some() {
+                    name_x + line + 6.0
+                } else {
+                    x + 32.0
+                };
                 let wrap_w = (x + width - effect_x - 6.0).max(80.0);
-                let mut effect_lines: Vec<(f32, [f32; 4], String)> = Vec::new();
+                // (sangría, color, texto, ícono del efecto en su primera línea)
+                let mut effect_lines: Vec<(f32, [f32; 4], String, Option<i32>)> = Vec::new();
                 for (i, e) in r.effects.iter().enumerate() {
                     let color = if r.forged.get(i) == Some(&true) {
                         GOLD
@@ -708,11 +984,12 @@ impl Menu {
                     for (j, l) in wrap_text(ui, e, wrap_w).into_iter().enumerate() {
                         // Las continuaciones van un poco más adentro.
                         let indent = if j == 0 { 0.0 } else { 14.0 };
-                        effect_lines.push((indent, color, l));
+                        let icon = if j == 0 { r.effect_icons.get(i).copied() } else { None };
+                        effect_lines.push((indent, color, l, icon));
                     }
                 }
                 let lines = 1 + effect_lines.len().max(1);
-                let row_h = line * lines as f32 + 6.0;
+                let row_h = (line * lines as f32 + 6.0).max(pic + 4.0);
                 if ui
                     .selectable_config(format!("##{id}{:X}", r.handle))
                     .selected(selected.contains(&r.handle))
@@ -721,10 +998,19 @@ impl Menu {
                 {
                     clicked = Some(r.handle);
                 }
+                if let Some(i) = relic_icon {
+                    i.draw(ui, &item_icon(r.icon), [x, y + (row_h - pic) * 0.5], [pic, pic]);
+                } else {
+                    color_mark(ui, [x + 4.0, y + 3.0 + line * 0.5], r.color);
+                }
                 let y = y + 3.0;
-                color_mark(ui, [x + 4.0, y + line * 0.5], r.color);
+                for (i, (.., icon)) in effect_lines.iter().enumerate() {
+                    if let (Some(icons), Some(id)) = (icons, icon) {
+                        let at = [name_x, y + line * (i + 1) as f32];
+                        icons.draw(ui, &status_icon(*id), at, [line, line]);
+                    }
+                }
                 let draw = ui.get_window_draw_list();
-                let name_x = x + 20.0;
                 draw.add_text([name_x, y], text, &r.name);
                 let mut tag_x = name_x + ui.calc_text_size(&r.name)[0] + 14.0;
                 if r.forged_count() > 0 {
@@ -738,7 +1024,7 @@ impl Menu {
                         draw.add_text([tag_x, y], RED, &tag);
                     }
                 }
-                for (i, (indent, color, l)) in effect_lines.iter().enumerate() {
+                for (i, (indent, color, l, _)) in effect_lines.iter().enumerate() {
                     draw.add_text([effect_x + indent, y + line * (i + 1) as f32], *color, l);
                 }
             }
@@ -767,6 +1053,15 @@ impl Menu {
             // suelen ser largas); clickear el texto también elige el efecto.
             let mut changed = ui.radio_button(format!("##{id}{i}"), value, i);
             ui.same_line();
+            let icon = r.effect_icons.get(i).copied();
+            if let Some(icons) = &self.icons {
+                let p = ui.cursor_screen_pos();
+                let h = ui.text_line_height();
+                if icon.is_some_and(|id| icons.draw(ui, &status_icon(id), p, [h, h])) {
+                    ui.dummy([h, h]);
+                    ui.same_line();
+                }
+            }
             ui.text_wrapped(&text);
             if ui.is_item_clicked() && *value != i {
                 *value = i;
@@ -803,13 +1098,20 @@ fn color_mark(ui: &Ui, at: [f32; 2], color: u8) {
         .build();
 }
 
-/// Marca de color y nombre de una reliquia, con sus forjas si tiene.
-fn relic_title(ui: &Ui, r: &RelicView) {
+/// Ícono (o marca de color, si no hay íconos) y nombre de una reliquia, con sus forjas si tiene.
+fn relic_title(ui: &Ui, icons: Option<&Icons>, r: &RelicView) {
     let p = ui.cursor_screen_pos();
     let h = ui.text_line_height();
-    color_mark(ui, [p[0], p[1] + h * 0.5], r.color);
-    ui.dummy([14.0, h]);
-    ui.same_line();
+    let s = (h * 1.6).round();
+    if icons.is_some_and(|i| i.draw(ui, &item_icon(r.icon), [p[0] - 4.0, p[1]], [s, s])) {
+        ui.dummy([s - 4.0, s]);
+        ui.same_line();
+        ui.set_cursor_screen_pos([p[0] + s + 2.0, p[1] + (s - h) * 0.5]);
+    } else {
+        color_mark(ui, [p[0], p[1] + h * 0.5], r.color);
+        ui.dummy([14.0, h]);
+        ui.same_line();
+    }
     ui.text(&r.name);
     if r.forged_count() > 0 {
         ui.same_line();
@@ -847,14 +1149,16 @@ impl ImguiRenderLoop for Menu {
         };
         match load(&["pala.ttf", "georgia.ttf"]) {
             Some(data) => {
-                ctx.fonts().add_font(&[source(data, 19.0)]);
+                ctx.fonts().add_font(&[source(data, 21.0)]);
+                // Para el control "F7 :Forge relics", del tamaño de los controles del juego a 1080p.
+                self.prompt_font = Some(TitleFont(ctx.fonts().add_font(&[source(data, 24.0)])));
             }
             None => {
                 crate::log_event("Menú: no encontré Palatino ni Georgia, uso la fuente de ImGui")
             }
         }
         if let Some(data) = load(&["palab.ttf", "georgiab.ttf"]) {
-            self.title_font = Some(TitleFont(ctx.fonts().add_font(&[source(data, 21.0)])));
+            self.title_font = Some(TitleFont(ctx.fonts().add_font(&[source(data, 24.0)])));
         }
     }
 
@@ -866,7 +1170,14 @@ impl ImguiRenderLoop for Menu {
             }
             return;
         }
-        if ui.is_key_pressed(TOGGLE_KEY) {
+        let hint_clicked = !self.visible.load(Ordering::Relaxed)
+            && draw_hint(
+                ui,
+                self.prompt_font.or(self.title_font),
+                self.icons.as_ref(),
+                crate::relic_menu::panel(),
+            );
+        if ui.is_key_pressed(TOGGLE_KEY) || hint_clicked {
             let now = !self.visible.load(Ordering::Relaxed);
             self.visible.store(now, Ordering::Relaxed);
             if now {
@@ -875,18 +1186,32 @@ impl ImguiRenderLoop for Menu {
         }
         if self.visible.load(Ordering::Relaxed) {
             self.draw(ui);
-        } else {
-            draw_hint(ui);
         }
     }
 
     fn before_render<'a>(
         &'a mut self,
         ctx: &mut imgui::Context,
-        _render_context: &'a mut dyn hudhook::RenderContext,
+        render_context: &'a mut dyn hudhook::RenderContext,
     ) {
         // Con el menú abierto, ImGui dibuja su propio cursor (el juego suele esconder el de Windows).
         ctx.io_mut().mouse_draw_cursor = self.visible.load(Ordering::Relaxed);
+        // El atlas de íconos llega de otro hilo; se sube a la GPU una sola vez.
+        if self.icons.is_none() {
+            let atlas = self.pending_icons.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let Some(atlas) = atlas {
+                match render_context.load_texture(&atlas.rgba, atlas.width, atlas.height) {
+                    Ok(texture) => {
+                        self.icons = Some(Icons {
+                            texture,
+                            size: [atlas.width as f32, atlas.height as f32],
+                            rects: atlas.rects,
+                        })
+                    }
+                    Err(e) => crate::log_event(&format!("Íconos: no pude subir la textura: {e:?}")),
+                }
+            }
+        }
     }
 
     fn message_filter(&self, _io: &imgui::Io) -> MessageFilter {
@@ -969,15 +1294,23 @@ fn load(
                 .filter_map(|s| s.effect)
                 .map(|e| forged_ids.contains(&e))
                 .collect();
+            let effect_icons = relic
+                .slots
+                .iter()
+                .filter_map(|s| s.effect)
+                .map(|e| data.effects.get(&e).map_or(-1, |i| i.icon_id))
+                .collect();
             let kind = data.relic_types.get(&r.item_id);
             RelicView {
                 handle: r.handle,
                 forged,
                 name: kind.map_or("?".into(), |t| t.name.clone()),
                 color: kind.map_or(u8::MAX, |t| t.color),
+                icon: kind.map_or(-1, |t| t.icon_id),
                 size,
                 deep,
                 effects,
+                effect_icons,
                 locked: locks.get(&r.handle).map(|p| p.join(", ")),
             }
         })

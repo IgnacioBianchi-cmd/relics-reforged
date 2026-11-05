@@ -234,6 +234,29 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - Tema oscuro con bordes dorados (`apply_theme`) y Palatino de Windows (`pala.ttf` / `palab.ttf`, con Georgia de respaldo), cargadas en `ImguiRenderLoop::initialize`: hudhook lo llama antes de armar el atlas de fuentes. `FontId` es un puntero crudo: se envuelve (`TitleFont`) para que `Menu` siga siendo `Send + Sync`.
 - La vista previa de `forge?` trae un efecto por línea con el prefijo `EFFECT_LINE` (`- `); el menú resalta en dorado el efecto transferido. `effect_text` arma el texto del efecto con su maldición igual en la lista y en la vista previa.
 - Los recipientes de los bloqueos se muestran sin su ID interno ("vessel", no "vessel 0xBB9"); el comando `locks` sigue mostrando el ID.
+- **Pantalla completa** (2026-11-05): el menú tapa Relic Rites salvo su encabezado (y = 118 a 1080p), con "/ Relic Forge" al lado de "Relic Rites" y su propia barra de controles ("F7:Back", "Esc:Back"; Esc no cierra mientras se escribe en el filtro). Los márgenes copian los paneles del juego; las medidas salen de capturas a 1920x1080 y escalan con el alto.
+
+### Íconos del juego ✔ (2026-11-05)
+
+- Cada efecto tiene su ícono en `AttachEffectParam.statusIconId` (offset 0x28; 65 distintos): `MENU_StatusIcon_<id>`, 80x80. Cada reliquia, en `EquipParamAntique.iconId` (offset 0x1C): `MENU_ItemIcon_<id>`, 160x160. La imagen de la reliquia ya muestra el color, el tamaño (cristal o nido chico, mediano o grande) y si es Deep (espinas azules), así que no hacen falta marcas propias.
+- Se leen del juego instalado, sin repartir imágenes (`crates/nr-assets`, probado con `tools/nr_archive.py` y `tools/extract_icons.py`):
+  - `dataN.bhd`: RSA con clave pública (bloques de 256 → 255 bytes) → `BHD5`. Las 5 claves están en `Andre.Formats.dll` de Smithbox (cadenas UTF-16, algunas en offset impar); `tools/bhd_keys.py` encuentra cuál abre cada `.bhd`.
+  - Índice: hash de la ruta de 64 bits (`h = h * 0x85 + c`, minúsculas, `/` inicial) → tamaño, offset en `dataN.bdt` y rangos con AES-128-ECB.
+  - `.dcx` del menú: Oodle Kraken (`DCP KRAK`), con la `oo2core_9_win64.dll` del juego. `OodleLZ_Decompress` lleva 14 argumentos (con 13 el proceso se cae).
+  - `/menu/01_common_h.tpf.dcx` (~70 MB, 224 MB descomprimido): TPF con los atlas en DDS BC7 (DXGI 98). `/menu/01_common_h.sblytbnd.dcx`: BND4 con XML (`<SubTexture name x y width height>`) que ubican cada ícono. Los íconos de efectos están en `SB_StatusIcon_0`, los de reliquias en `SB_ItemIcon_0..2` y las teclas en `SB_KeyTop_0` (`KG_Key_F7`, `KG_Key_Esc`).
+- La DLL arma un atlas propio de 2048 de ancho con los íconos que usa (unos 180, ~2,5 s en un hilo aparte al arrancar) y lo sube a la GPU con `RenderContext::load_texture` en `before_render`. Si falla, el menú sigue sin íconos.
+
+### Dónde está el cursor de Relic Rites ✔ (2026-11-05)
+
+- La barra de controles de abajo cambia según el cursor; el botón "F7 :Forge relics" va justo después de "M:All Presets":
+  - Slots de arriba: "F:OK Q:Close 2:Remove 1:Swap screen ↓:Change vessels 3:Save as Preset M:All Presets" (termina en x ≈ 1000 a 1080p).
+  - Grilla, recorriéndola (D): "1:Swap screen 3:Save as Preset M:All Presets" (termina en x ≈ 517) y a la derecha "Q:Back 2:Add/remove favorites".
+  - Grilla, eligiendo la reliquia para un slot (F en el slot): solo "1:Swap screen" y a la derecha "F:OK Q:Back 2:Add/remove favorites".
+- **Lo que funcionó:** contar las llamadas a cada método de `AntiqueEquipDialog`. Los métodos 38 a 41 se llaman una vez por frame con el cursor en los slots y dos con el cursor en la grilla (59 contra 119 por segundo; el 42 siempre 59). `relic_menu::panel` compara cada 200 ms. No distingue recorrer la grilla de elegir para un slot: en los dos casos el botón va en x ≈ 527 (eligiendo queda con un hueco, sin tapar nada). Las posiciones solo están medidas con el juego en inglés; en otro idioma el botón va arriba del grupo de la derecha.
+- **Trampas:**
+  - La tecla 1 ("Swap screen") no pasa el cursor a la grilla: solo cambia la vista de los slots.
+  - Fotos de memoria de la ventana y de los objetos a los que apunta (9 mediciones de 1 s, `tools/f8_states.py`): un valor pareció servir (`[ventana+0xC00]+0x2EC` = 2 en slots y 1 eligiendo, en 4 fotos), pero en otras sesiones ese puntero era 0. No quedó ningún valor estable.
+  - No todos los métodos de la vtable reciben la ventana en `rcx`: para quedarse con la ventana hay que verificar el objeto (por ejemplo, que su vtable lleve a los ganchos).
 
 ### Saves de prueba
 

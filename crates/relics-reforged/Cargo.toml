@@ -10,4 +10,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 relic-rules = { path = "../relic-rules" }
+nr-assets = { path = "../nr-assets" }
 hudhook = { version = "0.9.3", default-features = false, features = ["dx12"] }

@@ -9,6 +9,9 @@
 # Datos del juego exportados de Smithbox (propiedad de FromSoftware; no se redistribuyen)
 /data/export/
 
+# Archivos sacados de los data*.bdt del juego (tools/nr_archive.py, tools/extract_icons.py)
+/data/game/
+
 # Rust
 /target/
 **/*.rs.bk

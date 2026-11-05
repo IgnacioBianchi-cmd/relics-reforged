@@ -20,6 +20,7 @@ pub fn sample_data() -> GameData {
         is_debuff: debuff,
         passive_sp_effects: vec![id + 1000],
         text_id: id as i32,
+        icon_id: -1,
     };
     for e in [
         effect(10, 100, false),
@@ -59,6 +60,7 @@ pub fn sample_data() -> GameData {
         color: 0,
         slot_tables: slots,
         curse_tables: curses,
+        icon_id: -1,
     };
     for rt in [
         relic(1, false, [100, 100, 100], [-1, -1, -1]),
