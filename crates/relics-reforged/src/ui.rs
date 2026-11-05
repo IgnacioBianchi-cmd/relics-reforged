@@ -13,7 +13,7 @@ use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::imgui::{self, Condition, Key, Ui};
 use hudhook::windows::Win32::Foundation::HINSTANCE;
 use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter};
-use relic_rules::lang::{self, tr, Lang};
+use relic_rules::lang::tr;
 use relic_rules::{relic_kind, EffectId, GameData, Relic, RelicKind};
 
 use crate::forge::{self, Order};
@@ -25,6 +25,8 @@ const TOGGLE_KEY: Key = Key::F7;
 const RED: [f32; 4] = [1.0, 0.45, 0.4, 1.0];
 const GREEN: [f32; 4] = [0.5, 0.9, 0.5, 1.0];
 const GOLD: [f32; 4] = [0.95, 0.8, 0.45, 1.0];
+/// Texto de los efectos en las listas: más apagado que los nombres.
+const EFFECT: [f32; 4] = [0.72, 0.71, 0.66, 1.0];
 
 /// Arranca el overlay en un hilo propio.
 pub fn start(module: usize, game: Game, data: Arc<GameData>, dll_dir: PathBuf) {
@@ -50,6 +52,8 @@ struct RelicView {
     /// `None` si no es aleatoria (no sirve para forjar).
     size: Option<usize>,
     deep: bool,
+    /// `relicColor`: 0 Burning, 1 Drizzly, 2 Luminous, 3 Tranquil.
+    color: u8,
     effects: Vec<String>,
     /// Por slot: si ese efecto ya fue forjado por el mod.
     forged: Vec<bool>,
@@ -88,6 +92,32 @@ fn draw_hint(ui: &Ui) {
         });
 }
 
+/// Parte un texto en líneas que entren en `width` (corta por palabras).
+fn wrap_text(ui: &Ui, text: &str, width: f32) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split(' ') {
+        let candidate = if current.is_empty() {
+            word.to_string()
+        } else {
+            format!("{current} {word}")
+        };
+        if !current.is_empty() && ui.calc_text_size(&candidate)[0] > width {
+            lines.push(std::mem::replace(&mut current, word.to_string()));
+        } else {
+            current = candidate;
+        }
+    }
+    lines.push(current);
+    lines
+}
+
+/// Texto apagado que baja de línea si no entra.
+fn hint(ui: &Ui, text: &str) {
+    let color = ui.style_color(imgui::StyleColor::TextDisabled);
+    colored_wrapped(ui, color, text);
+}
+
 /// Texto en color que baja de línea si no entra.
 fn colored_wrapped(ui: &Ui, color: [f32; 4], text: &str) {
     let _c = ui.push_style_color(imgui::StyleColor::Text, color);
@@ -108,6 +138,13 @@ struct Shared {
     forging: bool,
 }
 
+/// `FontId` es un puntero a la fuente dentro del atlas de ImGui; solo se usa en el hilo de render.
+#[derive(Clone, Copy)]
+struct TitleFont(imgui::FontId);
+// SAFETY: el atlas vive tanto como el contexto de ImGui y el id solo se usa al dibujar.
+unsafe impl Send for TitleFont {}
+unsafe impl Sync for TitleFont {}
+
 type SelectionKey = (u32, usize, u32, usize, [u32; 3]);
 
 struct Menu {
@@ -123,6 +160,8 @@ struct Menu {
     donor_slot: usize,
     sacrifices: Vec<u32>,
     confirm: bool,
+    /// Fuente de los títulos de sección (Palatino en negrita), si se pudo cargar.
+    title_font: Option<TitleFont>,
 }
 
 impl Menu {
@@ -140,6 +179,7 @@ impl Menu {
             donor_slot: 0,
             sacrifices: Vec::new(),
             confirm: false,
+            title_font: None,
         }
     }
 
@@ -272,15 +312,30 @@ impl Menu {
     }
 
     fn draw(&mut self, ui: &Ui) {
+        let [w, h] = ui.io().display_size;
+        let size = [
+            (w * 0.72).clamp(860.0_f32.min(w - 40.0), w - 40.0),
+            (h * 0.78).clamp(560.0_f32.min(h - 40.0), h - 40.0),
+        ];
         let mut open = true;
         ui.window("Relics Reforged")
-            .size([760.0, 820.0], Condition::FirstUseEver)
-            .position([60.0, 60.0], Condition::FirstUseEver)
+            .size(size, Condition::Appearing)
+            .position([w * 0.5, h * 0.5], Condition::Appearing)
+            .position_pivot([0.5, 0.5])
+            .collapsible(false)
             .opened(&mut open)
             .build(|| self.draw_contents(ui));
         if !open {
             self.visible.store(false, Ordering::Relaxed);
         }
+    }
+
+    /// Título de sección, en dorado y con la fuente grande si se pudo cargar.
+    fn section(&self, ui: &Ui, title: &str) {
+        let _f = self.title_font.map(|f| ui.push_font(f.0));
+        ui.text_colored(GOLD, title);
+        drop(_f);
+        ui.separator();
     }
 
     fn draw_contents(&mut self, ui: &Ui) {
@@ -299,12 +354,11 @@ impl Menu {
         };
         let by_handle: HashMap<u32, &RelicView> = relics.iter().map(|r| (r.handle, r)).collect();
 
-        ui.text(format!(
-            "Murk: {murk}    {}: {}",
-            tr("Reliquias", "Relics"),
-            relics.len()
-        ));
-        ui.same_line();
+        // Encabezado: murk, cantidad, botones y filtro.
+        ui.text_colored(GOLD, format!("Murk  {murk}"));
+        ui.same_line_with_spacing(0.0, 28.0);
+        ui.text_disabled(format!("{}: {}", tr("Reliquias", "Relics"), relics.len()));
+        ui.same_line_with_spacing(0.0, 28.0);
         if ui.button(tr("Refrescar", "Refresh")) {
             self.refresh();
         }
@@ -312,13 +366,22 @@ impl Menu {
         if ui.button(tr("Empezar de nuevo", "Start over")) {
             self.reset_selection();
         }
+        ui.same_line_with_spacing(0.0, 28.0);
+        ui.set_next_item_width(-1.0);
+        ui.input_text("##filtro", &mut self.filter)
+            .hint(tr(
+                "Filtrar por nombre o efecto",
+                "Filter by name or effect",
+            ))
+            .build();
         if loading {
-            ui.text_disabled(tr("Leyendo reliquias...", "Reading relics..."));
+            hint(ui, tr("Leyendo reliquias...", "Reading relics..."));
         }
         if let Some(e) = &load_error {
-            ui.text_colored(
+            colored_wrapped(
+                ui,
                 RED,
-                format!(
+                &format!(
                     "{}: {e}",
                     tr("No pude leer las reliquias", "Couldn't read the relics")
                 ),
@@ -332,77 +395,72 @@ impl Menu {
         if forging {
             ui.text_colored(GOLD, tr("Forjando...", "Forging..."));
         }
-        ui.input_text(tr("Filtro", "Filter"), &mut self.filter)
-            .build();
-        ui.separator();
+        ui.spacing();
 
-        // 1. Receptora.
-        let target = self.target.and_then(|h| by_handle.get(&h).copied());
-        match target {
-            None => {
-                ui.text_colored(
-                    GOLD,
-                    tr(
-                        "1. Elegí la reliquia que querés mejorar (receptora)",
-                        "1. Choose the relic you want to improve (target)",
-                    ),
-                );
-                let list: Vec<&RelicView> = relics
-                    .iter()
-                    .filter(|r| r.size.is_some() && self.matches_filter(r))
-                    .collect();
-                if let Some(h) = self.relic_list(ui, "receptoras", &list, &HashSet::new(), true) {
-                    self.target = Some(h);
-                    self.target_slot = 0;
-                }
-                return;
-            }
+        // Dos columnas, como Relic Rites: la selección a la izquierda y la lista a la derecha.
+        let avail = ui.content_region_avail();
+        let left_w = (avail[0] * 0.42).max(340.0);
+        ui.child_window("izquierda")
+            .size([left_w, 0.0])
+            .border(true)
+            .build(|| self.draw_left(ui, &by_handle, preview.as_ref(), preview_busy, forging));
+        ui.same_line();
+        ui.child_window("derecha")
+            .size([0.0, 0.0])
+            .border(true)
+            .build(|| self.draw_right(ui, &relics));
+    }
+
+    fn draw_left(
+        &mut self,
+        ui: &Ui,
+        by_handle: &HashMap<u32, &RelicView>,
+        preview: Option<&(SelectionKey, Result<String, String>)>,
+        preview_busy: bool,
+        forging: bool,
+    ) {
+        // Receptora.
+        self.section(ui, tr("Receptora", "Target"));
+        match self.target.and_then(|h| by_handle.get(&h).copied()) {
+            None => hint(
+                ui,
+                tr(
+                    "Elegila en la lista de la derecha.",
+                    "Choose it from the list on the right.",
+                ),
+            ),
             Some(t) => {
-                ui.text(format!("{}: {}", tr("Receptora", "Target"), t.name));
+                relic_title(ui, t);
                 ui.same_line();
                 if ui.small_button(format!("{}##receptora", tr("cambiar", "change"))) {
                     self.reset_selection();
                     return;
                 }
-                ui.text_colored(
-                    GOLD,
-                    tr("2. Efecto que se reemplaza:", "2. Effect to replace:"),
-                );
+                hint(ui, tr("Efecto que se reemplaza:", "Effect to replace:"));
                 self.slot_picker(ui, "r", t, true);
             }
         }
-        let t = target.expect("receptora elegida");
-        ui.separator();
+        ui.spacing();
 
-        // 3. Donante.
-        let donor = self.donor.and_then(|h| by_handle.get(&h).copied());
-        match donor {
-            None => {
-                ui.text_colored(
-                    GOLD,
-                    tr(
-                        "3. Elegí la donante (se destruye)",
-                        "3. Choose the donor (it is destroyed)",
-                    ),
-                );
-                let list: Vec<&RelicView> = relics
-                    .iter()
-                    .filter(|r| {
-                        r.size.is_some()
-                            && r.deep == t.deep
-                            && r.handle != t.handle
-                            && r.locked.is_none()
-                            && self.matches_filter(r)
-                    })
-                    .collect();
-                if let Some(h) = self.relic_list(ui, "donantes", &list, &HashSet::new(), false) {
-                    self.donor = Some(h);
-                    self.donor_slot = 0;
-                }
-                return;
-            }
-            Some(d) => {
-                ui.text(format!("{}: {}", tr("Donante", "Donor"), d.name));
+        // Donante.
+        self.section(ui, tr("Donante", "Donor"));
+        match (
+            self.target,
+            self.donor.and_then(|h| by_handle.get(&h).copied()),
+        ) {
+            (None, _) => hint(
+                ui,
+                tr("Primero elegí la receptora.", "Choose the target first."),
+            ),
+            (Some(_), None) => hint(
+                ui,
+                tr(
+                    "Elegila en la lista de la derecha. Se destruye.",
+                    "Choose it from the list on the right. It is destroyed.",
+                ),
+            ),
+            (Some(_), Some(d)) => {
+                relic_title(ui, d);
                 ui.same_line();
                 if ui.small_button(format!("{}##donante", tr("cambiar", "change"))) {
                     self.donor = None;
@@ -410,88 +468,107 @@ impl Menu {
                     self.confirm = false;
                     return;
                 }
-                ui.text_colored(
-                    GOLD,
+                hint(
+                    ui,
                     tr(
-                        "4. Efecto que se transfiere (con su maldición):",
-                        "4. Effect to transfer (with its curse):",
+                        "Efecto que se transfiere (con su maldición):",
+                        "Effect to transfer (with its curse):",
                     ),
                 );
                 self.slot_picker(ui, "d", d, false);
             }
         }
-        let d = donor.expect("donante elegida");
-        ui.separator();
+        ui.spacing();
 
-        // 5. Sacrificios.
+        // Sacrificios.
         let points: u32 = self
             .sacrifices
             .iter()
             .filter_map(|h| by_handle.get(h))
             .map(|r| r.size.unwrap_or(0) as u32)
             .sum();
-        ui.text_colored(
-            GOLD,
-            match lang::get() {
-                Lang::Es => format!(
-                    "5. Elegí 3 sacrificios ({}/3, {points} puntos; chica 1, mediana 2, grande 3)",
-                    self.sacrifices.len()
-                ),
-                Lang::En => format!(
-                    "5. Choose 3 sacrifices ({}/3, {points} points; delicate 1, polished 2, grand 3)",
-                    self.sacrifices.len()
-                ),
-            },
+        self.section(
+            ui,
+            &format!(
+                "{} ({}/3, {points} {})",
+                tr("Sacrificios", "Sacrifices"),
+                self.sacrifices.len(),
+                tr("puntos", "points")
+            ),
         );
-        let chosen: HashSet<u32> = self.sacrifices.iter().copied().collect();
-        let list: Vec<&RelicView> = relics
-            .iter()
-            .filter(|r| {
-                r.size.is_some()
-                    && r.deep == t.deep
-                    && r.handle != t.handle
-                    && r.handle != d.handle
-                    && r.locked.is_none()
-                    && (chosen.contains(&r.handle) || self.matches_filter(r))
-            })
-            .collect();
-        if let Some(h) = self.relic_list(ui, "sacrificios", &list, &chosen, false) {
-            if let Some(pos) = self.sacrifices.iter().position(|&x| x == h) {
-                self.sacrifices.remove(pos);
-            } else if self.sacrifices.len() < 3 {
-                self.sacrifices.push(h);
+        if self.donor.is_none() {
+            hint(ui, tr("Después de la donante.", "After the donor."));
+        } else if self.sacrifices.is_empty() {
+            hint(
+                ui,
+                tr(
+                    "Elegí 3 en la lista de la derecha (chica 1, mediana 2, grande 3).",
+                    "Choose 3 from the list on the right (delicate 1, polished 2, grand 3).",
+                ),
+            );
+        }
+        let mut remove = None;
+        for &h in &self.sacrifices {
+            if let Some(r) = by_handle.get(&h) {
+                relic_title(ui, r);
+                ui.same_line();
+                if ui.small_button(format!("x##sacrificio{h:X}")) {
+                    remove = Some(h);
+                }
             }
+        }
+        if let Some(h) = remove {
+            self.sacrifices.retain(|&x| x != h);
             self.confirm = false;
         }
-        ui.separator();
+        ui.spacing();
 
-        // 6. Vista previa y forja.
+        // Resultado y forja.
+        self.section(ui, tr("Resultado", "Result"));
         self.update_preview();
         let Some(key) = self.selection_key() else {
-            ui.text_disabled(tr(
-                "Completá la selección para ver el resultado.",
-                "Complete the selection to see the result.",
-            ));
+            hint(
+                ui,
+                tr(
+                    "Completá la selección para ver el resultado.",
+                    "Complete the selection to see the result.",
+                ),
+            );
             return;
         };
-        match preview.as_ref().filter(|(k, _)| *k == key) {
+        match preview.filter(|(k, _)| *k == key) {
             None => {
                 if preview_busy {
-                    ui.text_disabled(tr("Calculando...", "Calculating..."));
+                    hint(ui, tr("Calculando...", "Calculating..."));
                 }
             }
             Some((_, Err(e))) => colored_wrapped(ui, RED, e),
             Some((_, Ok(msg))) => {
-                ui.text_wrapped(msg);
+                // El efecto transferido se resalta en dorado.
+                let moved = self
+                    .donor
+                    .and_then(|h| by_handle.get(&h))
+                    .and_then(|d| d.effects.get(self.donor_slot));
+                for line in msg.lines() {
+                    match line.strip_prefix(EFFECT_LINE) {
+                        Some(e) if Some(&e.to_string()) == moved => {
+                            colored_wrapped(ui, GOLD, &format!("   {e}"))
+                        }
+                        Some(e) => ui.text_wrapped(format!("   {e}")),
+                        None => ui.text_wrapped(line),
+                    }
+                }
                 if forging {
                     return;
                 }
+                ui.spacing();
                 if !self.confirm {
-                    if ui.button(tr("Forjar", "Forge")) {
+                    if ui.button_with_size(tr("Forjar", "Forge"), [140.0, 0.0]) {
                         self.confirm = true;
                     }
                 } else {
-                    ui.text_colored(
+                    colored_wrapped(
+                        ui,
                         RED,
                         tr(
                             "La donante y los 3 sacrificios se destruyen. No se puede deshacer.",
@@ -510,12 +587,91 @@ impl Menu {
         }
     }
 
+    /// La lista del paso actual: receptoras, donantes o sacrificios.
+    fn draw_right(&mut self, ui: &Ui, relics: &[RelicView]) {
+        let target = self
+            .target
+            .and_then(|h| relics.iter().find(|r| r.handle == h));
+        let chosen: HashSet<u32> = self.sacrifices.iter().copied().collect();
+        if target.is_none() {
+            self.section(
+                ui,
+                tr(
+                    "Elegí la reliquia que querés mejorar",
+                    "Choose the relic you want to improve",
+                ),
+            );
+            let list: Vec<&RelicView> = relics
+                .iter()
+                .filter(|r| r.size.is_some() && self.matches_filter(r))
+                .collect();
+            if let Some(h) = self.relic_list(ui, "receptoras", &list, &HashSet::new(), true) {
+                self.target = Some(h);
+                self.target_slot = 0;
+            }
+            return;
+        }
+        let t = target.expect("receptora elegida");
+        if self.donor.is_none() {
+            self.section(
+                ui,
+                tr(
+                    "Elegí la donante (se destruye)",
+                    "Choose the donor (it is destroyed)",
+                ),
+            );
+            let list: Vec<&RelicView> = relics
+                .iter()
+                .filter(|r| {
+                    r.size.is_some()
+                        && r.deep == t.deep
+                        && r.handle != t.handle
+                        && r.locked.is_none()
+                        && self.matches_filter(r)
+                })
+                .collect();
+            if let Some(h) = self.relic_list(ui, "donantes", &list, &HashSet::new(), false) {
+                self.donor = Some(h);
+                self.donor_slot = 0;
+            }
+            return;
+        }
+        let donor = self.donor.expect("donante elegida");
+        self.section(
+            ui,
+            tr(
+                "Elegí 3 sacrificios (se destruyen)",
+                "Choose 3 sacrifices (they are destroyed)",
+            ),
+        );
+        let list: Vec<&RelicView> = relics
+            .iter()
+            .filter(|r| {
+                r.size.is_some()
+                    && r.deep == t.deep
+                    && r.handle != t.handle
+                    && r.handle != donor
+                    && r.locked.is_none()
+                    && (chosen.contains(&r.handle) || self.matches_filter(r))
+            })
+            .collect();
+        if let Some(h) = self.relic_list(ui, "sacrificios", &list, &chosen, false) {
+            if let Some(pos) = self.sacrifices.iter().position(|&x| x == h) {
+                self.sacrifices.remove(pos);
+            } else if self.sacrifices.len() < 3 {
+                self.sacrifices.push(h);
+            }
+            self.confirm = false;
+        }
+    }
+
     fn matches_filter(&self, r: &RelicView) -> bool {
         let f = self.filter.trim().to_lowercase();
         f.is_empty() || r.label().to_lowercase().contains(&f)
     }
 
-    /// Lista seleccionable de reliquias. Devuelve el handle clickeado.
+    /// Lista seleccionable de reliquias, con la marca de color de cada una. Devuelve el handle
+    /// clickeado.
     fn relic_list(
         &self,
         ui: &Ui,
@@ -525,54 +681,68 @@ impl Menu {
         show_locks: bool,
     ) -> Option<u32> {
         let mut clicked = None;
-        ui.child_window(id)
-            .size([0.0, 260.0])
-            .border(true)
-            .horizontal_scrollbar(true)
-            .build(|| {
-                if list.is_empty() {
-                    ui.text_disabled(tr(
-                        "No hay reliquias que sirvan acá.",
-                        "No usable relics here.",
-                    ));
-                }
-                for r in list {
-                    let mut label = r.label();
-                    if r.forged_count() > 0 {
-                        label.push_str(&format!(
-                            "  [{} {}]",
-                            tr("forjada", "forged"),
-                            r.forged_count()
-                        ));
-                    }
-                    if show_locks && r.locked.is_some() {
-                        label.push_str(tr("  [en uso]", "  [in use]"));
-                    }
-                    if ui
-                        .selectable_config(format!("{label}##{id}{:X}", r.handle))
-                        .selected(selected.contains(&r.handle))
-                        .build()
-                    {
-                        clicked = Some(r.handle);
-                    }
-                    if ui.is_item_hovered() {
-                        ui.tooltip(|| {
-                            ui.text(&r.name);
-                            for (i, e) in r.effects.iter().enumerate() {
-                                let mark = if r.forged.get(i) == Some(&true) {
-                                    tr("  [forjado]", "  [forged]")
-                                } else {
-                                    ""
-                                };
-                                ui.text(format!("  {}. {e}{mark}", i + 1));
-                            }
-                            if let Some(why) = &r.locked {
-                                ui.text_colored(RED, format!("{}: {why}", tr("En uso", "In use")));
-                            }
-                        });
+        ui.child_window(id).size([0.0, 0.0]).build(|| {
+            if list.is_empty() {
+                hint(
+                    ui,
+                    tr("No hay reliquias que sirvan acá.", "No usable relics here."),
+                );
+            }
+            let line = ui.text_line_height();
+            let text = ui.style_color(imgui::StyleColor::Text);
+            for r in list {
+                // Una fila por reliquia: el nombre arriba y cada efecto debajo (los largos bajan
+                // de línea), como el detalle de Relic Rites. El texto se dibuja encima de un
+                // selectable vacío del alto de la fila.
+                let [x, y] = ui.cursor_screen_pos();
+                let width = ui.content_region_avail()[0];
+                let effect_x = x + 32.0;
+                let wrap_w = (x + width - effect_x - 6.0).max(80.0);
+                let mut effect_lines: Vec<(f32, [f32; 4], String)> = Vec::new();
+                for (i, e) in r.effects.iter().enumerate() {
+                    let color = if r.forged.get(i) == Some(&true) {
+                        GOLD
+                    } else {
+                        EFFECT
+                    };
+                    for (j, l) in wrap_text(ui, e, wrap_w).into_iter().enumerate() {
+                        // Las continuaciones van un poco más adentro.
+                        let indent = if j == 0 { 0.0 } else { 14.0 };
+                        effect_lines.push((indent, color, l));
                     }
                 }
-            });
+                let lines = 1 + effect_lines.len().max(1);
+                let row_h = line * lines as f32 + 6.0;
+                if ui
+                    .selectable_config(format!("##{id}{:X}", r.handle))
+                    .selected(selected.contains(&r.handle))
+                    .size([0.0, row_h])
+                    .build()
+                {
+                    clicked = Some(r.handle);
+                }
+                let y = y + 3.0;
+                color_mark(ui, [x + 4.0, y + line * 0.5], r.color);
+                let draw = ui.get_window_draw_list();
+                let name_x = x + 20.0;
+                draw.add_text([name_x, y], text, &r.name);
+                let mut tag_x = name_x + ui.calc_text_size(&r.name)[0] + 14.0;
+                if r.forged_count() > 0 {
+                    let tag = format!("[{} {}]", tr("forjada", "forged"), r.forged_count());
+                    draw.add_text([tag_x, y], GOLD, &tag);
+                    tag_x += ui.calc_text_size(&tag)[0] + 10.0;
+                }
+                if show_locks {
+                    if let Some(why) = &r.locked {
+                        let tag = format!("[{}: {why}]", tr("en uso", "in use"));
+                        draw.add_text([tag_x, y], RED, &tag);
+                    }
+                }
+                for (i, (indent, color, l)) in effect_lines.iter().enumerate() {
+                    draw.add_text([effect_x + indent, y + line * (i + 1) as f32], *color, l);
+                }
+            }
+        });
         clicked
     }
 
@@ -593,14 +763,101 @@ impl Menu {
             } else {
                 &mut self.donor_slot
             };
-            if ui.radio_button(format!("{}. {text}##{id}{i}", i + 1), value, i) {
+            // El texto va aparte del botón para que baje de línea si no entra (las maldiciones
+            // suelen ser largas); clickear el texto también elige el efecto.
+            let mut changed = ui.radio_button(format!("##{id}{i}"), value, i);
+            ui.same_line();
+            ui.text_wrapped(&text);
+            if ui.is_item_clicked() && *value != i {
+                *value = i;
+                changed = true;
+            }
+            if changed {
                 self.confirm = false;
             }
         }
     }
 }
 
+/// Color de la escena de la reliquia (`relicColor`): 0 Burning, 1 Drizzly, 2 Luminous, 3 Tranquil.
+fn relic_color(color: u8) -> [f32; 4] {
+    match color {
+        0 => [0.86, 0.27, 0.22, 1.0],
+        1 => [0.30, 0.52, 0.92, 1.0],
+        2 => [0.93, 0.78, 0.30, 1.0],
+        3 => [0.36, 0.76, 0.48, 1.0],
+        _ => [0.6, 0.6, 0.6, 1.0],
+    }
+}
+
+/// Rombo de color centrado verticalmente en `at` (borde izquierdo).
+fn color_mark(ui: &Ui, at: [f32; 2], color: u8) {
+    let c = relic_color(color);
+    let (x, y, r) = (at[0] + 5.0, at[1], 5.0);
+    let draw = ui.get_window_draw_list();
+    draw.add_triangle([x - r, y], [x, y - r], [x + r, y], c)
+        .filled(true)
+        .build();
+    draw.add_triangle([x - r, y], [x, y + r], [x + r, y], c)
+        .filled(true)
+        .build();
+}
+
+/// Marca de color y nombre de una reliquia, con sus forjas si tiene.
+fn relic_title(ui: &Ui, r: &RelicView) {
+    let p = ui.cursor_screen_pos();
+    let h = ui.text_line_height();
+    color_mark(ui, [p[0], p[1] + h * 0.5], r.color);
+    ui.dummy([14.0, h]);
+    ui.same_line();
+    ui.text(&r.name);
+    if r.forged_count() > 0 {
+        ui.same_line();
+        ui.text_colored(
+            GOLD,
+            format!("[{} {}]", tr("forjada", "forged"), r.forged_count()),
+        );
+    }
+}
+
 impl ImguiRenderLoop for Menu {
+    fn initialize<'a>(
+        &'a mut self,
+        ctx: &mut imgui::Context,
+        _render_context: &'a mut dyn hudhook::RenderContext,
+    ) {
+        apply_theme(ctx.style_mut());
+        // Palatino, parecida a la tipografía de los menús del juego; Georgia si no está.
+        let fonts_dir = std::env::var("WINDIR")
+            .map_or(PathBuf::from(r"C:\Windows"), PathBuf::from)
+            .join("Fonts");
+        let load = |names: &[&str]| -> Option<&'static [u8]> {
+            let bytes = names
+                .iter()
+                .find_map(|n| std::fs::read(fonts_dir.join(n)).ok())?;
+            Some(Box::leak(bytes.into_boxed_slice()))
+        };
+        let source = |data: &'static [u8], size_pixels: f32| imgui::FontSource::TtfData {
+            data,
+            size_pixels,
+            config: Some(imgui::FontConfig {
+                oversample_h: 2,
+                ..Default::default()
+            }),
+        };
+        match load(&["pala.ttf", "georgia.ttf"]) {
+            Some(data) => {
+                ctx.fonts().add_font(&[source(data, 19.0)]);
+            }
+            None => {
+                crate::log_event("Menú: no encontré Palatino ni Georgia, uso la fuente de ImGui")
+            }
+        }
+        if let Some(data) = load(&["palab.ttf", "georgiab.ttf"]) {
+            self.title_font = Some(TitleFont(ctx.fonts().add_font(&[source(data, 21.0)])));
+        }
+    }
+
     fn render(&mut self, ui: &mut Ui) {
         // La forja vive dentro de Relic Rites: fuera de ese menú no se muestra nada.
         if !self.game.relic_rites_open() {
@@ -662,7 +919,15 @@ fn load(
     match game.relic_references() {
         Ok(refs) => {
             for (h, place) in refs {
-                locks.entry(h).or_default().push(place);
+                // "vessel 0xBB9" -> "vessel": el ID interno no le dice nada al jugador.
+                let place = match place.split_once(" 0x") {
+                    Some((kind, _)) => kind.to_string(),
+                    None => place,
+                };
+                let places = locks.entry(h).or_default();
+                if !places.contains(&place) {
+                    places.push(place);
+                }
             }
         }
         // Si no se puede verificar, todas cuentan como en uso.
@@ -683,13 +948,7 @@ fn load(
                 .push(tr("favorita", "favorite").into());
         }
     }
-    let effect_name = |e: EffectId| -> String {
-        let raw = data
-            .effects
-            .get(&e)
-            .map_or(e.to_string(), |i| i.name.clone());
-        clean_name(&raw)
-    };
+
     let mut views: Vec<RelicView> = live
         .into_iter()
         .map(|r| {
@@ -701,18 +960,7 @@ fn load(
             let effects = relic
                 .slots
                 .iter()
-                .filter_map(|s| {
-                    let e = s.effect?;
-                    let mut text = effect_name(e);
-                    if let Some(c) = s.curse {
-                        text.push_str(&format!(
-                            " ({}: {})",
-                            tr("maldición", "curse"),
-                            effect_name(c)
-                        ));
-                    }
-                    Some(text)
-                })
+                .filter_map(|s| Some(effect_text(data, s.effect?, s.curse)))
                 .collect();
             let forged_ids = order.get(&r.handle).map_or(&[][..], |o| registry.get(*o));
             let forged = relic
@@ -721,13 +969,12 @@ fn load(
                 .filter_map(|s| s.effect)
                 .map(|e| forged_ids.contains(&e))
                 .collect();
+            let kind = data.relic_types.get(&r.item_id);
             RelicView {
                 handle: r.handle,
                 forged,
-                name: data
-                    .relic_types
-                    .get(&r.item_id)
-                    .map_or("?".into(), |t| t.name.clone()),
+                name: kind.map_or("?".into(), |t| t.name.clone()),
+                color: kind.map_or(u8::MAX, |t| t.color),
                 size,
                 deep,
                 effects,
@@ -737,6 +984,27 @@ fn load(
         .collect();
     views.sort_by(|a, b| a.name.cmp(&b.name).then(a.handle.cmp(&b.handle)));
     Ok((views, murk))
+}
+
+/// Prefijo de cada línea de efecto en la vista previa de `forge?` (la UI las reconoce por esto).
+pub(crate) const EFFECT_LINE: &str = "- ";
+
+/// Nombre de un efecto con su maldición, si tiene: "Fire Attack Power Up +3 (curse: ...)".
+pub(crate) fn effect_text(data: &GameData, effect: EffectId, curse: Option<EffectId>) -> String {
+    let name = |e: EffectId| {
+        data.effects
+            .get(&e)
+            .map_or(e.to_string(), |i| clean_name(&i.name))
+    };
+    match curse {
+        Some(c) => format!(
+            "{} ({}: {})",
+            name(effect),
+            tr("maldición", "curse"),
+            name(c)
+        ),
+        None => name(effect),
+    }
 }
 
 /// "[Relic] Strength +3" -> "Strength +3"; "[Relic - Wylder] X" -> "(Wylder) X".
@@ -750,4 +1018,44 @@ pub(crate) fn clean_name(raw: &str) -> String {
         }
     }
     raw.to_string()
+}
+
+/// Colores oscuros con bordes dorados, parecidos a los menús del juego.
+fn apply_theme(style: &mut imgui::Style) {
+    use imgui::StyleColor as C;
+    let gold_line = [0.45, 0.40, 0.28, 0.55];
+    for (c, v) in [
+        (C::WindowBg, [0.06, 0.07, 0.10, 0.94]),
+        (C::ChildBg, [0.08, 0.09, 0.13, 0.70]),
+        (C::PopupBg, [0.07, 0.08, 0.11, 0.96]),
+        (C::Border, gold_line),
+        (C::Separator, gold_line),
+        (C::TitleBg, [0.07, 0.08, 0.12, 1.0]),
+        (C::TitleBgActive, [0.12, 0.13, 0.20, 1.0]),
+        (C::TitleBgCollapsed, [0.07, 0.08, 0.12, 1.0]),
+        (C::Text, [0.86, 0.85, 0.80, 1.0]),
+        (C::TextDisabled, [0.55, 0.54, 0.50, 1.0]),
+        (C::Header, [0.20, 0.28, 0.45, 0.75]),
+        (C::HeaderHovered, [0.28, 0.36, 0.56, 0.80]),
+        (C::HeaderActive, [0.32, 0.42, 0.65, 0.90]),
+        (C::Button, [0.16, 0.18, 0.26, 1.0]),
+        (C::ButtonHovered, [0.26, 0.30, 0.42, 1.0]),
+        (C::ButtonActive, [0.34, 0.38, 0.52, 1.0]),
+        (C::FrameBg, [0.10, 0.11, 0.16, 1.0]),
+        (C::FrameBgHovered, [0.16, 0.18, 0.26, 1.0]),
+        (C::FrameBgActive, [0.20, 0.23, 0.32, 1.0]),
+        (C::CheckMark, GOLD),
+        (C::ScrollbarBg, [0.05, 0.06, 0.08, 0.6]),
+        (C::ScrollbarGrab, [0.30, 0.28, 0.22, 0.8]),
+        (C::ScrollbarGrabHovered, [0.42, 0.38, 0.28, 0.9]),
+        (C::ScrollbarGrabActive, [0.55, 0.48, 0.32, 1.0]),
+    ] {
+        style[c] = v;
+    }
+    style.window_rounding = 0.0;
+    style.child_rounding = 0.0;
+    style.frame_rounding = 2.0;
+    style.window_padding = [14.0, 12.0];
+    style.item_spacing = [8.0, 6.0];
+    style.window_title_align = [0.5, 0.5];
 }

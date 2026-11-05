@@ -184,15 +184,15 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     ))?;
     let (effects, curses) = plan.new_target.to_raw();
     let new_murk = murk - plan.murk_cost;
+    // Un efecto por línea (con su maldición), para que el menú los muestre apilados.
     let names = |r: &Relic| -> String {
-        r.effects()
-            .map(|e| {
-                data.effects
-                    .get(&e)
-                    .map_or(e.to_string(), |i| crate::ui::clean_name(&i.name))
+        r.slots
+            .iter()
+            .filter_map(|s| {
+                let text = crate::ui::effect_text(data, s.effect?, s.curse);
+                Some(format!("\n{}{text}", crate::ui::EFFECT_LINE))
             })
-            .collect::<Vec<_>>()
-            .join("  |  ")
+            .collect()
     };
     let relic_name = data
         .relic_types
@@ -202,11 +202,7 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
         });
     let forged_note = |forged: &[EffectId]| {
         let limit = Rules::default().forge_limit[relics[1].effect_count().clamp(1, 3) - 1];
-        format!(
-            "{}/{limit} {}",
-            forged.len(),
-            tr("efectos forjados", "forged effects")
-        )
+        format!("{}/{limit}", forged.len())
     };
     if dry_run {
         let (names, cost, points, note) = (
@@ -217,12 +213,12 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
         );
         return Ok(match lang::get() {
             Lang::Es => format!(
-                "Resultado: {relic_name} quedaría con  {names}\nCosto: {cost} de murk \
-                 ({murk} -> {new_murk}). Sacrificios: {points} puntos. Quedaría con {note}."
+                "{relic_name} quedaría así:{names}\nCosto: {cost} de murk ({murk} -> {new_murk})\n\
+                 Sacrificios: {points} puntos\nEfectos forjados: {note}"
             ),
             Lang::En => format!(
-                "Result: {relic_name} would have  {names}\nCost: {cost} murk \
-                 ({murk} -> {new_murk}). Sacrifices: {points} points. It would have {note}."
+                "{relic_name} would become:{names}\nCost: {cost} murk ({murk} -> {new_murk})\n\
+                 Sacrifices: {points} points\nForged effects: {note}"
             ),
         });
     }
@@ -340,12 +336,12 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     );
     Ok(match lang::get() {
         Lang::Es => format!(
-            "Forja hecha: {relic_name} ahora tiene  {names}\nMurk {murk} -> {new_murk} \
-             (costo {cost}). {note}. [{target:08X}, {ids:?}]{registry_note}"
+            "Forja hecha: {relic_name} ahora tiene:{names}\nMurk {murk} -> {new_murk} \
+             (costo {cost}). Efectos forjados: {note}. [{target:08X}, {ids:?}]{registry_note}"
         ),
         Lang::En => format!(
-            "Forge done: {relic_name} now has  {names}\nMurk {murk} -> {new_murk} \
-             (cost {cost}). {note}. [{target:08X}, {ids:?}]{registry_note}"
+            "Forge done: {relic_name} now has:{names}\nMurk {murk} -> {new_murk} \
+             (cost {cost}). Forged effects: {note}. [{target:08X}, {ids:?}]{registry_note}"
         ),
     })
 }

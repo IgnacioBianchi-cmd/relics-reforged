@@ -228,6 +228,13 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - `relic_menu.rs` reemplaza los 50 punteros de la vtable por un código que suma 1 a un contador y salta al original; Relic Rites está abierto si el contador cambió en los últimos 300 ms. Verifica el COL de RTTI (`nr+3354BB8`) y el método 42 antes de tocar nada.
 - Probado: fuera de Relic Rites no aparece nada y F7 no hace nada; dentro aparece "[F7] Forge relics" fijo y F7 abre la forja.
 
+### Menú de forja ✔ (2026-11-05)
+
+- Diseño parecido a Relic Rites: a la izquierda la selección (receptora, donante, sacrificios, resultado) y a la derecha la lista del paso actual. Cada reliquia es una fila con el nombre, sus marcas (`[forged N]` en dorado, `[in use: ...]` en rojo) y un efecto por línea (los largos bajan de línea con `wrap_text`, porque `add_text` de imgui-rs no corta solo); un rombo indica el color de la escena (`relicColor`: 0 Burning rojo, 1 Drizzly azul, 2 Luminous amarillo, 3 Tranquil verde).
+- Tema oscuro con bordes dorados (`apply_theme`) y Palatino de Windows (`pala.ttf` / `palab.ttf`, con Georgia de respaldo), cargadas en `ImguiRenderLoop::initialize`: hudhook lo llama antes de armar el atlas de fuentes. `FontId` es un puntero crudo: se envuelve (`TitleFont`) para que `Menu` siga siendo `Send + Sync`.
+- La vista previa de `forge?` trae un efecto por línea con el prefijo `EFFECT_LINE` (`- `); el menú resalta en dorado el efecto transferido. `effect_text` arma el texto del efecto con su maldición igual en la lista y en la vista previa.
+- Los recipientes de los bloqueos se muestran sin su ID interno ("vessel", no "vessel 0xBB9"); el comando `locks` sigue mostrando el ID.
+
 ### Saves de prueba
 
 - Respaldos en `data/save/backups/` (no van a git). Para restaurar: con el juego cerrado, copiar sobre `NR_RelicsReforged.sl2` y `.bak`, y **ponerles la fecha actual** (la carpeta tiene `steam_autocloud.vdf`).
@@ -294,10 +301,10 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [x] **Solo en la Roundtable** (regla 11): la forja exige Relic Rites abierto.
 - [x] **Params y nombres sin CSV** (ver arriba): params desde `regulation.bin`, nombres desde los FMG cargados.
 - [x] **Abrir el menú desde Relic Rites**: ver "Detección de Relic Rites" arriba.
-- [ ] Estilo visual parecido al del juego.
+- [x] **Estilo visual parecido al del juego** (ver "Menú de forja" arriba).
 - [ ] Seamless Co-op: probar que la forja funcione con el mod de co-op cargado.
 - [ ] **Cuántas entradas tiene la tabla de ítems** y cómo se ve una entrada vacía. Por ahora la DLL recorre hasta 0x2000 entradas y filtra por la forma del registro; encuentra todas las reliquias, pero el largo real sigue sin confirmar.
 - [x] Instalar Rust y me3. Falta Seamless Co-op.
 - [x] Motor de reglas: `crates/relic-rules`, testeado contra `relics.json` y los CSV.
 - [x] DLL v0 de solo lectura: murk e inventario desde memoria, validados en el juego.
-- [ ] DLL: armar `GameData` desde los params en memoria, sin depender de los CSV.
+- [x] DLL: armar `GameData` sin depender de los CSV (desde `regulation.bin`, ver arriba).

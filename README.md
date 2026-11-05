@@ -19,9 +19,10 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | DLL in-game (`crates/relics-reforged`, me3) | Lee y valida el inventario. Gancho en el hilo principal del juego |
 | Forja completa (`forge` desde el archivo de comandos) | ✔ probada en el juego y guardada en el save |
 | Bloqueo de favoritas, equipadas, presets y recipientes | ✔ probado en el juego |
-| Menú dentro del juego (F7, ImGui con hudhook) | ✔ probado: forja desde el menú guardada en el save |
+| Menú dentro del juego (F7 en Relic Rites, ImGui con hudhook, estilo parecido al del juego) | ✔ probado: forja desde el menú guardada en el save |
 | Params desde `regulation.bin` y nombres desde los textos del juego (sin CSV) | ✔ probado en el juego |
-| Seamless Co-op, solo en la Roundtable, menú con estilo del juego | pendiente |
+| Solo en la Roundtable (con Relic Rites abierto) | ✔ probado en el juego |
+| Seamless Co-op | pendiente |
 
 ## Estructura
 
@@ -57,7 +58,7 @@ cargo build --release -p relics-reforged
 
 Después, doble clic en `me3/relics-reforged-dev.me3`. El log queda en `target/release/relics_reforged.log`.
 
-El menú y sus mensajes salen en inglés o en español según el idioma del juego (por defecto, inglés; ver `relic_rules::lang`). En el juego, **F7** abre el menú: receptora y efecto a reemplazar, donante y efecto a transferir, 3 sacrificios, vista previa y forja (con doble confirmación). Para pruebas sin menú está el archivo de comandos (`crates/relics-reforged/src/commands.rs`).
+El menú y sus mensajes salen en inglés o en español según el idioma del juego (por defecto, inglés; ver `relic_rules::lang`). En el juego, con **Relic Rites** abierto en la Roundtable, **F7** abre el menú: a la izquierda receptora y efecto a reemplazar, donante y efecto a transferir, 3 sacrificios, vista previa y forja (con doble confirmación); a la derecha, la lista de reliquias del paso actual. Para pruebas sin menú está el archivo de comandos (`crates/relics-reforged/src/commands.rs`).
 
 ## Reglas de balance (por defecto)
 
