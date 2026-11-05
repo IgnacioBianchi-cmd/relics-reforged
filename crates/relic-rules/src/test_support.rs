@@ -21,6 +21,7 @@ pub fn sample_data() -> GameData {
         passive_sp_effects: vec![id + 1000],
         text_id: id as i32,
         icon_id: -1,
+        filter_id: -1,
     };
     for e in [
         effect(10, 100, false),

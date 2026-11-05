@@ -24,8 +24,15 @@ const MAX_FMG_SIZE: usize = 0x80_0000;
 
 /// Un FMG cargado: ID → texto.
 pub struct Fmg {
+    /// Posición en el array de FMG del juego: es el ID del FMG en los archivos de textos (por
+    /// ejemplo 200 = textos de menú; 504, los del DLC).
+    pub slot: usize,
     pub texts: HashMap<i32, String>,
 }
+
+/// FMG de textos de menú (base y DLC), donde están los nombres de las categorías y grupos del
+/// filtro por efecto.
+const MENU_TEXT_SLOTS: [usize; 2] = [200, 504];
 
 /// Lee un FMG de la memoria si la cabecera es válida.
 fn read_fmg(addr: usize) -> Option<Fmg> {
@@ -79,7 +86,7 @@ fn read_fmg(addr: usize) -> Option<Fmg> {
             texts.insert(first + k as i32, String::from_utf16_lossy(&units));
         }
     }
-    Some(Fmg { texts })
+    Some(Fmg { slot: 0, texts })
 }
 
 /// Busca el array de FMG en `[from, to)`: un qword que se apunta a sí mismo seguido de una cantidad
@@ -138,8 +145,9 @@ pub fn loaded_fmgs(pgd: usize) -> (Vec<Fmg>, Option<usize>) {
         .0
         .iter()
         .map(|c| usize::from_le_bytes(*c))
-        .filter(|&p| p > 0x1_0000)
-        .filter_map(read_fmg)
+        .enumerate()
+        .filter(|&(_, p)| p > 0x1_0000)
+        .filter_map(|(slot, p)| read_fmg(p).map(|f| Fmg { slot, ..f }))
         .collect();
     (fmgs, Some(slots))
 }
@@ -203,9 +211,80 @@ pub fn apply_names(data: &mut GameData, fmgs: &[Fmg]) -> String {
             relics += 1;
         }
     }
+    let filters = apply_filter_names(data, fmgs, &effect_names);
     format!(
-        "{effects}/{} efectos [{effect_fmgs}], {relics}/{} reliquias [{relic_fmgs}]",
+        "{effects}/{} efectos [{effect_fmgs}], {relics}/{} reliquias [{relic_fmgs}]; {filters}",
         data.effects.len(),
         data.relic_types.len()
+    )
+}
+
+/// Nombres del filtro por efecto: las familias usan los nombres de efectos (casi siempre el del
+/// efecto base); las categorías y los grupos, los textos de menú.
+fn apply_filter_names(
+    data: &mut GameData,
+    fmgs: &[Fmg],
+    effect_names: &HashMap<i32, String>,
+) -> String {
+    let menu: Vec<&Fmg> = MENU_TEXT_SLOTS
+        .iter()
+        .filter_map(|s| fmgs.iter().find(|f| f.slot == *s))
+        .collect();
+    let menu_text = |id: i32| -> Option<String> {
+        menu.iter()
+            .find_map(|f| f.texts.get(&id))
+            .filter(|t| !t.is_empty())
+            .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
+    };
+    // Si el nombre de la familia no está, se usa el de un efecto de la familia sin el "+N".
+    let mut by_family: HashMap<i32, String> = HashMap::new();
+    for e in data.effects.values() {
+        if e.filter_id >= 0 && !e.name.is_empty() {
+            let base = e
+                .name
+                .trim_end_matches(|c: char| c.is_ascii_digit() || c == '+' || c == ' ');
+            by_family
+                .entry(e.filter_id)
+                .or_insert_with(|| base.to_string());
+        }
+    }
+    let filters = &mut data.effect_filters;
+    let mut named = [0usize; 3];
+    for c in filters.categories.iter_mut() {
+        if let Some(t) = menu_text(c.text_id) {
+            c.name = t;
+            named[0] += 1;
+        }
+    }
+    for g in filters.groups.iter_mut() {
+        if let Some(t) = menu_text(g.text_id) {
+            g.name = t;
+            named[1] += 1;
+        }
+    }
+    for f in filters.families.iter_mut() {
+        if let Some(t) = effect_names
+            .get(&f.text_id)
+            .or_else(|| by_family.get(&f.id))
+        {
+            f.name = t.clone();
+            named[2] += 1;
+        }
+    }
+    let sample = filters
+        .categories
+        .iter()
+        .map(|c| c.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "filtro: {}/{} categorías ({sample}), {}/{} grupos, {}/{} familias [textos de menú en {} FMG]",
+        named[0],
+        filters.categories.len(),
+        named[1],
+        filters.groups.len(),
+        named[2],
+        filters.families.len(),
+        menu.len()
     )
 }

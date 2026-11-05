@@ -182,6 +182,8 @@ struct RelicView {
     effects: Vec<String>,
     /// Ícono de cada efecto (`statusIconId`), en el mismo orden que `effects`. -1 = sin ícono.
     effect_icons: Vec<i32>,
+    /// Familia de cada efecto para el filtro por efecto (`attachFilterParamId`, sin los -1).
+    families: Vec<i32>,
     /// Por slot: si ese efecto ya fue forjado por el mod.
     forged: Vec<bool>,
     /// Por qué no se puede donar ni sacrificar (favorita, equipada, preset, recipiente).
@@ -381,8 +383,12 @@ type SelectionKey = (u32, usize, u32, usize, [u32; 3]);
 
 /// Filtro de la lista, como el de Relic Rites: se marca lo que se quiere ver. En cada grupo, sin
 /// nada marcado no se filtra; con algo marcado, solo pasa lo marcado.
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, PartialEq, Default)]
 struct Filters {
+    /// Hasta 3 condiciones de efecto, como en Relic Rites. Cada una es una lista de grupos y
+    /// familias de efectos: la reliquia cumple la condición si tiene algún efecto de alguno; tiene
+    /// que cumplir todas las condiciones que no están vacías.
+    effects: [Vec<EffectCond>; 3],
     favorites: bool,
     /// Por `relicColor`: rojo (Burning), azul (Drizzly), amarillo (Luminous), verde (Tranquil).
     colors: [bool; 4],
@@ -390,6 +396,16 @@ struct Filters {
     sizes: [bool; 3],
     /// Reliquia normal, reliquia de las profundidades (Deep).
     kinds: [bool; 2],
+}
+
+/// Algo elegido en una condición de efecto.
+#[derive(Clone, Copy, PartialEq)]
+enum EffectCond {
+    /// Un grupo entero ("Attack Power", "Wylder"...): fila de `AttachEffectFilterSubCategoryParam`.
+    Group(i32),
+    /// Una familia de efectos ("Strength", con todas sus variantes): fila de
+    /// `AttachEffectFilterParam`.
+    Family(i32),
 }
 
 /// ¿Pasa por un grupo del filtro? Sin nada marcado, todo pasa.
@@ -401,11 +417,26 @@ impl Filters {
     /// Cuántas opciones están marcadas.
     fn active(&self) -> usize {
         let on = |v: &[bool]| v.iter().filter(|b| **b).count();
-        self.favorites as usize + on(&self.colors) + on(&self.sizes) + on(&self.kinds)
+        self.effects.iter().filter(|c| !c.is_empty()).count()
+            + self.favorites as usize
+            + on(&self.colors)
+            + on(&self.sizes)
+            + on(&self.kinds)
     }
 
-    fn accepts(&self, r: &RelicView) -> bool {
-        (!self.favorites || r.favorite)
+    /// `group_of`: familia → grupo.
+    fn accepts(&self, r: &RelicView, group_of: &HashMap<i32, i32>) -> bool {
+        let meets = |cond: &Vec<EffectCond>| {
+            cond.is_empty()
+                || r.families.iter().any(|f| {
+                    cond.iter().any(|c| match c {
+                        EffectCond::Family(id) => id == f,
+                        EffectCond::Group(id) => group_of.get(f) == Some(id),
+                    })
+                })
+        };
+        self.effects.iter().all(meets)
+            && (!self.favorites || r.favorite)
             && passes(&self.colors, Some(r.color as usize))
             && passes(&self.sizes, r.size.map(|n| n.wrapping_sub(1)))
             && passes(&self.kinds, Some(r.deep as usize))
@@ -474,10 +505,23 @@ struct Menu {
     sort: SortBy,
     /// El panel izquierdo muestra el filtro en vez de la selección (tecla 4).
     show_filters: bool,
+    /// Condición de efecto que se está editando (0 a 2): el panel izquierdo muestra el selector.
+    picking: Option<usize>,
+    /// Grupos desplegados en el selector de efectos.
+    expanded: HashSet<i32>,
+    effect_search: String,
+    /// Familia de efectos → grupo, para el filtro por efecto.
+    group_of: HashMap<i32, i32>,
 }
 
 impl Menu {
     fn new(game: Game, data: Arc<GameData>, dll_dir: PathBuf) -> Menu {
+        let group_of = data
+            .effect_filters
+            .families
+            .iter()
+            .map(|f| (f.id, f.group))
+            .collect();
         Menu {
             visible: AtomicBool::new(false),
             game,
@@ -498,6 +542,10 @@ impl Menu {
             filters: Filters::default(),
             sort: SortBy::Found,
             show_filters: false,
+            picking: None,
+            expanded: HashSet::new(),
+            effect_search: String::new(),
+            group_of,
         }
     }
 
@@ -709,12 +757,8 @@ impl Menu {
                     }
                 }
                 ui.set_window_font_scale(1.0);
-                if back {
-                    if self.show_filters {
-                        self.show_filters = false;
-                    } else {
-                        close = true;
-                    }
+                if back && !self.filter_back() {
+                    close = true;
                 }
                 if refresh {
                     self.refresh();
@@ -723,20 +767,18 @@ impl Menu {
                     self.reset_selection();
                 }
                 if reset {
-                    self.filters = Filters::default();
+                    self.filter_reset();
                 }
             });
         // Teclas (no mientras se escribe en el filtro: ahí las usa ImGui).
         if !ui.io().want_text_input {
-            if ui.is_key_pressed(Key::Escape) || ui.is_key_pressed(KEY_BACK.2) {
-                if self.show_filters {
-                    self.show_filters = false;
-                } else {
-                    close = true;
-                }
+            if (ui.is_key_pressed(Key::Escape) || ui.is_key_pressed(KEY_BACK.2))
+                && !self.filter_back()
+            {
+                close = true;
             }
             if self.show_filters && ui.is_key_pressed(KEY_RESET.2) {
-                self.filters = Filters::default();
+                self.filter_reset();
             }
             if !self.show_filters && ui.is_key_pressed(KEY_REFRESH.2) {
                 self.refresh();
@@ -746,6 +788,7 @@ impl Menu {
             }
             if ui.is_key_pressed(KEY_FILTER.2) {
                 self.show_filters = !self.show_filters;
+                self.picking = None;
             }
             if ui.is_key_pressed(KEY_SORT.2) {
                 self.sort = self.sort.next();
@@ -829,6 +872,7 @@ impl Menu {
         }
         if open {
             self.show_filters = !self.show_filters;
+            self.picking = None;
         }
         if next {
             self.sort = self.sort.next();
@@ -869,7 +913,9 @@ impl Menu {
             .size([left_w, panel_h])
             .always_use_window_padding(true)
             .build(|| {
-                if self.show_filters {
+                if let (true, Some(k)) = (self.show_filters, self.picking) {
+                    self.draw_effect_picker(ui, k);
+                } else if self.show_filters {
                     self.draw_filters(ui);
                 } else {
                     self.draw_left(ui, &by_handle, preview.as_ref(), preview_busy, forging);
@@ -1161,7 +1207,133 @@ impl Menu {
 
     fn matches_filter(&self, r: &RelicView) -> bool {
         let f = self.filter.trim().to_lowercase();
-        self.filters.accepts(r) && (f.is_empty() || r.label().to_lowercase().contains(&f))
+        self.filters.accepts(r, &self.group_of)
+            && (f.is_empty() || r.label().to_lowercase().contains(&f))
+    }
+
+    /// Q dentro del filtro: del selector de efectos vuelve al filtro, y del filtro a la forja.
+    /// `false` si no había filtro abierto.
+    fn filter_back(&mut self) -> bool {
+        if self.picking.take().is_some() {
+            return true;
+        }
+        std::mem::take(&mut self.show_filters)
+    }
+
+    /// 1 dentro del filtro: en el selector limpia esa condición; si no, todo el filtro.
+    fn filter_reset(&mut self) {
+        match self.picking {
+            Some(k) => self.filters.effects[k].clear(),
+            None => self.filters = Filters::default(),
+        }
+    }
+
+    /// Texto de una condición de efecto (lo elegido, separado por comas).
+    fn cond_label(&self, cond: &[EffectCond]) -> String {
+        let f = &self.data.effect_filters;
+        cond.iter()
+            .map(|c| match c {
+                EffectCond::Group(id) => f
+                    .groups
+                    .iter()
+                    .find(|g| g.id == *id)
+                    .map(|g| g.name.as_str()),
+                EffectCond::Family(id) => f
+                    .families
+                    .iter()
+                    .find(|x| x.id == *id)
+                    .map(|x| x.name.as_str()),
+            })
+            .map(|n| n.filter(|n| !n.is_empty()).unwrap_or("?"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Selector de una condición de efecto (como "Select Effect" en Relic Rites): categorías del
+    /// juego, cada grupo se puede marcar entero o desplegar para marcar familias sueltas.
+    fn draw_effect_picker(&mut self, ui: &Ui, k: usize) {
+        self.section(
+            ui,
+            &format!("{} {}", tr("Efecto, condición", "Effect, condition"), k + 1),
+        );
+        hint(
+            ui,
+            tr(
+                "Marcá grupos o efectos: la reliquia tiene que tener alguno de los marcados.",
+                "Check groups or effects: the relic must have one of the checked ones.",
+            ),
+        );
+        ui.text_disabled(format!(
+            "{}: {}",
+            tr("Marcados", "Selected"),
+            self.filters.effects[k].len()
+        ));
+        ui.set_next_item_width(-1.0);
+        ui.input_text("##buscar_efecto", &mut self.effect_search)
+            .hint(tr("Buscar efecto", "Search effect"))
+            .build();
+        let search = self.effect_search.trim().to_lowercase();
+        let data = self.data.clone();
+        let f = &data.effect_filters;
+        ui.child_window("efectos").size([0.0, 0.0]).build(|| {
+            for cat in &f.categories {
+                let groups: Vec<_> = f
+                    .groups
+                    .iter()
+                    .filter(|g| g.category == cat.id && !g.name.is_empty())
+                    .collect();
+                // Con búsqueda, solo los grupos con alguna familia que coincida.
+                let matching = |g: &&relic_rules::FilterGroup| {
+                    search.is_empty()
+                        || g.name.to_lowercase().contains(&search)
+                        || f.families
+                            .iter()
+                            .any(|x| x.group == g.id && x.name.to_lowercase().contains(&search))
+                };
+                let groups: Vec<_> = groups.into_iter().filter(matching).collect();
+                if groups.is_empty() || cat.name.is_empty() {
+                    continue;
+                }
+                self.subsection(ui, &cat.name);
+                for g in groups {
+                    let cond = &mut self.filters.effects[k];
+                    let mut on = cond.contains(&EffectCond::Group(g.id));
+                    if ui.checkbox(format!("{}##g{}", g.name, g.id), &mut on) {
+                        cond.retain(|c| *c != EffectCond::Group(g.id));
+                        if on {
+                            cond.push(EffectCond::Group(g.id));
+                        }
+                    }
+                    ui.same_line();
+                    let open = self.expanded.contains(&g.id) || !search.is_empty();
+                    let arrow = if open { "v" } else { ">>" };
+                    if ui.small_button(format!("{arrow}##e{}", g.id))
+                        && !self.expanded.remove(&g.id)
+                    {
+                        self.expanded.insert(g.id);
+                    }
+                    if !open {
+                        continue;
+                    }
+                    ui.indent_by(28.0);
+                    for fam in f.families.iter().filter(|x| {
+                        x.group == g.id
+                            && !x.name.is_empty()
+                            && (search.is_empty() || x.name.to_lowercase().contains(&search))
+                    }) {
+                        let cond = &mut self.filters.effects[k];
+                        let mut on = cond.contains(&EffectCond::Family(fam.id));
+                        if ui.checkbox(format!("{}##f{}", fam.name, fam.id), &mut on) {
+                            cond.retain(|c| *c != EffectCond::Family(fam.id));
+                            if on {
+                                cond.push(EffectCond::Family(fam.id));
+                            }
+                        }
+                    }
+                    ui.unindent_by(28.0);
+                }
+            }
+        });
     }
 
     /// Subtítulo dentro de un panel (como "Characteristics" en el filtro del juego).
@@ -1190,6 +1362,25 @@ impl Menu {
                 "Check what you want to see. In each group, with nothing checked everything is shown.",
             ),
         );
+        // Condiciones de efecto, como "Select Effect / No Conditions" en el juego.
+        self.subsection(ui, tr("Efectos", "Effects"));
+        for k in 0..3 {
+            let cond = &self.filters.effects[k];
+            let label = if cond.is_empty() {
+                tr("Sin condiciones", "No conditions").to_string()
+            } else {
+                self.cond_label(cond)
+            };
+            let color = if cond.is_empty() {
+                ui.style_color(imgui::StyleColor::TextDisabled)
+            } else {
+                GOLD
+            };
+            let _c = ui.push_style_color(imgui::StyleColor::Text, color);
+            if ui.selectable(format!("{}. {label}##cond{k}", k + 1)) {
+                self.picking = Some(k);
+            }
+        }
         ui.spacing();
         ui.checkbox(tr("Favoritas", "Favorites"), &mut self.filters.favorites);
         self.subsection(ui, tr("Características", "Characteristics"));
@@ -1652,6 +1843,13 @@ fn load(
                 .filter_map(|s| s.effect)
                 .map(|e| data.effects.get(&e).map_or(-1, |i| i.icon_id))
                 .collect();
+            let families = relic
+                .slots
+                .iter()
+                .filter_map(|s| s.effect)
+                .filter_map(|e| data.effects.get(&e).map(|i| i.filter_id))
+                .filter(|&f| f >= 0)
+                .collect();
             let kind = data.relic_types.get(&r.item_id);
             RelicView {
                 handle: r.handle,
@@ -1663,6 +1861,7 @@ fn load(
                 deep,
                 effects,
                 effect_icons,
+                families,
                 locked: locks.get(&r.handle).map(|p| p.join(", ")),
                 order: order.get(&r.handle).copied().unwrap_or(u32::MAX),
                 favorite: favorites.contains(&r.handle),

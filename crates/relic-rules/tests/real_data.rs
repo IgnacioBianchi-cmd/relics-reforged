@@ -83,6 +83,8 @@ fn regulation_coincide_con_los_csv() {
             "SpEffects de {id}"
         );
         assert_eq!(a.text_id, b.text_id, "attachTextId de {id}");
+        assert_eq!(a.icon_id, b.icon_id, "statusIconId de {id}");
+        assert_eq!(a.filter_id, b.filter_id, "attachFilterParamId de {id}");
     }
 
     assert_eq!(
@@ -100,9 +102,49 @@ fn regulation_coincide_con_los_csv() {
         assert_eq!(a.color, b.color, "relicColor de {id}");
         assert_eq!(a.slot_tables, b.slot_tables, "tablas de {id}");
         assert_eq!(a.curse_tables, b.curse_tables, "maldiciones de {id}");
+        assert_eq!(a.icon_id, b.icon_id, "iconId de {id}");
     }
 
     assert_eq!(reg.tables, csv.tables, "tablas de efectos");
+
+    // Filtro por efecto: cada familia usada por un efecto existe, y cada familia y grupo
+    // apuntan a algo que existe.
+    let f = &reg.effect_filters;
+    assert_eq!(f.categories.len(), 4, "categorías del filtro");
+    assert!(f.groups.len() > 50, "grupos del filtro: {}", f.groups.len());
+    assert!(
+        f.families.len() > 300,
+        "familias del filtro: {}",
+        f.families.len()
+    );
+    for g in &f.groups {
+        assert!(
+            f.categories.iter().any(|c| c.id == g.category),
+            "categoría {} del grupo {}",
+            g.category,
+            g.id
+        );
+    }
+    for fam in &f.families {
+        assert!(
+            f.groups.iter().any(|g| g.id == fam.group),
+            "grupo {} de la familia {}",
+            fam.group,
+            fam.id
+        );
+    }
+    // El juego tiene alguna referencia rota (6633200, "Discover Torches", apunta a una familia que
+    // no existe): se toleran unas pocas.
+    let missing: Vec<_> = reg
+        .effects
+        .values()
+        .filter(|e| e.filter_id >= 0 && !f.families.iter().any(|fam| fam.id == e.filter_id))
+        .map(|e| e.id)
+        .collect();
+    assert!(
+        missing.len() <= 3,
+        "efectos con familia inexistente: {missing:?}"
+    );
 }
 
 #[test]

@@ -33,6 +33,9 @@ pub struct EffectInfo {
     pub text_id: i32,
     /// Ícono del efecto en los menús (`statusIconId`): `MENU_StatusIcon_<id>`. -1 = sin ícono.
     pub icon_id: i32,
+    /// Familia del efecto para el filtro de Relic Rites (`attachFilterParamId`: fila de
+    /// `AttachEffectFilterParam`). Las variantes +1, +2… comparten familia. -1 = sin filtro.
+    pub filter_id: i32,
 }
 
 /// Una fila de `EquipParamAntique` reducida a lo que usan las reglas.
@@ -51,6 +54,54 @@ pub struct RelicType {
     pub icon_id: i32,
 }
 
+/// Una categoría del filtro por efecto (`AttachEffectFilterCategoryParam`): "General",
+/// "Character-specific", "Armament-specific"...
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilterCategory {
+    pub id: i32,
+    /// En los textos de menú del juego.
+    pub text_id: i32,
+    /// Orden en el menú.
+    pub order: i32,
+    pub name: String,
+}
+
+/// Un grupo dentro de una categoría (`AttachEffectFilterSubCategoryParam`): "Attack Power",
+/// "Wylder", "Dagger"...
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilterGroup {
+    pub id: i32,
+    /// En los textos de menú del juego.
+    pub text_id: i32,
+    pub category: i32,
+    /// Orden dentro de la categoría.
+    pub order: i32,
+    /// Flag de evento que lo habilita (0 = siempre visible).
+    pub event_flag: i32,
+    pub name: String,
+}
+
+/// Una familia de efectos (`AttachEffectFilterParam`): lo que se elige en el filtro.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilterFamily {
+    pub id: i32,
+    /// En los nombres de efectos (el mismo FMG que `EffectInfo::text_id`).
+    pub text_id: i32,
+    /// Fila de [`FilterGroup`].
+    pub group: i32,
+    /// Orden dentro del grupo.
+    pub order: i32,
+    pub name: String,
+}
+
+/// Lo que usa el filtro por efecto de Relic Rites.
+#[derive(Debug, Default, Clone)]
+pub struct EffectFilters {
+    pub categories: Vec<FilterCategory>,
+    pub groups: Vec<FilterGroup>,
+    pub families: Vec<FilterFamily>,
+}
+
 /// Todos los datos del juego que necesita el motor.
 #[derive(Debug, Default, Clone)]
 pub struct GameData {
@@ -58,6 +109,8 @@ pub struct GameData {
     pub relic_types: HashMap<ItemId, RelicType>,
     /// Efectos presentes en cada tabla (con cualquier peso: si el juego lo generó alguna vez, es legal).
     pub tables: HashMap<TableId, HashSet<EffectId>>,
+    /// Categorías del filtro por efecto (solo desde `regulation.bin`; vacío con los CSV).
+    pub effect_filters: EffectFilters,
 }
 
 impl GameData {
@@ -114,6 +167,7 @@ impl GameData {
                         passive_sp_effects,
                         text_id: row.int("attachTextId")? as i32,
                         icon_id: row.int("statusIconId")? as i32,
+                        filter_id: row.int("attachFilterParamId")? as i32,
                     },
                 );
             }

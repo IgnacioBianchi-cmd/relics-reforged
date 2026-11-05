@@ -18,7 +18,10 @@ pub mod relic;
 pub mod transfer;
 pub mod validate;
 
-pub use data::{DataError, EffectId, EffectInfo, GameData, ItemId, RelicType, TableId, EMPTY};
+pub use data::{
+    DataError, EffectFilters, EffectId, EffectInfo, FilterCategory, FilterFamily, FilterGroup,
+    GameData, ItemId, RelicType, TableId, EMPTY,
+};
 pub use regulation::RegulationError;
 pub use relic::{relic_kind, Relic, RelicKind, Slot};
 pub use transfer::{plan_transfer, Role, Rules, TransferError, TransferPlan, TransferRequest};

@@ -14,7 +14,10 @@ use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockDecrypt, KeyInit};
 use aes::Aes256;
 
-use crate::data::{EffectId, EffectInfo, GameData, ItemId, RelicType, TableId};
+use crate::data::{
+    EffectFilters, EffectId, EffectInfo, FilterCategory, FilterFamily, FilterGroup, GameData,
+    ItemId, RelicType, TableId,
+};
 
 /// Clave AES de `regulation.bin` de Nightreign (la misma que usan las herramientas de modding).
 const REGULATION_KEY: [u8; 32] = [
@@ -195,6 +198,9 @@ pub fn param_rows(param: &[u8], row_size: usize) -> Result<Vec<(i32, &[u8])>, Re
 const ATTACH_EFFECT_ROW: usize = 0x44;
 const ATTACH_EFFECT_TABLE_ROW: usize = 0x0C;
 const EQUIP_ANTIQUE_ROW: usize = 0x30;
+const FILTER_CATEGORY_ROW: usize = 0x08;
+const FILTER_GROUP_ROW: usize = 0x20;
+const FILTER_FAMILY_ROW: usize = 0x14;
 
 impl GameData {
     /// Arma los datos del motor desde `regulation.bin` (sin nombres).
@@ -233,6 +239,7 @@ impl GameData {
                     passive_sp_effects,
                     text_id: i32_le(row, 0x1C)?,
                     icon_id: i32_le(row, 0x28)?,
+                    filter_id: i32_le(row, 0x38)?,
                 },
             );
         }
@@ -271,6 +278,61 @@ impl GameData {
             }
         }
         data.tables = tables;
+        data.effect_filters = effect_filters(&find)?;
         Ok(data)
     }
+}
+
+/// El filtro por efecto de Relic Rites: categorías, grupos y familias de efectos. Las filas con
+/// texto -1 (relleno) se saltean.
+fn effect_filters<'a>(
+    find: &dyn Fn(&str) -> Result<&'a [u8], RegulationError>,
+) -> Result<EffectFilters, RegulationError> {
+    let mut out = EffectFilters::default();
+    for (id, row) in param_rows(
+        find("AttachEffectFilterCategoryParam.param")?,
+        FILTER_CATEGORY_ROW,
+    )? {
+        let text_id = i32_le(row, 0x00)?;
+        if text_id >= 0 {
+            out.categories.push(FilterCategory {
+                id,
+                text_id,
+                order: i32_le(row, 0x04)?,
+                name: String::new(),
+            });
+        }
+    }
+    for (id, row) in param_rows(
+        find("AttachEffectFilterSubCategoryParam.param")?,
+        FILTER_GROUP_ROW,
+    )? {
+        let text_id = i32_le(row, 0x00)?;
+        if text_id >= 0 {
+            out.groups.push(FilterGroup {
+                id,
+                text_id,
+                category: i32_le(row, 0x04)?,
+                order: i32_le(row, 0x08)?,
+                event_flag: i32_le(row, 0x0C)?,
+                name: String::new(),
+            });
+        }
+    }
+    for (id, row) in param_rows(find("AttachEffectFilterParam.param")?, FILTER_FAMILY_ROW)? {
+        let text_id = i32_le(row, 0x04)?;
+        if text_id >= 0 {
+            out.families.push(FilterFamily {
+                id,
+                text_id,
+                group: i32_le(row, 0x08)?,
+                order: i32_le(row, 0x0C)?,
+                name: String::new(),
+            });
+        }
+    }
+    out.categories.sort_by_key(|c| (c.order, c.id));
+    out.groups.sort_by_key(|g| (g.category, g.order, g.id));
+    out.families.sort_by_key(|f| (f.group, f.order, f.id));
+    Ok(out)
 }
