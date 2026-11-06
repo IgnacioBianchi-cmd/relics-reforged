@@ -347,7 +347,7 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     // Regla 11: solo en la Roundtable, con el menú de Relic Rites abierto.
     if !game.relic_rites_open() {
         return Err(tr(
-            "la forja solo se puede usar con Relic Rites abierto (en la Roundtable)",
+            "la forja solo se puede usar con Ritos de reliquias abierto (en la Mesa Redonda)",
             "forging is only available with Relic Rites open (at the Roundtable)",
         )
         .into());

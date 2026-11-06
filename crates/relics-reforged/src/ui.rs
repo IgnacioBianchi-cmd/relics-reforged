@@ -311,13 +311,15 @@ fn draw_hint(
     let s = h / 1080.0;
     let x = |px: f32| w * 0.5 + (px - 960.0) * s;
     let y = |px: f32| h * 0.5 + (px - 540.0) * s;
-    // Fin de "M:All Presets" en la barra de abajo a la izquierda (solo medido con el juego en
-    // inglés): la barra es más larga con el cursor en los slots. Eligiendo la reliquia para un
-    // slot la barra es solo "1:Swap screen", pero no se distingue de recorrer la grilla: ahí el
-    // botón queda en la misma barra, con un hueco a la izquierda.
+    // Fin de la barra de abajo a la izquierda, medido en capturas a 1080p: con el cursor en los
+    // slots termina en "M:All Presets" / "M:Todos los preajustes"; en la grilla, en
+    // "1:Swap screen" / "1:Cambiar pantalla". Eligiendo la reliquia para un slot la barra es la
+    // de la grilla, pero no se distingue de recorrerla: ahí el botón queda en la misma barra.
     let after_presets = match (relic_rules::lang::get(), panel) {
         (relic_rules::lang::Lang::En, Some(Panel::Slots)) => Some(1010.0),
         (relic_rules::lang::Lang::En, Some(Panel::Right)) => Some(527.0),
+        (relic_rules::lang::Lang::Es, Some(Panel::Slots)) => Some(1322.0),
+        (relic_rules::lang::Lang::Es, Some(Panel::Right)) => Some(262.0),
         _ => None,
     };
     let (pos, pivot) = match after_presets {
@@ -487,7 +489,7 @@ enum SortBy {
 impl SortBy {
     fn label(self) -> &'static str {
         match self {
-            SortBy::Found => tr("orden encontrado", "order found"),
+            SortBy::Found => tr("encontradas", "order found"),
             SortBy::Name => tr("nombre", "name"),
             SortBy::Color => tr("color", "color"),
             SortBy::Size => tr("tamaño", "size"),
@@ -769,14 +771,27 @@ impl Menu {
             [0.02, 0.03, 0.05, 0.90],
             [0.02, 0.03, 0.05, 0.90],
         );
+        // La barra de controles del juego (más larga en español) se transparentaba detrás de la
+        // nuestra: abajo el fondo se oscurece casi del todo, con un degradé para no marcar un corte.
+        let band = (995.0 * s).round();
+        let fade = (45.0 * s).round();
+        let clear = [0.02, 0.03, 0.05, 0.0];
+        let dark = [0.02, 0.03, 0.05, 0.85];
+        bg.add_rect_filled_multicolor([0.0, band - fade], [w, band], clear, clear, dark, dark);
+        bg.add_rect_filled_multicolor([0.0, band], [w, h], dark, dark, dark, dark);
         bg.add_line([0.0, top], [w, top], [0.80, 0.82, 0.90, 0.18])
             .thickness(1.0)
             .build();
-        // Título de la sección al lado de "Relic Rites".
+        // Título de la sección al lado del del juego, que termina en x ≈ 263 ("Relic Rites") o
+        // ≈ 338 ("Ritos de reliquias") a 1080p.
         {
             let _f = self.prompt_font.map(|f| ui.push_font(f.0));
             let title = tr("Forja de reliquias", "Relic Forge");
-            let at = [290.0 * s, 67.0 * s - ui.text_line_height() * 0.5];
+            let slash_x = match relic_rules::lang::get() {
+                relic_rules::lang::Lang::Es => 365.0,
+                relic_rules::lang::Lang::En => 290.0,
+            };
+            let at = [slash_x * s, 67.0 * s - ui.text_line_height() * 0.5];
             bg.add_text(at, [0.55, 0.54, 0.50, 1.0], "/");
             bg.add_text([at[0] + 22.0 * s, at[1]], GOLD, title);
         }
@@ -831,7 +846,7 @@ impl Menu {
                             icons,
                             g,
                             k,
-                            tr("Volver a Relic Rites", "Back to Relic Rites"),
+                            tr("Volver a Ritos de reliquias", "Back to Relic Rites"),
                             s,
                         );
                         ui.same_line_with_spacing(0.0, 14.0 * s);
@@ -979,7 +994,7 @@ impl Menu {
             0 => tr("Filtrar", "Filter").to_string(),
             n => format!("{} ({n})", tr("Filtrar", "Filter")),
         };
-        let sort_label = format!("{}: {}", tr("Orden", "Sort"), self.sort.label());
+        let sort_label = format!("{}: {}", tr("Ordenar", "Sort"), self.sort.label());
         let (mut open, mut next, mut clear_search) = (false, false, false);
         {
             let icons = self.icons.as_ref();
