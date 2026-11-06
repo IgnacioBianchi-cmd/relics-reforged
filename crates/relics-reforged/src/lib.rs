@@ -19,6 +19,7 @@ mod relic_menu;
 mod search;
 mod snap;
 mod sound;
+mod steam_input;
 mod tracer;
 mod ui;
 mod win;
@@ -253,6 +254,10 @@ fn run(module: usize) {
                 ui::start(module, game, named.clone(), dll_dir.clone());
                 log.line(&format!("Menú: se abre con {}", ui::TOGGLE_KEY_NAME));
                 input_diag::run();
+                match steam_input::install() {
+                    Ok(()) => log.line("Mando por Steam Input enganchado (SteamInput006)"),
+                    Err(e) => log.line(&format!("ERROR: Steam Input: {e}")),
+                }
                 data = Some(named);
                 menu_started = true;
             }

@@ -144,10 +144,17 @@ pub fn install(base: usize) {
 // ---------------------------------------------------------------------------------------------
 // Con la partida cargada
 
-/// Módulos, XInput y Steam Input. Llamar con la partida ya cargada.
+/// Módulos y XInput. Llamar con la partida ya cargada.
 pub fn run() {
     log_modules();
     log_xinput();
+}
+
+/// Contadores en los métodos de `ISteamInput`, anotados cada 10 s durante 3 minutos. Así se
+/// encontró (2026-11-06) que el juego lee el mando por Steam Input; no se usa normalmente
+/// (habría que llamarlo antes de [`steam_input::install`](crate::steam_input::install)).
+#[allow(dead_code)]
+pub fn count_steam_input() {
     match hook_steam_input() {
         Ok(n) => crate::log_event(&format!(
             "Diagnóstico: contadores en {n} métodos de ISteamInput (SteamInput006)"

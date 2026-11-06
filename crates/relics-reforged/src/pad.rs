@@ -362,6 +362,7 @@ pub fn released() -> bool {
     XINPUT_HELD.load(Ordering::Relaxed) == 0
         && !JOY_HELD.load(Ordering::Relaxed)
         && crate::hid::released()
+        && crate::steam_input::released()
 }
 
 /// Cuántas lecturas de mando del juego hubo desde la última vez (XInput, DirectInput).
@@ -411,6 +412,15 @@ pub fn read() -> Option<Pad> {
     let mut r = READER.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(pad) = read_xinput(&mut r) {
         return Some(pad);
+    }
+    if let Some((buttons, kind)) = crate::steam_input::state() {
+        let touched = buttons != r.last_joy;
+        r.last_joy = buttons;
+        return Some(Pad {
+            buttons,
+            touched,
+            kind,
+        });
     }
     if let Some(buttons) = crate::hid::state() {
         let touched = buttons != r.last_joy;
