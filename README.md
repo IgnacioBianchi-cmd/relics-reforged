@@ -31,6 +31,8 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Params desde `regulation.bin` y nombres desde los textos del juego (sin CSV) | ✔ probado en el juego |
 | Solo en la Roundtable (con Relic Rites abierto) | ✔ probado en el juego |
 | Seamless Co-op (perfil `me3/relics-reforged-seamless.me3`, con `load_early`) | ✔ probado: forja guardada en el save de Seamless |
+| Datos del mod en `%APPDATA%\RelicsReforged`: registro de forjas (se mueve solo desde la carpeta de la DLL) y copia del save antes de la primera forja de cada sesión (últimas 10) | Compila; falta probarlo en el juego |
+| Aviso en pantalla (inglés y español) si la versión del juego no es compatible; en desarrollo se fuerza con `probar_aviso_version.txt` junto a la DLL | Compila; falta probarlo en el juego |
 
 ## Estructura
 

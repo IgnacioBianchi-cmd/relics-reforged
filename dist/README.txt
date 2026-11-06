@@ -29,17 +29,22 @@ SAVES
 - RelicsReforged.me3 works on a copy of your save (NR0000_RelicsReforged.sl2). Your normal save
   is never touched.
 - With Seamless, the mod works on the Seamless save (NR0000.co2 by default).
-- Forging cannot be undone. Back up your save if you care about it:
-  %APPDATA%\Nightreign\<your Steam ID>\
+- Forging cannot be undone. Before the first forge of every game session, the mod copies your
+  save to %APPDATA%\RelicsReforged\backups (the last 10 are kept). To restore one, close the
+  game and copy it back to %APPDATA%\Nightreign\<your Steam ID>\ with the original name.
 - me3 keeps the game offline. Do not use this mod online.
 
 FILES
-- relics_reforged_forjas.txt: which relics were forged (each relic has a forge limit). Keep it
-  when updating the mod.
-- relics_reforged.log: written every time the game starts. Attach it to any bug report.
+- %APPDATA%\RelicsReforged\relics_reforged_forjas.txt: which relics were forged (each relic has
+  a forge limit). It stays there when you update or delete the mod.
+- relics_reforged.log (in the mod folder): written every time the game starts. Attach it to any
+  bug report.
+- If the game updates and the mod doesn't support the new version yet, a notice shows up for the
+  first minute and the mod stays off; the game runs normally.
 
 UNINSTALL
-Delete the RelicsReforged folder.
+Delete the RelicsReforged folder (and %APPDATA%\RelicsReforged if you don't want the forge
+record and the save backups).
 
 
 -----------------------------------------------------------------------------------------------
@@ -72,14 +77,19 @@ SAVES
 - RelicsReforged.me3 trabaja sobre una copia de tu save (NR0000_RelicsReforged.sl2). Tu save
   normal no se toca.
 - Con Seamless, el mod trabaja sobre el save de Seamless (NR0000.co2 por defecto).
-- La forja no se puede deshacer. Si te importa tu save, hacé una copia:
-  %APPDATA%\Nightreign\<tu ID de Steam>\
+- La forja no se puede deshacer. Antes de la primera forja de cada sesión, el mod copia tu save
+  a %APPDATA%\RelicsReforged\backups (guarda las últimas 10). Para restaurar una, cerrá el juego
+  y copiala a %APPDATA%\Nightreign\<tu ID de Steam>\ con el nombre original.
 - me3 mantiene el juego sin conexión. No uses este mod online.
 
 ARCHIVOS
-- relics_reforged_forjas.txt: qué reliquias se forjaron (cada reliquia tiene un límite de
-  forjas). No lo borres al actualizar el mod.
-- relics_reforged.log: se escribe cada vez que arranca el juego. Adjuntalo si reportás un error.
+- %APPDATA%\RelicsReforged\relics_reforged_forjas.txt: qué reliquias se forjaron (cada reliquia
+  tiene un límite de forjas). Queda ahí aunque actualices o borres el mod.
+- relics_reforged.log (en la carpeta del mod): se escribe cada vez que arranca el juego.
+  Adjuntalo si reportás un error.
+- Si el juego se actualiza y el mod todavía no es compatible con la versión nueva, aparece un
+  aviso durante el primer minuto y el mod queda apagado; el juego funciona normal.
 
 DESINSTALAR
-Borrá la carpeta RelicsReforged.
+Borrá la carpeta RelicsReforged (y %APPDATA%\RelicsReforged si no querés el registro de forjas
+ni las copias del save).

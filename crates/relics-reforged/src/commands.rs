@@ -157,7 +157,7 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
                 sacrifices: [parse_handle(s1)?, parse_handle(s2)?, parse_handle(s3)?],
                 dry_run: *cmd == "forge?",
             };
-            crate::forge::forge(*ctx.game, data, ctx.dll_dir, order)
+            crate::forge::forge(*ctx.game, data, &crate::userdata::dir(), order)
         }
         ["remove", h] => remove(ctx, parse_handle(h)?),
         ["inv", h] => inv(ctx, parse_handle(h)?),

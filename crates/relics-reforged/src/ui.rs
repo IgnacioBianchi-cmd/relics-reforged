@@ -31,11 +31,11 @@ const GOLD: [f32; 4] = [0.95, 0.8, 0.45, 1.0];
 const EFFECT: [f32; 4] = [0.72, 0.71, 0.66, 1.0];
 
 /// Arranca el overlay en un hilo propio.
-pub fn start(module: usize, game: Game, data: Arc<GameData>, dll_dir: PathBuf) {
+pub fn start(module: usize, game: Game, data: Arc<GameData>, data_dir: PathBuf) {
     let pending: Arc<Mutex<Option<IconAtlas>>> = Arc::default();
     load_icons(&data, pending.clone());
     std::thread::spawn(move || {
-        let mut menu = Menu::new(game, data, dll_dir);
+        let mut menu = Menu::new(game, data, data_dir);
         menu.pending_icons = pending;
         let result = Hudhook::builder()
             .with::<ImguiDx12Hooks>(menu)
@@ -623,7 +623,7 @@ struct Menu {
     pad_mode: Option<pad::Kind>,
     game: Game,
     data: Arc<GameData>,
-    dll_dir: PathBuf,
+    data_dir: PathBuf,
     shared: Arc<Mutex<Shared>>,
     filter: String,
     target: Option<u32>,
@@ -662,7 +662,7 @@ struct Menu {
 }
 
 impl Menu {
-    fn new(game: Game, data: Arc<GameData>, dll_dir: PathBuf) -> Menu {
+    fn new(game: Game, data: Arc<GameData>, data_dir: PathBuf) -> Menu {
         let group_of = data
             .effect_filters
             .families
@@ -684,7 +684,7 @@ impl Menu {
             pad_mode: None,
             game,
             data,
-            dll_dir,
+            data_dir,
             shared: Arc::new(Mutex::new(Shared::default())),
             filter: String::new(),
             target: None,
@@ -929,7 +929,7 @@ impl Menu {
         let (game, data, dir, shared) = (
             self.game,
             self.data.clone(),
-            self.dll_dir.clone(),
+            self.data_dir.clone(),
             self.shared.clone(),
         );
         std::thread::spawn(move || {
@@ -992,7 +992,7 @@ impl Menu {
         let (game, data, dir, shared) = (
             self.game,
             self.data.clone(),
-            self.dll_dir.clone(),
+            self.data_dir.clone(),
             self.shared.clone(),
         );
         std::thread::spawn(move || {
@@ -1015,11 +1015,31 @@ impl Menu {
         let (game, data, dir, shared) = (
             self.game,
             self.data.clone(),
-            self.dll_dir.clone(),
+            self.data_dir.clone(),
             self.shared.clone(),
         );
         std::thread::spawn(move || {
-            let result = forge::forge(game, &data, &dir, Menu::order(key, false));
+            // Antes de la primera forja de la sesión, una copia del save. Si no se puede, se forja
+            // igual, pero el mensaje lo avisa.
+            let backup_note = match crate::userdata::backup_save_once() {
+                Ok(Some(path)) => {
+                    crate::log_event(&format!("Save respaldado en {}", path.display()));
+                    String::new()
+                }
+                Ok(None) => String::new(),
+                Err(e) => {
+                    crate::log_event(&format!("ERROR: no pude respaldar el save: {e}"));
+                    format!(
+                        "\n{}: {e}",
+                        tr(
+                            "Atención: no se pudo hacer la copia de seguridad del save",
+                            "Warning: the save backup could not be made"
+                        )
+                    )
+                }
+            };
+            let result = forge::forge(game, &data, &dir, Menu::order(key, false))
+                .map(|msg| msg + &backup_note);
             match &result {
                 Ok(msg) => crate::log_event(&format!("[menú] {msg}")),
                 Err(e) => crate::log_event(&format!("[menú] ERROR: {e}")),

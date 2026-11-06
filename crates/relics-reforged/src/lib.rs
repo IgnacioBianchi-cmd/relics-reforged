@@ -24,6 +24,7 @@ mod input_block;
 mod input_diag;
 mod mainthread;
 mod msg;
+mod notice;
 mod pad;
 #[cfg(feature = "dev")]
 mod profiler;
@@ -37,6 +38,7 @@ mod steam_input;
 #[cfg(feature = "dev")]
 mod tracer;
 mod ui;
+mod userdata;
 mod win;
 
 use std::fmt::Write as _;
@@ -133,6 +135,14 @@ fn run(module: usize) {
     log.line(&format!("DLL: {}", dll_path.display()));
 
     let base = win::main_module_base();
+    // Desarrollo: con `probar_aviso_version.txt` junto a la DLL, se actúa como con una versión
+    // del juego no soportada (para ver el aviso sin tener otra versión).
+    #[cfg(feature = "dev")]
+    if dll_path.with_file_name("probar_aviso_version.txt").exists() {
+        log.line("Prueba del aviso de versión no soportada: el mod queda inactivo.");
+        notice::unsupported_version(module);
+        return;
+    }
     let game = match Game::attach(base) {
         Ok(g) => g,
         Err(ts) => {
@@ -140,6 +150,7 @@ fn run(module: usize) {
                 "Versión del juego NO soportada (TimeDateStamp {ts:08X?}, se esperaba {SUPPORTED_TIMESTAMP:08X}). \
                  El mod queda inactivo."
             ));
+            notice::unsupported_version(module);
             return;
         }
     };
@@ -187,6 +198,7 @@ fn run(module: usize) {
 
     let mut data = load_game_data(&dll_path, &mut log).map(Arc::new);
     let dll_dir = dll_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    log.line(&userdata::init(&dll_dir));
     // Por si quedó un archivo de comandos de una sesión anterior.
     #[cfg(feature = "dev")]
     let _ = std::fs::remove_file(dll_dir.join(commands::FILE_NAME));
@@ -278,7 +290,7 @@ fn run(module: usize) {
                     "Idioma del menú: {lang:?} (7000302 = \"{strength}\")"
                 ));
                 let named = Arc::new(named);
-                ui::start(module, game, named.clone(), dll_dir.clone());
+                ui::start(module, game, named.clone(), userdata::dir());
                 log.line(&format!("Menú: se abre con {}", ui::TOGGLE_KEY_NAME));
                 #[cfg(feature = "dev")]
                 input_diag::run();

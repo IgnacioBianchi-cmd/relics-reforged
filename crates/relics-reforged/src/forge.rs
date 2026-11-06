@@ -12,7 +12,8 @@
 //! No pide un guardado: como todo cambia en un mismo frame, el próximo guardado del juego toma
 //! la forja completa o nada de ella.
 //!
-//! Las marcas de "forjada" se guardan en `relics_reforged_forjas.txt`, junto a la DLL. Cada una
+//! Las marcas de "forjada" se guardan en `relics_reforged_forjas.txt`, en la carpeta de datos del
+//! mod (`%APPDATA%\RelicsReforged`, ver [`userdata`](crate::userdata)). Cada una
 //! lleva el número de orden de la entrada de inventario (estable entre sesiones) y la firma de
 //! cómo quedó la reliquia (tipo, efectos y maldiciones): así, con varios saves (el normal y el de
 //! Seamless, por ejemplo) cada uno ve solo las marcas de sus propias reliquias.
