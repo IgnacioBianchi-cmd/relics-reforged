@@ -24,7 +24,7 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Botón "F7 :Forge relics" en la barra de controles de Relic Rites | ✔ probado en inglés (en otro idioma va arriba a la derecha) |
 | Teclado y mouse del juego bloqueados con la forja abierta (DirectInput) | ✔ probado en el juego |
 | Mouse del juego bloqueado (DirectInput del mouse y cursor por user32) | ✔ probado en el juego |
-| Reliquias únicas del Small Jar Bazaar fuera de la forja | por probar |
+| Reliquias únicas del Small Jar Bazaar fuera de la forja | ✔ probado en el juego |
 | Sonidos de menú del propio juego (cursor, confirmar, cancelar, abrir y cerrar) | ✔ probado en el juego |
 | Búsqueda, filtro como el del juego (color, tamaño, tipo, favoritas) y orden | ✔ probado, con filtro por efecto (hasta 3 condiciones, categorías del juego) |
 | Params desde `regulation.bin` y nombres desde los textos del juego (sin CSV) | ✔ probado en el juego |
