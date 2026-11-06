@@ -22,7 +22,7 @@ use nr_assets::IconAtlas;
 use crate::forge::{self, Order};
 use crate::game::{is_favorite, Game};
 
-pub const TOGGLE_KEY_NAME: &str = "F7 (R3 en el mando)";
+pub const TOGGLE_KEY_NAME: &str = "F7 (R2 en el mando)";
 
 const RED: [f32; 4] = [1.0, 0.45, 0.4, 1.0];
 const GREEN: [f32; 4] = [0.5, 0.9, 0.5, 1.0];

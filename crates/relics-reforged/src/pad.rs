@@ -359,7 +359,9 @@ fn joystick_buttons(s: &[u8], range: Option<(i32, i32)>) -> u16 {
 
 /// Con la forja recién cerrada se sigue bloqueando hasta que el juego vea el mando suelto.
 pub fn released() -> bool {
-    XINPUT_HELD.load(Ordering::Relaxed) == 0 && !JOY_HELD.load(Ordering::Relaxed)
+    XINPUT_HELD.load(Ordering::Relaxed) == 0
+        && !JOY_HELD.load(Ordering::Relaxed)
+        && crate::hid::released()
 }
 
 /// Cuántas lecturas de mando del juego hubo desde la última vez (XInput, DirectInput).
@@ -403,11 +405,21 @@ static READER: Mutex<Reader> = Mutex::new(Reader {
     last_joy: 0,
 });
 
-/// Lee el mando: el primero de XInput o, si no hay, el joystick que lee el juego.
+/// Lee el mando: el primero de XInput o, si no hay, el de PlayStation que lee el juego (por HID
+/// o como joystick de DirectInput).
 pub fn read() -> Option<Pad> {
     let mut r = READER.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(pad) = read_xinput(&mut r) {
         return Some(pad);
+    }
+    if let Some(buttons) = crate::hid::state() {
+        let touched = buttons != r.last_joy;
+        r.last_joy = buttons;
+        return Some(Pad {
+            buttons,
+            touched,
+            kind: Kind::PlayStation,
+        });
     }
     let j = JOYSTICK.lock().unwrap_or_else(|e| e.into_inner());
     if !j.at.is_some_and(|t| t.elapsed() < Duration::from_millis(500)) {

@@ -132,6 +132,19 @@ pub(crate) fn blocked() -> bool {
     }
 }
 
+/// Para el log: la primera vez que el juego lee un dispositivo de DirectInput de cada forma
+/// (vtable enganchada, función y tamaño del dato).
+fn log_new_read(slot: usize, func: &'static str, cb: u32) {
+    static SEEN: Mutex<Vec<(usize, &'static str, u32)>> = Mutex::new(Vec::new());
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if seen.len() < 32 && !seen.contains(&(slot, func, cb)) {
+        seen.push((slot, func, cb));
+        crate::log_event(&format!(
+            "DirectInput: el juego lee con {func} ({cb} bytes, vtable {slot})"
+        ));
+    }
+}
+
 /// Con la forja recién cerrada: anota si el teclado ya no tiene teclas apretadas.
 fn keyboard_released(cb: u32, data: *const u8) {
     if cb != 256 || MENU_OPEN.load(Ordering::Relaxed) {
@@ -148,6 +161,9 @@ unsafe fn state_hook(slot: usize, this: *mut c_void, cb: u32, data: *mut u8) -> 
     // SAFETY: guardado al instalar, antes de reemplazar la entrada de la vtable.
     let orig: GetState = std::mem::transmute(ORIG_STATE[slot].load(Ordering::Relaxed));
     let result = orig(this, cb, data);
+    if result >= 0 {
+        log_new_read(slot, "GetDeviceState", cb);
+    }
     // Joystick (DIJOYSTATE o DIJOYSTATE2): un mando que no es de XInput, como los de PlayStation.
     // No se lo pone en cero: los ejes en 0 son un stick apretado a fondo.
     if result >= 0 && !data.is_null() && (cb == 80 || cb == 272) {
@@ -178,6 +194,9 @@ unsafe fn data_hook(
     // SAFETY: guardado al instalar, antes de reemplazar la entrada de la vtable.
     let orig: GetData = std::mem::transmute(ORIG_DATA[slot].load(Ordering::Relaxed));
     let result = orig(this, cb, items, count_ptr, flags);
+    if result >= 0 && !count_ptr.is_null() && *count_ptr > 0 {
+        log_new_read(slot, "GetDeviceData", cb);
+    }
     if result >= 0 && !count_ptr.is_null() && blocked() {
         STATS[STAT_DI_EVENTS].fetch_add(*count_ptr, Ordering::Relaxed);
         *count_ptr = 0;
@@ -428,11 +447,12 @@ fn count(stat: usize) {
 fn log_stats() {
     let n: Vec<u32> = STATS.iter().map(|s| s.swap(0, Ordering::Relaxed)).collect();
     let (xinput, joystick) = crate::pad::take_stats();
+    let hid = crate::hid::take_reports();
     crate::log_event(&format!(
         "Forja cerrada. Con la forja abierta se le ocultaron al juego: DirectInput {} lecturas \
          de teclado, {} de mouse y {} eventos; {} GetKeyState, {} GetKeyboardState, \
          {} GetCursorPos. Lecturas de mando desde la última vez: {xinput} XInput (conectado), \
-         {joystick} joystick de DirectInput",
+         {joystick} joystick de DirectInput, {hid} reportes HID",
         n[STAT_DI_KEYBOARD],
         n[STAT_DI_MOUSE],
         n[STAT_DI_EVENTS],
@@ -513,6 +533,10 @@ enum Import<'a> {
 /// Dirección de la entrada de la tabla de importaciones de `module` para `dll!func`.
 fn iat_slot(module: usize, dll: &str, func: &str) -> Option<usize> {
     iat_slot_of(module, dll, Import::Name(func))
+}
+
+pub(crate) fn iat_slot_pub(module: usize, dll: &str, func: &str) -> Option<usize> {
+    iat_slot(module, dll, func)
 }
 
 /// Dirección de la entrada de la tabla de importaciones de `module` para `dll!#ordinal`.

@@ -8,6 +8,7 @@
 mod commands;
 mod forge;
 mod game;
+mod hid;
 mod input_block;
 mod mainthread;
 mod msg;
@@ -143,6 +144,13 @@ fn run(module: usize) {
     match pad::install(base) {
         Ok(()) => log.line("Bloqueo del mando del juego instalado (XInputGetState)"),
         Err(e) => log.line(&format!("ERROR: no pude instalar el bloqueo del mando: {e}")),
+    }
+    match hid::install(base).as_slice() {
+        [] => log.line("Lectura de mandos de PlayStation por HID instalada (kernel32)"),
+        missing => log.line(&format!(
+            "ERROR: mandos por HID incompletos; no pude reemplazar: {}",
+            missing.join(", ")
+        )),
     }
     match relic_menu::install(base) {
         Ok(()) => log.line("Detección de Relic Rites instalada (vtable de AntiqueEquipDialog)"),
