@@ -125,9 +125,18 @@ fn run(module: usize) {
         Err(e) => log.line(&format!("ERROR: sin sonidos de menú: {e}")),
     }
     match input_block::install() {
-        Ok(()) => log.line("Bloqueo de teclado y mouse del juego instalado (DirectInput 8)"),
+        Ok(n) => log.line(&format!(
+            "Bloqueo de teclado y mouse del juego instalado (DirectInput 8, {n} vtable(s))"
+        )),
         Err(e) => log.line(&format!(
             "ERROR: no pude instalar el bloqueo de teclado y mouse: {e}"
+        )),
+    }
+    match input_block::install_win32(base).as_slice() {
+        [] => log.line("Bloqueo de cursor y teclado del juego instalado (user32)"),
+        missing => log.line(&format!(
+            "ERROR: bloqueo de mouse incompleto; no pude reemplazar: {}",
+            missing.join(", ")
         )),
     }
     match relic_menu::install(base) {

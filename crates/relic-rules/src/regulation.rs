@@ -257,6 +257,7 @@ impl GameData {
                     is_deep: row[0x07] & 1 != 0,
                     is_salable: row[0x06] != 0,
                     color: row[0x04],
+                    sort_group: row[0x05],
                     slot_tables: [t(0x10)?, t(0x14)?, t(0x18)?],
                     curse_tables: [t(0x20)?, t(0x24)?, t(0x28)?],
                     icon_id: i32_le(row, 0x1C)?,

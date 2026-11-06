@@ -98,6 +98,8 @@ impl fmt::Display for Role {
 pub enum TransferError {
     /// La reliquia no es aleatoria (fija o desconocida).
     NotEligible(Role),
+    /// Reliquia única del Small Jar Bazaar (no se puede vender).
+    Unique(Role),
     Locked(Role),
     /// La misma reliquia aparece dos veces en el pedido.
     SameRelicTwice(Role, Role),
@@ -134,6 +136,14 @@ impl fmt::Display for TransferError {
                 write!(f, "{r} tiene efectos fijos y no se puede usar")
             }
             TransferError::NotEligible(r) => write!(f, "{r} has fixed effects and can't be used"),
+            TransferError::Unique(r) if es => write!(
+                f,
+                "{r} es única (del Small Jar Bazaar, no se puede vender) y no se puede usar"
+            ),
+            TransferError::Unique(r) => write!(
+                f,
+                "{r} is unique (from the Small Jar Bazaar, it can't be sold) and can't be used"
+            ),
             TransferError::Locked(r) if es => write!(f, "{r} es favorita o está equipada"),
             TransferError::Locked(r) => write!(f, "{r} is a favorite or is equipped"),
             TransferError::SameRelicTwice(a, b) if es => {
@@ -382,6 +392,14 @@ pub fn newer_twin(data: &GameData, item_id: ItemId) -> Option<ItemId> {
 
 fn random_kind(data: &GameData, relic: &Relic, role: Role) -> Result<(bool, usize), TransferError> {
     match relic_kind(data, relic.item_id) {
+        RelicKind::Random { .. }
+            if data
+                .relic_types
+                .get(&relic.item_id)
+                .is_some_and(|t| t.is_unique()) =>
+        {
+            Err(TransferError::Unique(role))
+        }
         RelicKind::Random { deep, size } => Ok((deep, size)),
         _ => Err(TransferError::NotEligible(role)),
     }
@@ -447,6 +465,46 @@ mod tests {
         assert_eq!(plan.murk_cost, 10_000);
         assert_eq!(plan.sacrifice_points, 7);
         assert_eq!(validate(&data, &plan.new_target), Ok(()));
+    }
+
+    #[test]
+    fn reliquias_unicas_no_se_usan() {
+        let data = sample_data();
+        let unique = Relic::new(1_005_000, [Slot::new(14, None), Slot::EMPTY, Slot::EMPTY]);
+        let normal = Relic::new(3, [Slot::new(10, None), Slot::EMPTY, Slot::EMPTY]);
+        let others = [small(11), small(12), small(14)];
+        let refs: Vec<&Relic> = others.iter().collect();
+        let req = |donor, target, sacs: &[&Relic]| {
+            let sacs: Vec<&Relic> = sacs.to_vec();
+            plan_transfer(
+                &data,
+                &Rules::default(),
+                &TransferRequest {
+                    donor,
+                    donor_slot: 0,
+                    target,
+                    target_slot: 0,
+                    target_forged: &[],
+                    target_forge_count: 0,
+                    sacrifices: &sacs,
+                    available_murk: 50_000,
+                },
+            )
+        };
+        // Común con común: anda.
+        assert!(req(&others[2], &normal, &[&others[0], &others[1], &small(12)]).is_ok());
+        assert_eq!(
+            req(&normal, &unique, &refs).unwrap_err(),
+            TransferError::Unique(Role::Target)
+        );
+        assert_eq!(
+            req(&unique, &normal, &refs).unwrap_err(),
+            TransferError::Unique(Role::Donor)
+        );
+        assert_eq!(
+            req(&others[2], &normal, &[&others[0], &unique, &others[1]]).unwrap_err(),
+            TransferError::Unique(Role::Sacrifice(1))
+        );
     }
 
     #[test]

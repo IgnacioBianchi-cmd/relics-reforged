@@ -100,6 +100,7 @@ fn regulation_coincide_con_los_csv() {
         assert_eq!(a.is_deep, b.is_deep, "isDeepRelic de {id}");
         assert_eq!(a.is_salable, b.is_salable, "isSalable de {id}");
         assert_eq!(a.color, b.color, "relicColor de {id}");
+        assert_eq!(a.sort_group, b.sort_group, "sortGroupId de {id}");
         assert_eq!(a.slot_tables, b.slot_tables, "tablas de {id}");
         assert_eq!(a.curse_tables, b.curse_tables, "maldiciones de {id}");
         assert_eq!(a.icon_id, b.icon_id, "iconId de {id}");
@@ -271,6 +272,7 @@ fn transferencias_entre_reliquias_reales() {
                     deep: false,
                     size: 3,
                 }
+                && !data.relic_types[&r.item_id].is_unique()
         })
         .collect();
     assert!(grands.len() >= 5, "hacen falta al menos 5 grandes normales");

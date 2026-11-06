@@ -60,6 +60,7 @@ pub fn sample_data() -> GameData {
         is_deep: deep,
         is_salable: true,
         color: 0,
+        sort_group: 255,
         slot_tables: slots,
         curse_tables: curses,
         icon_id: -1,
@@ -74,6 +75,10 @@ pub fn sample_data() -> GameData {
     ] {
         data.relic_types.insert(rt.id, rt);
     }
+    // Como el 3, pero del Small Jar Bazaar (única).
+    let mut unique = relic(1_005_000, false, [110, -1, -1], [-1, -1, -1]);
+    unique.sort_group = 250;
+    data.relic_types.insert(unique.id, unique);
 
     data
 }

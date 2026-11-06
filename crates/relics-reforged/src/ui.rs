@@ -64,6 +64,8 @@ const KEY_FILTER: (&str, &str, Key) = ("KG_Key_4", "4", Key::Alpha4);
 const KEY_SORT: (&str, &str, Key) = ("KG_Key_5", "5", Key::Alpha5);
 const KEY_RESET: (&str, &str, Key) = ("KG_Key_1", "1", Key::Alpha1);
 const KEY_REMOVE: (&str, &str, Key) = ("KG_Key_2", "2", Key::Alpha2);
+/// Fuera del filtro, el 2 borra el texto buscado.
+const KEY_CLEAR_SEARCH: (&str, &str, Key) = KEY_REMOVE;
 /// Puntos de sacrificio: azul claro.
 const POINTS: [f32; 4] = [0.62, 0.76, 1.0, 1.0];
 
@@ -199,6 +201,8 @@ struct RelicView {
     forge_count: usize,
     /// Por qué no se puede donar ni sacrificar (favorita, equipada, preset, recipiente).
     locked: Option<String>,
+    /// Única del Small Jar Bazaar: no se vende, así que no se usa en la forja.
+    unique: bool,
     /// Orden en que se encontró (el del inventario del juego); `u32::MAX` si no se sabe.
     order: u32,
     favorite: bool,
@@ -883,6 +887,13 @@ impl Menu {
                 crate::sound::decide();
                 self.refresh();
             }
+            if !self.show_filters
+                && !self.filter.is_empty()
+                && ui.is_key_pressed(KEY_CLEAR_SEARCH.2)
+            {
+                crate::sound::cancel();
+                self.filter.clear();
+            }
             if !self.show_filters && ui.is_key_pressed(KEY_CLEAR.2) {
                 crate::sound::decide();
                 self.reset_selection();
@@ -969,9 +980,14 @@ impl Menu {
             n => format!("{} ({n})", tr("Filtrar", "Filter")),
         };
         let sort_label = format!("{}: {}", tr("Orden", "Sort"), self.sort.label());
-        let (mut open, mut next) = (false, false);
+        let (mut open, mut next, mut clear_search) = (false, false, false);
         {
             let icons = self.icons.as_ref();
+            if !self.filter.is_empty() && !self.show_filters {
+                ui.same_line_with_spacing(0.0, 12.0);
+                let (g, k, _) = KEY_CLEAR_SEARCH;
+                clear_search |= key_prompt(ui, icons, g, k, tr("Borrar", "Clear"), 1.0);
+            }
             ui.same_line_with_spacing(0.0, 20.0);
             let (g, k, _) = KEY_FILTER;
             open |= key_prompt(ui, icons, g, k, &filter_label, 1.0);
@@ -993,6 +1009,10 @@ impl Menu {
             crate::sound::tab();
             self.sort = self.sort.next();
         }
+        if clear_search {
+            crate::sound::cancel();
+            self.filter.clear();
+        }
 
         if loading && relics.is_empty() {
             hint(ui, tr("Leyendo reliquias...", "Reading relics..."));
@@ -1010,7 +1030,11 @@ impl Menu {
         }
         // Lo elegido que ya no existe o pasó a estar en uso sale de la selección.
         if !relics.is_empty() && !forging {
-            let usable = |h: &u32| by_handle.get(h).is_some_and(|r| r.locked.is_none());
+            let usable = |h: &u32| {
+                by_handle
+                    .get(h)
+                    .is_some_and(|r| r.locked.is_none() && !r.unique)
+            };
             if self.target.is_some_and(|h| !by_handle.contains_key(&h)) {
                 self.reset_selection();
             }
@@ -1163,24 +1187,45 @@ impl Menu {
             .filter_map(|h| by_handle.get(h))
             .map(|r| r.size.unwrap_or(0) as u32)
             .sum();
+        // Puntos que pide la receptora (según su tamaño).
+        let needed = self
+            .target
+            .and_then(|h| by_handle.get(&h))
+            .and_then(|t| t.size)
+            .map(|n| relic_rules::Rules::default().min_points[n.clamp(1, 3) - 1]);
         self.section(
             ui,
-            &format!(
-                "{} ({}/3, {points} {})",
-                tr("Sacrificios", "Sacrifices"),
-                self.sacrifices.len(),
-                tr("puntos", "points")
-            ),
+            &match needed {
+                Some(needed) => format!(
+                    "{} ({}/3, {points}/{needed} {})",
+                    tr("Sacrificios", "Sacrifices"),
+                    self.sacrifices.len(),
+                    tr("puntos", "points")
+                ),
+                None => format!(
+                    "{} ({}/3, {points} {})",
+                    tr("Sacrificios", "Sacrifices"),
+                    self.sacrifices.len(),
+                    tr("puntos", "points")
+                ),
+            },
         );
         if self.donor.is_none() {
             hint(ui, tr("Después de la donante.", "After the donor."));
         } else if self.sacrifices.is_empty() {
+            let needed = needed.unwrap_or(0);
             hint(
                 ui,
-                tr(
-                    "Elegí 3 en la lista de la derecha (chica 1, mediana 2, grande 3).",
-                    "Choose 3 from the list on the right (delicate 1, polished 2, grand 3).",
-                ),
+                &match relic_rules::lang::get() == relic_rules::lang::Lang::Es {
+                    true => format!(
+                        "Elegí 3 en la lista de la derecha que sumen al menos {needed} puntos \
+                         (chica 1, mediana 2, grande 3)."
+                    ),
+                    false => format!(
+                        "Choose 3 from the list on the right adding up to at least {needed} \
+                         points (delicate 1, polished 2, grand 3)."
+                    ),
+                },
             );
         }
         let mut remove = None;
@@ -1312,8 +1357,11 @@ impl Menu {
             self.sort.sort(&mut list);
             if let Some(h) = self.relic_list(ui, "receptoras", &list, &HashSet::new(), true, false)
             {
-                // Una reliquia que ya llegó al límite de forjas no puede ser receptora.
-                if relics.iter().any(|r| r.handle == h && r.at_forge_limit()) {
+                // Una reliquia que ya llegó al límite de forjas, o única, no puede ser receptora.
+                if relics
+                    .iter()
+                    .any(|r| r.handle == h && (r.at_forge_limit() || r.unique))
+                {
                     crate::sound::error();
                 } else {
                     self.target = Some(h);
@@ -1338,6 +1386,7 @@ impl Menu {
                         && r.deep == t.deep
                         && r.handle != t.handle
                         && r.locked.is_none()
+                        && !r.unique
                         && self.matches_filter(r)
                 })
                 .collect();
@@ -1365,6 +1414,7 @@ impl Menu {
                     && r.handle != t.handle
                     && r.handle != donor
                     && r.locked.is_none()
+                    && !r.unique
                     && (chosen.contains(&r.handle) || self.matches_filter(r))
             })
             .collect();
@@ -1980,7 +2030,18 @@ impl Menu {
                     tag_x += ui.calc_text_size(&tag)[0] + 10.0;
                 }
                 if show_locks {
-                    // En la lista de receptoras: si ya llegó al límite de forjas.
+                    // En la lista de receptoras: si es única o ya llegó al límite de forjas.
+                    if r.unique {
+                        let tag = format!(
+                            "[{}]",
+                            tr(
+                                "única: no se vende ni se forja",
+                                "unique: can't be sold or forged"
+                            )
+                        );
+                        draw.add_text([tag_x, y], RED, &tag);
+                        tag_x += ui.calc_text_size(&tag)[0] + 10.0;
+                    }
                     if r.at_forge_limit() {
                         let tag = format!("[{}]", tr("límite de forjas", "forge limit reached"));
                         draw.add_text([tag_x, y], RED, &tag);
@@ -2333,8 +2394,10 @@ fn load(
             let sig = forge::signature(r.item_id, &r.effects, &r.curses);
             let forged_ids = order
                 .get(&r.handle)
-                .map_or(&[][..], |o| registry.get(*o, sig));
-            let forge_count = order.get(&r.handle).map_or(0, |o| registry.count(*o, sig));
+                .map_or(&[][..], |o| registry.get(*o, sig, &r.effects));
+            let forge_count = order
+                .get(&r.handle)
+                .map_or(0, |o| registry.count(*o, sig, &r.effects));
             let forged = relic
                 .slots
                 .iter()
@@ -2370,6 +2433,7 @@ fn load(
                 effect_icons,
                 families,
                 locked: locks.get(&r.handle).map(|p| p.join(", ")),
+                unique: kind.is_some_and(|t| t.is_unique()),
                 order: order.get(&r.handle).copied().unwrap_or(u32::MAX),
                 favorite: favorites.contains(&r.handle),
             }

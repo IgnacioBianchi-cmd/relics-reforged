@@ -4,17 +4,27 @@
 //! que el filtro de mensajes de hudhook no alcanza: sin esto, el "4" abre el filtro de Relic Rites
 //! detrás de la forja, el "2" marca favoritas y el "3" guarda un preset.
 //!
-//! Se crea un dispositivo propio para conseguir la vtable de los dispositivos de `dinput8.dll`
-//! (la comparten todos los del mismo tipo, también los del juego) y se reemplazan
+//! Se crean un teclado y un mouse propios para conseguir las vtables de los dispositivos de
+//! `dinput8.dll` (cada tipo tiene la suya, compartida con los del juego) y se reemplazan
 //! `GetDeviceState` (9) y `GetDeviceData` (10): con la forja abierta llaman al original (así
 //! el dispositivo sigue al día) y después devuelven "nada apretado" y "sin eventos". Se hace para
-//! la versión ANSI y la Unicode de la interfaz.
+//! la versión ANSI y la Unicode de la interfaz. Los clics llegan por el mouse de DirectInput: con
+//! solo la vtable del teclado, un clic en la forja equipaba reliquias en Relic Rites y el clic
+//! derecho lo cerraba.
 //!
-//! Al cerrar la forja se sigue bloqueando hasta que se suelten todas las teclas (o 1,5 s), para
-//! que la tecla con la que se cerró no le llegue al juego.
+//! Además, el juego lee la posición del cursor con `GetCursorPos` y el teclado también con
+//! `GetKeyboardState` (y puede usar `GetKeyState`). Esas tres se reemplazan en la tabla de
+//! importaciones de `nightreign.exe`, así que solo afectan las llamadas del juego (hudhook e
+//! ImGui usan las suyas): con la forja abierta, teclas sueltas y el cursor quieto donde estaba al
+//! abrirla (sin esto, pasar el mouse por un slot de Relic Rites lo seleccionaba). El juego no saca
+//! mensajes con `PeekMessageW` de su tabla de importaciones: los de la ventana los frena el
+//! filtro de hudhook.
+//!
+//! Al cerrar la forja se sigue bloqueando hasta que se suelten todas las teclas y botones (o
+//! 1,5 s), para que la tecla o el clic con que se cerró no le llegue al juego.
 
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -37,6 +47,12 @@ const IID_IDIRECTINPUT8W: Guid = Guid(
 );
 const GUID_SYS_KEYBOARD: Guid = Guid(
     0x6F1D_2B61,
+    0xD5A0,
+    0x11CF,
+    [0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00],
+);
+const GUID_SYS_MOUSE: Guid = Guid(
+    0x6F1D_2B60,
     0xD5A0,
     0x11CF,
     [0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00],
@@ -64,15 +80,25 @@ static MENU_OPEN: AtomicBool = AtomicBool::new(false);
 /// Se cerró la forja pero todavía hay teclas apretadas: (desde cuándo).
 static RELEASING: Mutex<Option<Instant>> = Mutex::new(None);
 
-// Originales, por variante de la interfaz (0 = ANSI, 1 = Unicode).
-static ORIG_STATE: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
-static ORIG_DATA: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
+// Originales, por vtable reemplazada: variante de la interfaz (ANSI, Unicode) y dispositivo
+// (teclado, mouse). Si dos comparten vtable, se reemplaza una sola vez.
+const SLOTS: usize = 4;
+static ORIG_STATE: [AtomicUsize; SLOTS] = [const { AtomicUsize::new(0) }; SLOTS];
+static ORIG_DATA: [AtomicUsize; SLOTS] = [const { AtomicUsize::new(0) }; SLOTS];
+
+/// Con la forja recién cerrada, el teclado de DirectInput ya no tiene teclas apretadas.
+static KEYS_UP: AtomicBool = AtomicBool::new(false);
 
 /// Llamar en cada frame con el estado de la forja.
 pub fn set_menu_open(open: bool) {
     let was = MENU_OPEN.swap(open, Ordering::Relaxed);
+    if !was && open {
+        freeze_cursor();
+    }
     if was && !open {
+        KEYS_UP.store(false, Ordering::Relaxed);
         *RELEASING.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+        log_stats();
     }
 }
 
@@ -82,7 +108,14 @@ fn blocked() -> bool {
     }
     let mut releasing = RELEASING.lock().unwrap_or_else(|e| e.into_inner());
     match *releasing {
-        Some(at) if at.elapsed() < RELEASE_TIMEOUT => true,
+        Some(at) if at.elapsed() < RELEASE_TIMEOUT => {
+            if KEYS_UP.load(Ordering::Relaxed) && mouse_released() {
+                *releasing = None;
+                false
+            } else {
+                true
+            }
+        }
         Some(_) => {
             *releasing = None;
             false
@@ -91,7 +124,7 @@ fn blocked() -> bool {
     }
 }
 
-/// Con la forja recién cerrada: si el teclado ya no tiene teclas apretadas, se deja de bloquear.
+/// Con la forja recién cerrada: anota si el teclado ya no tiene teclas apretadas.
 fn keyboard_released(cb: u32, data: *const u8) {
     if cb != 256 || MENU_OPEN.load(Ordering::Relaxed) {
         return;
@@ -99,61 +132,72 @@ fn keyboard_released(cb: u32, data: *const u8) {
     // SAFETY: el original acaba de llenar `cb` bytes en `data`.
     let keys = unsafe { std::slice::from_raw_parts(data, 256) };
     if keys.iter().all(|k| k & 0x80 == 0) {
-        *RELEASING.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        KEYS_UP.store(true, Ordering::Relaxed);
     }
 }
 
-unsafe fn state_hook(variant: usize, this: *mut c_void, cb: u32, data: *mut u8) -> i32 {
+unsafe fn state_hook(slot: usize, this: *mut c_void, cb: u32, data: *mut u8) -> i32 {
     // SAFETY: guardado al instalar, antes de reemplazar la entrada de la vtable.
-    let orig: GetState = std::mem::transmute(ORIG_STATE[variant].load(Ordering::Relaxed));
+    let orig: GetState = std::mem::transmute(ORIG_STATE[slot].load(Ordering::Relaxed));
     let result = orig(this, cb, data);
     if result >= 0 && !data.is_null() && blocked() {
         keyboard_released(cb, data);
+        match cb {
+            256 => count(STAT_DI_KEYBOARD),
+            // DIMOUSESTATE y DIMOUSESTATE2.
+            16 | 20 => count(STAT_DI_MOUSE),
+            _ => {}
+        }
         std::ptr::write_bytes(data, 0, cb as usize);
     }
     result
 }
 
 unsafe fn data_hook(
-    variant: usize,
+    slot: usize,
     this: *mut c_void,
     cb: u32,
     items: *mut c_void,
-    count: *mut u32,
+    count_ptr: *mut u32,
     flags: u32,
 ) -> i32 {
     // SAFETY: guardado al instalar, antes de reemplazar la entrada de la vtable.
-    let orig: GetData = std::mem::transmute(ORIG_DATA[variant].load(Ordering::Relaxed));
-    let result = orig(this, cb, items, count, flags);
-    if result >= 0 && !count.is_null() && blocked() {
-        *count = 0;
+    let orig: GetData = std::mem::transmute(ORIG_DATA[slot].load(Ordering::Relaxed));
+    let result = orig(this, cb, items, count_ptr, flags);
+    if result >= 0 && !count_ptr.is_null() && blocked() {
+        STATS[STAT_DI_EVENTS].fetch_add(*count_ptr, Ordering::Relaxed);
+        *count_ptr = 0;
     }
     result
 }
 
-unsafe extern "system" fn state_a(this: *mut c_void, cb: u32, data: *mut u8) -> i32 {
-    state_hook(0, this, cb, data)
+macro_rules! di_hooks {
+    ($($slot:literal => $state:ident, $data:ident;)*) => {
+        $(
+            unsafe extern "system" fn $state(this: *mut c_void, cb: u32, data: *mut u8) -> i32 {
+                state_hook($slot, this, cb, data)
+            }
+            unsafe extern "system" fn $data(
+                this: *mut c_void,
+                cb: u32,
+                items: *mut c_void,
+                count: *mut u32,
+                flags: u32,
+            ) -> i32 {
+                data_hook($slot, this, cb, items, count, flags)
+            }
+        )*
+        fn di_hooks() -> [(usize, usize); SLOTS] {
+            [$(($state as GetState as usize, $data as GetData as usize)),*]
+        }
+    };
 }
-unsafe extern "system" fn state_w(this: *mut c_void, cb: u32, data: *mut u8) -> i32 {
-    state_hook(1, this, cb, data)
-}
-unsafe extern "system" fn data_a(
-    this: *mut c_void,
-    cb: u32,
-    items: *mut c_void,
-    count: *mut u32,
-    flags: u32,
-) -> i32 {
-    data_hook(0, this, cb, items, count, flags)
-}
-unsafe extern "system" fn data_w(
-    this: *mut c_void,
-    cb: u32,
-    items: *mut c_void,
-    count: *mut u32,
-    flags: u32,
-) -> i32 {
-    data_hook(1, this, cb, items, count, flags)
+
+di_hooks! {
+    0 => state_0, data_0;
+    1 => state_1, data_1;
+    2 => state_2, data_2;
+    3 => state_3, data_3;
 }
 
 /// Reemplaza la entrada `index` de `vtable`, guardando antes la original en `orig` (el gancho
@@ -176,8 +220,8 @@ unsafe fn patch(
     Ok(())
 }
 
-/// Vtable de los dispositivos de una variante (crea y suelta un teclado propio).
-unsafe fn device_vtable(create: Create, iid: &Guid) -> Result<usize, String> {
+/// Vtable de un dispositivo de DirectInput (crea y suelta uno propio del tipo `device`).
+unsafe fn device_vtable(create: Create, iid: &Guid, device_guid: &Guid) -> Result<usize, String> {
     let mut di: *mut c_void = std::ptr::null_mut();
     let hinst = GetModuleHandleW(std::ptr::null());
     let hr = create(
@@ -194,7 +238,7 @@ unsafe fn device_vtable(create: Create, iid: &Guid) -> Result<usize, String> {
     let create_device: CreateDevice = std::mem::transmute(*di_vtable.add(3));
     let release_di: Release = std::mem::transmute(*di_vtable.add(2));
     let mut device: *mut c_void = std::ptr::null_mut();
-    let hr = create_device(di, &GUID_SYS_KEYBOARD, &mut device, std::ptr::null_mut());
+    let hr = create_device(di, device_guid, &mut device, std::ptr::null_mut());
     if hr < 0 || device.is_null() {
         release_di(di);
         return Err(format!("CreateDevice falló ({hr:#X})"));
@@ -206,7 +250,9 @@ unsafe fn device_vtable(create: Create, iid: &Guid) -> Result<usize, String> {
     Ok(vtable)
 }
 
-pub fn install() -> Result<(), String> {
+/// Reemplaza `GetDeviceState` y `GetDeviceData` de los teclados y mouses de DirectInput.
+/// Devuelve cuántas vtables distintas reemplazó.
+pub fn install() -> Result<usize, String> {
     let name: Vec<u16> = "dinput8.dll".encode_utf16().chain([0]).collect();
     // SAFETY: carga de una DLL del sistema que el juego ya usa; se buscan funciones conocidas y
     // se reemplazan dos entradas de vtable por funciones con la misma firma.
@@ -220,28 +266,200 @@ pub fn install() -> Result<(), String> {
             return Err("dinput8.dll sin DirectInput8Create".into());
         }
         let create: Create = std::mem::transmute(f);
-        let hooks: [(&Guid, usize, usize); 2] = [
-            (
-                &IID_IDIRECTINPUT8A,
-                state_a as GetState as usize,
-                data_a as GetData as usize,
-            ),
-            (
-                &IID_IDIRECTINPUT8W,
-                state_w as GetState as usize,
-                data_w as GetData as usize,
-            ),
+        let kinds: [(&Guid, &Guid); SLOTS] = [
+            (&IID_IDIRECTINPUT8A, &GUID_SYS_KEYBOARD),
+            (&IID_IDIRECTINPUT8A, &GUID_SYS_MOUSE),
+            (&IID_IDIRECTINPUT8W, &GUID_SYS_KEYBOARD),
+            (&IID_IDIRECTINPUT8W, &GUID_SYS_MOUSE),
         ];
         let mut done: Vec<usize> = Vec::new();
-        for (variant, (iid, state, data)) in hooks.into_iter().enumerate() {
-            let vtable = device_vtable(create, iid)?;
+        for (slot, (iid, device)) in kinds.into_iter().enumerate() {
+            let vtable = device_vtable(create, iid, device)?;
             if done.contains(&vtable) {
                 continue;
             }
-            patch(vtable, 9, state, &ORIG_STATE[variant])?;
-            patch(vtable, 10, data, &ORIG_DATA[variant])?;
+            let (state, data) = di_hooks()[slot];
+            patch(vtable, 9, state, &ORIG_STATE[slot])?;
+            patch(vtable, 10, data, &ORIG_DATA[slot])?;
             done.push(vtable);
         }
+        Ok(done.len())
     }
-    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Win32: lo que el juego lee sin DirectInput.
+
+/// VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2.
+const MOUSE_BUTTONS: [i32; 5] = [0x01, 0x02, 0x04, 0x05, 0x06];
+
+#[link(name = "user32")]
+extern "system" {
+    fn GetAsyncKeyState(vk: i32) -> i16;
+    #[link_name = "GetCursorPos"]
+    fn RealGetCursorPos(point: *mut [i32; 2]) -> i32;
+}
+
+type GetKeyStateFn = unsafe extern "system" fn(i32) -> i16;
+type GetKeyboardStateFn = unsafe extern "system" fn(*mut u8) -> i32;
+type GetCursorPosFn = unsafe extern "system" fn(*mut [i32; 2]) -> i32;
+
+static ORIG_KEY_STATE: AtomicUsize = AtomicUsize::new(0);
+static ORIG_KEYBOARD_STATE: AtomicUsize = AtomicUsize::new(0);
+static ORIG_CURSOR_POS: AtomicUsize = AtomicUsize::new(0);
+
+/// Posición del cursor al abrir la forja (x en los 32 bits altos, y en los bajos).
+static FROZEN_CURSOR: AtomicI64 = AtomicI64::new(0);
+
+/// Cuántas veces se bloqueó cada cosa desde que se abrió la forja (para el log).
+static STATS: [AtomicU32; 6] = [const { AtomicU32::new(0) }; 6];
+const STAT_KEY_STATE: usize = 0;
+const STAT_KEYBOARD_STATE: usize = 1;
+const STAT_CURSOR: usize = 2;
+const STAT_DI_KEYBOARD: usize = 3;
+const STAT_DI_MOUSE: usize = 4;
+const STAT_DI_EVENTS: usize = 5;
+
+fn count(stat: usize) {
+    STATS[stat].fetch_add(1, Ordering::Relaxed);
+}
+
+fn log_stats() {
+    let n: Vec<u32> = STATS.iter().map(|s| s.swap(0, Ordering::Relaxed)).collect();
+    crate::log_event(&format!(
+        "Forja cerrada. Con la forja abierta se le ocultaron al juego: DirectInput {} lecturas \
+         de teclado, {} de mouse y {} eventos; {} GetKeyState, {} GetKeyboardState, \
+         {} GetCursorPos",
+        n[STAT_DI_KEYBOARD],
+        n[STAT_DI_MOUSE],
+        n[STAT_DI_EVENTS],
+        n[STAT_KEY_STATE],
+        n[STAT_KEYBOARD_STATE],
+        n[STAT_CURSOR]
+    ));
+}
+
+fn mouse_released() -> bool {
+    // SAFETY: función de user32 sin efectos.
+    MOUSE_BUTTONS
+        .iter()
+        .all(|&vk| unsafe { GetAsyncKeyState(vk) } as u16 & 0x8000 == 0)
+}
+
+fn freeze_cursor() {
+    let mut p = [0i32; 2];
+    // SAFETY: escribe en nuestro buffer.
+    if unsafe { RealGetCursorPos(&mut p) } != 0 {
+        FROZEN_CURSOR.store(
+            ((p[0] as i64) << 32) | (p[1] as u32 as i64),
+            Ordering::Relaxed,
+        );
+    }
+}
+
+unsafe extern "system" fn key_state_hook(vk: i32) -> i16 {
+    // SAFETY: guardado al instalar.
+    let orig: GetKeyStateFn = std::mem::transmute(ORIG_KEY_STATE.load(Ordering::Relaxed));
+    let state = orig(vk);
+    if blocked() {
+        count(STAT_KEY_STATE);
+        return 0;
+    }
+    state
+}
+
+unsafe extern "system" fn keyboard_state_hook(keys: *mut u8) -> i32 {
+    // SAFETY: guardado al instalar.
+    let orig: GetKeyboardStateFn = std::mem::transmute(ORIG_KEYBOARD_STATE.load(Ordering::Relaxed));
+    let ok = orig(keys);
+    if ok != 0 && !keys.is_null() && blocked() {
+        std::ptr::write_bytes(keys, 0, 256);
+        count(STAT_KEYBOARD_STATE);
+    }
+    ok
+}
+
+unsafe extern "system" fn cursor_pos_hook(point: *mut [i32; 2]) -> i32 {
+    // SAFETY: guardado al instalar.
+    let orig: GetCursorPosFn = std::mem::transmute(ORIG_CURSOR_POS.load(Ordering::Relaxed));
+    let ok = orig(point);
+    if ok != 0 && !point.is_null() && blocked() {
+        let p = FROZEN_CURSOR.load(Ordering::Relaxed);
+        *point = [(p >> 32) as i32, p as i32];
+        count(STAT_CURSOR);
+    }
+    ok
+}
+
+fn c_string(addr: usize) -> Option<String> {
+    let (bytes, bad) = win::read_bytes(addr, 64);
+    if bad > 0 {
+        return None;
+    }
+    let end = bytes.iter().position(|&b| b == 0)?;
+    Some(String::from_utf8_lossy(&bytes[..end]).into_owned())
+}
+
+/// Dirección de la entrada de la tabla de importaciones de `module` para `dll!func`.
+fn iat_slot(module: usize, dll: &str, func: &str) -> Option<usize> {
+    let pe = module + win::read::<u32>(module + 0x3C)? as usize;
+    // Directorio de importaciones: entrada 1 de los data directories de un PE32+.
+    let imports = win::read::<u32>(pe + 24 + 112 + 8)? as usize;
+    let mut desc = module + imports;
+    loop {
+        let names = win::read::<u32>(desc)? as usize;
+        let name = win::read::<u32>(desc + 12)? as usize;
+        let thunks = win::read::<u32>(desc + 16)? as usize;
+        if name == 0 {
+            return None;
+        }
+        if names != 0 && c_string(module + name)?.eq_ignore_ascii_case(dll) {
+            for k in 0.. {
+                let entry = win::read::<u64>(module + names + 8 * k)?;
+                if entry == 0 {
+                    break;
+                }
+                if entry >> 63 == 0
+                    && c_string(module + (entry as usize & 0x7FFF_FFFF) + 2)? == func
+                {
+                    return Some(module + thunks + 8 * k);
+                }
+            }
+        }
+        desc += 20;
+    }
+}
+
+/// Reemplaza las importaciones de user32 del juego. Devuelve las que no pudo reemplazar.
+pub fn install_win32(base: usize) -> Vec<&'static str> {
+    let hooks: [(&'static str, usize, &AtomicUsize); 3] = [
+        (
+            "GetKeyState",
+            key_state_hook as GetKeyStateFn as usize,
+            &ORIG_KEY_STATE,
+        ),
+        (
+            "GetKeyboardState",
+            keyboard_state_hook as GetKeyboardStateFn as usize,
+            &ORIG_KEYBOARD_STATE,
+        ),
+        (
+            "GetCursorPos",
+            cursor_pos_hook as GetCursorPosFn as usize,
+            &ORIG_CURSOR_POS,
+        ),
+    ];
+    let mut missing = Vec::new();
+    for (func, hook, orig) in hooks {
+        let Some(slot) = iat_slot(base, "user32.dll", func) else {
+            missing.push(func);
+            continue;
+        };
+        // SAFETY: la entrada es un puntero a función con la misma firma que el gancho; se guarda
+        // la original antes de escribir.
+        if unsafe { patch(slot, 0, hook, orig) }.is_err() {
+            missing.push(func);
+        }
+    }
+    missing
 }

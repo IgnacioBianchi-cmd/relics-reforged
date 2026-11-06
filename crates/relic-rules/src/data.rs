@@ -46,12 +46,23 @@ pub struct RelicType {
     pub is_deep: bool,
     pub is_salable: bool,
     pub color: u8,
+    /// `sortGroupId`: 255 en las reliquias comunes; 250 (normales) y 251 (Deep) en las del Small
+    /// Jar Bazaar, también en las aleatorias, que el juego no deja vender.
+    pub sort_group: u8,
     /// Tabla de efectos de cada slot (`attachEffectTableId_1..3`).
     pub slot_tables: [TableId; 3],
     /// Tabla de maldición de cada slot (`attachEffectTableId_curse1..3`).
     pub curse_tables: [TableId; 3],
     /// Ícono de la reliquia (`iconId`): `MENU_ItemIcon_<id>`.
     pub icon_id: i32,
+}
+
+impl RelicType {
+    /// Reliquia única del Small Jar Bazaar: no se puede vender, así que tampoco se usa en la forja
+    /// (el juego nunca prevé que desaparezca o cambie).
+    pub fn is_unique(&self) -> bool {
+        matches!(self.sort_group, 250 | 251)
+    }
 }
 
 /// Una categoría del filtro por efecto (`AttachEffectFilterCategoryParam`): "General",
@@ -186,6 +197,7 @@ impl GameData {
                         is_deep: row.int("isDeepRelic")? != 0,
                         is_salable: row.int("isSalable")? != 0,
                         color: row.int("relicColor")? as u8,
+                        sort_group: row.int("sortGroupId")? as u8,
                         slot_tables: [
                             t("attachEffectTableId_1")?,
                             t("attachEffectTableId_2")?,
