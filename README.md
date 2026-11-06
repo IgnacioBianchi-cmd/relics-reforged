@@ -112,5 +112,5 @@ Están en `Rules` (`crates/relic-rules/src/transfer.rs`) y se pueden ajustar.
 |---|---|
 | Sacrificios por transferencia | 3 (chica = 1 punto, mediana = 2, grande = 3) |
 | Puntos mínimos (receptora de 1 / 2 / 3 efectos) | 3 / 5 / 7 |
-| Murk (receptora de 1 / 2 / 3 efectos) | 2.500 / 5.000 / 10.000, ×2 si es Deep |
+| Murk (receptora de 1 / 2 / 3 efectos) | 2.000 / 4.000 / 7.000, ×2 si es Deep |
 | Forjas por reliquia (1 / 2 / 3 efectos); cuenta también reforjar un efecto ya forjado | 1 / 1 / 2 |

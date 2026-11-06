@@ -34,7 +34,10 @@ impl Default for Rules {
         Rules {
             sacrifice_count: 3,
             min_points: [3, 5, 7],
-            murk_cost: [2_500, 5_000, 10_000],
+            // El juego paga 150 / 350 / 550 por vender una chica / mediana / grande (el doble si
+            // es Deep), una Scenic Flatstone (reliquia al azar) cuesta 600 y una expedición deja
+            // unos 2.500-3.000.
+            murk_cost: [2_000, 4_000, 7_000],
             deep_murk_multiplier: 2,
             forge_limit: [1, 1, 2],
         }
@@ -464,7 +467,7 @@ mod tests {
         // 10 se ordena primero.
         assert_eq!(plan.new_target, grand(10, 11, 12));
         assert_eq!(plan.new_target_forged, vec![10]);
-        assert_eq!(plan.murk_cost, 10_000);
+        assert_eq!(plan.murk_cost, 7_000);
         assert_eq!(plan.sacrifice_points, 7);
         assert_eq!(validate(&data, &plan.new_target), Ok(()));
     }
@@ -600,12 +603,12 @@ mod tests {
         let mut f = fixture();
         let sacs: Vec<&Relic> = f.sacrifices.iter().collect();
         let mut req = request(&f, &sacs, &[]);
-        req.available_murk = 9_999;
+        req.available_murk = 6_999;
         assert_eq!(
             plan_transfer(&data, &Rules::default(), &req).unwrap_err(),
             TransferError::NotEnoughMurk {
-                needed: 10_000,
-                have: 9_999
+                needed: 7_000,
+                have: 6_999
             }
         );
 
@@ -654,7 +657,7 @@ mod tests {
         // Potenciado sobre potenciado: viaja con su maldición. Murk ×2 por ser Deep.
         let plan = plan_transfer(&data, &Rules::default(), &base).unwrap();
         assert_eq!(plan.new_target.slots[0], Slot::new(21, Some(31)));
-        assert_eq!(plan.murk_cost, 10_000);
+        assert_eq!(plan.murk_cost, 8_000);
 
         // Potenciado sobre el slot normal: quedarían 2 potenciados y el tipo tiene 1 solo.
         let mut req = base.clone();

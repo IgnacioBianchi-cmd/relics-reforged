@@ -352,7 +352,7 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 9. Costo: donante + 3 sacrificios + murk.
    - Puntos por sacrificio: chica 1, mediana 2, grande 3. Mínimo según destino: 1 ef → 3, 2 ef → 5, 3 ef → 7.
    - Si el destino es Deep, los sacrificios son Deep.
-   - Murk: 2.500 / 5.000 / 10.000 según el tamaño del destino, ×2 si es Deep (a ajustar jugando).
+   - Murk: 2.000 / 4.000 / 7.000 según el tamaño del destino, ×2 si es Deep (ajustado el 2026-11-06; antes 2.500 / 5.000 / 10.000, caro para quien no tiene mucho murk juntado). Referencias: vender una reliquia da 150 / 350 / 550 (el doble si es Deep; coincide con lo visto en Cheat Engine: +350 y +700), una Scenic Flatstone del Bazaar (reliquia al azar) cuesta 600 y una expedición deja unos 2.500-3.000 (una sola fuente). Una forja grande cuesta ~2,5 expediciones o ~12 Flatstones, más la donante y los sacrificios (~1.200-1.700 de venta perdida).
 10. No se pueden usar favoritas ni reliquias equipadas en un preset.
 11. Solo en la Roundtable. La marca de "forjada" se guarda en un archivo propio del mod, indexado por el `sort_key` de la reliquia (el ID `0xC08000NN` no sirve porque cambia entre sesiones).
 
