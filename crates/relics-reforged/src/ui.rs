@@ -55,51 +55,41 @@ const PANEL_BG: &str = "MENU_In_bg_05";
 const PANEL_LINE: &str = "MENU_In_Line_02";
 const SEP_LINE: &str = "MENU_In_Line_00";
 
-/// Un control propio: la tecla y el botón del mando, cada uno con su glifo del atlas del juego
-/// (`KG_R_D` = A, `KG_R_R` = B, `KG_R_L` = X, `KG_R_U` = Y, `KG_Back` = View, `KG_Start` = Menu)
-/// y un texto por si falta el glifo.
+/// Un control propio: la tecla (con su glifo del atlas del juego) y el botón del mando (su glifo
+/// sale de [`pad::glyph`], de Xbox o de PlayStation según el mando).
 struct Control {
     glyph: &'static str,
     key_name: &'static str,
     key: Key,
-    pad_glyph: &'static str,
-    pad_name: &'static str,
-    /// Botón de XInput (`pad::*`).
+    /// Botón con los bits de XInput (`pad::*`).
     pad: u16,
 }
 
-const fn control(
-    glyph: &'static str,
-    key_name: &'static str,
-    key: Key,
-    pad_glyph: &'static str,
-    pad_name: &'static str,
-    pad: u16,
-) -> Control {
+const fn control(glyph: &'static str, key_name: &'static str, key: Key, pad: u16) -> Control {
     Control {
         glyph,
         key_name,
         key,
-        pad_glyph,
-        pad_name,
         pad,
     }
 }
 
 use crate::pad;
 
+// Botones del mando como en Relic Rites: confirmar con A/cruz, volver con B/círculo, filtro con
+// L3. La forja se abre con R2/RT, que Relic Rites no usa (R3 guarda un preset).
 /// Abre la forja desde Relic Rites (y la cierra).
-const CTRL_TOGGLE: Control = control("KG_Key_F7", "F7", Key::F7, "KG_R3", "R3", pad::OPEN_BUTTON);
-const CTRL_BACK: Control = control("KG_Key_Q", "Q", Key::Q, "KG_R_R", "B", pad::B);
-const CTRL_REFRESH: Control = control("KG_Key_R", "R", Key::R, "KG_Start", "Menu", pad::START);
-const CTRL_CLEAR: Control = control("KG_Key_C", "C", Key::C, "KG_Back", "View", pad::BACK);
-const CTRL_FILTER: Control = control("KG_Key_4", "4", Key::Alpha4, "KG_R_U", "Y", pad::Y);
-const CTRL_SORT: Control = control("KG_Key_5", "5", Key::Alpha5, "KG_R1", "RB", pad::RIGHT_SHOULDER);
+const CTRL_TOGGLE: Control = control("KG_Key_F7", "F7", Key::F7, pad::OPEN_BUTTON);
+const CTRL_BACK: Control = control("KG_Key_Q", "Q", Key::Q, pad::B);
+const CTRL_REFRESH: Control = control("KG_Key_R", "R", Key::R, pad::START);
+const CTRL_CLEAR: Control = control("KG_Key_C", "C", Key::C, pad::Y);
+const CTRL_FILTER: Control = control("KG_Key_4", "4", Key::Alpha4, pad::LEFT_THUMB);
+const CTRL_SORT: Control = control("KG_Key_5", "5", Key::Alpha5, pad::RIGHT_THUMB);
 /// Dentro del filtro.
-const CTRL_RESET: Control = control("KG_Key_1", "1", Key::Alpha1, "KG_R_L", "X", pad::X);
-const CTRL_REMOVE: Control = control("KG_Key_2", "2", Key::Alpha2, "KG_Back", "View", pad::BACK);
-/// Fuera del filtro, el 2 (o X) borra el texto buscado.
-const CTRL_CLEAR_SEARCH: Control = control("KG_Key_2", "2", Key::Alpha2, "KG_R_L", "X", pad::X);
+const CTRL_RESET: Control = control("KG_Key_1", "1", Key::Alpha1, pad::X);
+const CTRL_REMOVE: Control = control("KG_Key_2", "2", Key::Alpha2, pad::Y);
+/// Fuera del filtro, el 2 (o X/cuadrado) borra el texto buscado.
+const CTRL_CLEAR_SEARCH: Control = control("KG_Key_2", "2", Key::Alpha2, pad::X);
 const CONTROLS: [&Control; 9] = [
     &CTRL_TOGGLE,
     &CTRL_BACK,
@@ -143,7 +133,13 @@ fn load_icons(data: &GameData, out: Arc<Mutex<Option<IconAtlas>>>) {
         .chain(
             CONTROLS
                 .iter()
-                .flat_map(|c| [c.glyph, c.pad_glyph])
+                .flat_map(|c| {
+                    [
+                        c.glyph,
+                        pad::glyph(c.pad, pad::Kind::Xbox).0,
+                        pad::glyph(c.pad, pad::Kind::PlayStation).0,
+                    ]
+                })
                 .map(String::from),
         )
         .collect();
@@ -339,7 +335,7 @@ fn draw_hint(
     font: Option<TitleFont>,
     icons: Option<&Icons>,
     panel: Option<crate::relic_menu::Panel>,
-    pad_mode: bool,
+    pad_mode: Option<pad::Kind>,
 ) -> bool {
     use crate::relic_menu::Panel;
     let [w, h] = ui.io().display_size;
@@ -352,9 +348,9 @@ fn draw_hint(
     // slots termina en "M:All Presets" / "M:Todos los preajustes"; en la grilla, en
     // "1:Swap screen" / "1:Cambiar pantalla". Eligiendo la reliquia para un slot la barra es la
     // de la grilla, pero no se distingue de recorrerla: ahí el botón queda en la misma barra.
-    // Con el mando la barra lleva otros glifos y no está medida: va arriba a la derecha.
+    // Con el mando de PlayStation la barra en español termina en el mismo lugar (los glifos
+    // miden casi lo mismo que las teclas).
     let after_presets = match (relic_rules::lang::get(), panel) {
-        _ if pad_mode => None,
         (relic_rules::lang::Lang::En, Some(Panel::Slots)) => Some(1010.0),
         (relic_rules::lang::Lang::En, Some(Panel::Right)) => Some(527.0),
         (relic_rules::lang::Lang::Es, Some(Panel::Slots)) => Some(1322.0),
@@ -400,18 +396,19 @@ fn mouse_used(ui: &Ui) -> bool {
         || io.mouse_wheel != 0.0
 }
 
-/// [`key_prompt`] con la tecla o el botón del mando del control, según lo último que se usó.
+/// [`key_prompt`] con la tecla o el botón del mando del control, según lo último que se usó
+/// (`pad_mode`: el mando, si fue él).
 fn control_prompt(
     ui: &Ui,
     icons: Option<&Icons>,
     c: &Control,
-    pad_mode: bool,
+    pad_mode: Option<pad::Kind>,
     label: &str,
     s: f32,
 ) -> bool {
     let (glyph, name) = match pad_mode {
-        true => (c.pad_glyph, c.pad_name),
-        false => (c.glyph, c.key_name),
+        Some(kind) => pad::glyph(c.pad, kind),
+        None => (c.glyph, c.key_name),
     };
     key_prompt(ui, icons, glyph, name, label, s)
 }
@@ -622,8 +619,8 @@ struct Menu {
     pad_prev: u16,
     /// Desde cuándo y última repetición de cada dirección del mando.
     pad_repeat: [Option<(std::time::Instant, std::time::Instant)>; 4],
-    /// Lo último que se usó fue el mando: los controles muestran sus botones.
-    pad_mode: bool,
+    /// Lo último que se usó fue el mando (y cuál): los controles muestran sus botones.
+    pad_mode: Option<pad::Kind>,
     game: Game,
     data: Arc<GameData>,
     dll_dir: PathBuf,
@@ -684,7 +681,7 @@ impl Menu {
             pad_now: 0,
             pad_prev: 0,
             pad_repeat: [None; 4],
-            pad_mode: false,
+            pad_mode: None,
             game,
             data,
             dll_dir,
@@ -742,11 +739,11 @@ impl Menu {
         self.pad_prev = self.pad_now;
         let pad = pad::read();
         self.pad_now = pad.map_or(0, |p| p.buttons);
-        if pad.is_some_and(|p| p.touched) {
-            self.pad_mode = true;
+        if let Some(p) = pad.filter(|p| p.touched) {
+            self.pad_mode = Some(p.kind);
         }
         if mouse_used(ui) || Key::VARIANTS.iter().any(|&k| ui.is_key_pressed_no_repeat(k)) {
-            self.pad_mode = false;
+            self.pad_mode = None;
         }
     }
 
@@ -2598,7 +2595,6 @@ impl ImguiRenderLoop for Menu {
                 self.reset_selection();
             }
             crate::input_block::set_menu_open(false);
-            pad::set_offered(false);
             return;
         }
         self.read_input(ui);
@@ -2607,8 +2603,6 @@ impl ImguiRenderLoop for Menu {
         let visible = self.visible.load(Ordering::Relaxed);
         let panel = crate::relic_menu::panel();
         let offered = !visible && panel == Some(crate::relic_menu::Panel::Slots);
-        // Mientras se ofrece, el juego no ve el botón del mando que la abre.
-        pad::set_offered(offered);
         let hint_clicked = offered
             && draw_hint(
                 ui,

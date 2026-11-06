@@ -24,7 +24,7 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Botón "F7 :Forge relics" en la barra de controles de Relic Rites | ✔ probado en inglés; posición en español medida con capturas, falta verla en el juego |
 | Teclado y mouse del juego bloqueados con la forja abierta (DirectInput) | ✔ probado en el juego |
 | Mouse del juego bloqueado (DirectInput del mouse y cursor por user32) | ✔ probado en el juego |
-| Forja con teclado y mando (cursor propio; mando por XInput, bloqueado para el juego con la forja abierta) | Compila; falta probarlo en el juego |
+| Forja con teclado y mando (cursor propio; mando por XInput o DirectInput, bloqueado para el juego con la forja abierta) | Teclado ✔ probado; mando de PlayStation por DirectInput sin probar |
 | Reliquias únicas del Small Jar Bazaar fuera de la forja | ✔ probado en el juego |
 | Sonidos de menú del propio juego (cursor, confirmar, cancelar, abrir y cerrar) | ✔ probado en el juego |
 | Búsqueda, filtro como el del juego (color, tamaño, tipo, favoritas) y orden | ✔ probado, con filtro por efecto (hasta 3 condiciones, categorías del juego) |
@@ -71,14 +71,15 @@ El menú y sus mensajes salen en inglés o en español según el idioma del jueg
 
 Con teclado o mando, un cursor recorre botones y filas: arriba/abajo dentro de un panel, izquierda/derecha cambia de panel, Enter/Espacio o A elige. En el selector de efectos, A o derecha abren un grupo. Los controles muestran las teclas o los botones según lo último que se usó.
 
-| Acción | Teclado | Mando (Xbox) |
-|---|---|---|
-| Abrir / cerrar la forja (en Relic Rites) | F7 | R3 (el juego no lo ve mientras se ofrece la forja) |
-| Volver | Q o Esc | B |
-| Refrescar / Empezar de nuevo | R / C | Menu / View |
-| Filtro / Orden | 4 / 5 | Y / RB |
-| En el filtro: Limpiar / Quitar condiciones | 1 / 2 | X / View |
-| Borrar la búsqueda | 2 | X |
+| Acción | Teclado | PlayStation | Xbox |
+|---|---|---|---|
+| Abrir / cerrar la forja (en Relic Rites) | F7 | R2 | RT |
+| Elegir | Enter / Espacio | Cruz | A |
+| Volver | Q o Esc | Círculo | B |
+| Refrescar / Empezar de nuevo | R / C | Options / Triángulo | Menu / Y |
+| Filtro / Orden | 4 / 5 | L3 / R3 | LS / RS |
+| En el filtro: Limpiar / Quitar condiciones | 1 / 2 | Cuadrado / Triángulo | X / Y |
+| Borrar la búsqueda | 2 | Cuadrado | X |
 
 ## Reglas de balance (por defecto)
 

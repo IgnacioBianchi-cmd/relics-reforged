@@ -82,11 +82,15 @@ static MENU_OPEN: AtomicBool = AtomicBool::new(false);
 /// Se cerró la forja pero todavía hay teclas apretadas: (desde cuándo).
 static RELEASING: Mutex<Option<Instant>> = Mutex::new(None);
 
-// Originales, por vtable reemplazada: variante de la interfaz (ANSI, Unicode) y dispositivo
-// (teclado, mouse). Si dos comparten vtable, se reemplaza una sola vez.
-const SLOTS: usize = 4;
+// Originales, por vtable de dispositivo reemplazada (teclado, mouse, joystick... y variante
+// ANSI o Unicode). Si dos comparten vtable, se reemplaza una sola vez.
+const SLOTS: usize = 8;
 static ORIG_STATE: [AtomicUsize; SLOTS] = [const { AtomicUsize::new(0) }; SLOTS];
 static ORIG_DATA: [AtomicUsize; SLOTS] = [const { AtomicUsize::new(0) }; SLOTS];
+/// Vtables de dispositivo ya reemplazadas (la posición es el slot).
+static PATCHED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+/// `IDirectInput8::CreateDevice` original, de la interfaz ANSI y de la Unicode.
+static ORIG_CREATE: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
 
 /// Con la forja recién cerrada, el teclado de DirectInput ya no tiene teclas apretadas.
 static KEYS_UP: AtomicBool = AtomicBool::new(false);
@@ -144,6 +148,12 @@ unsafe fn state_hook(slot: usize, this: *mut c_void, cb: u32, data: *mut u8) -> 
     // SAFETY: guardado al instalar, antes de reemplazar la entrada de la vtable.
     let orig: GetState = std::mem::transmute(ORIG_STATE[slot].load(Ordering::Relaxed));
     let result = orig(this, cb, data);
+    // Joystick (DIJOYSTATE o DIJOYSTATE2): un mando que no es de XInput, como los de PlayStation.
+    // No se lo pone en cero: los ejes en 0 son un stick apretado a fondo.
+    if result >= 0 && !data.is_null() && (cb == 80 || cb == 272) {
+        crate::pad::joystick_read(this, cb, data, blocked());
+        return result;
+    }
     if result >= 0 && !data.is_null() && blocked() {
         keyboard_released(cb, data);
         match cb {
@@ -202,6 +212,83 @@ di_hooks! {
     1 => state_1, data_1;
     2 => state_2, data_2;
     3 => state_3, data_3;
+    4 => state_4, data_4;
+    5 => state_5, data_5;
+    6 => state_6, data_6;
+    7 => state_7, data_7;
+}
+
+/// Reemplaza `GetDeviceState` (9) y `GetDeviceData` (10) en la vtable de un dispositivo, si no
+/// se hizo antes. `true` si era nueva.
+unsafe fn hook_device_vtable(vtable: usize) -> Result<bool, String> {
+    let mut patched = PATCHED.lock().unwrap_or_else(|e| e.into_inner());
+    if patched.contains(&vtable) {
+        return Ok(false);
+    }
+    let slot = patched.len();
+    if slot >= SLOTS {
+        return Err("no quedan ganchos libres para otra vtable de DirectInput".into());
+    }
+    let (state, data) = di_hooks()[slot];
+    patch(vtable, 9, state, &ORIG_STATE[slot])?;
+    patch(vtable, 10, data, &ORIG_DATA[slot])?;
+    patched.push(vtable);
+    Ok(true)
+}
+
+/// `CreateDevice` del juego: llama al original y engancha la vtable del dispositivo nuevo (así
+/// se cubren el joystick y los mandos que se conectan con el juego abierto).
+unsafe fn create_device_hook(
+    variant: usize,
+    this: *mut c_void,
+    guid: *const Guid,
+    out: *mut *mut c_void,
+    outer: *mut c_void,
+) -> i32 {
+    // SAFETY: guardado al instalar, antes de reemplazar la entrada.
+    let orig: CreateDevice = std::mem::transmute(ORIG_CREATE[variant].load(Ordering::Relaxed));
+    let hr = orig(this, guid, out, outer);
+    if hr >= 0 && !out.is_null() && !(*out).is_null() {
+        match hook_device_vtable(*(*out as *const usize)) {
+            Ok(true) => crate::log_event("DirectInput: el juego creó un dispositivo de otro tipo; enganchado"),
+            Ok(false) => {}
+            Err(e) => crate::log_event(&format!("ERROR: DirectInput: {e}")),
+        }
+    }
+    hr
+}
+
+unsafe extern "system" fn create_device_a(
+    this: *mut c_void,
+    guid: *const Guid,
+    out: *mut *mut c_void,
+    outer: *mut c_void,
+) -> i32 {
+    create_device_hook(0, this, guid, out, outer)
+}
+
+unsafe extern "system" fn create_device_w(
+    this: *mut c_void,
+    guid: *const Guid,
+    out: *mut *mut c_void,
+    outer: *mut c_void,
+) -> i32 {
+    create_device_hook(1, this, guid, out, outer)
+}
+
+type EnumDevices = unsafe extern "system" fn(
+    *mut c_void,
+    u32,
+    unsafe extern "system" fn(*const u8, *mut c_void) -> i32,
+    *mut c_void,
+    u32,
+) -> i32;
+
+/// `EnumDevices`: guarda el `guidInstance` del primer mando en `found` y corta.
+unsafe extern "system" fn first_device(instance: *const u8, found: *mut c_void) -> i32 {
+    // DIDEVICEINSTANCE: dwSize y después guidInstance.
+    *(found as *mut Option<Guid>) = Some(std::ptr::read_unaligned(instance.add(4) as *const Guid));
+    0 // DIENUM_STOP
 }
 
 /// Reemplaza la entrada `index` de `vtable`, guardando antes la original en `orig` (el gancho
@@ -224,38 +311,35 @@ pub(crate) unsafe fn patch(
     Ok(())
 }
 
-/// Vtable de un dispositivo de DirectInput (crea y suelta uno propio del tipo `device`).
-unsafe fn device_vtable(create: Create, iid: &Guid, device_guid: &Guid) -> Result<usize, String> {
-    let mut di: *mut c_void = std::ptr::null_mut();
-    let hinst = GetModuleHandleW(std::ptr::null());
-    let hr = create(
-        hinst,
-        DIRECTINPUT_VERSION,
-        iid,
-        &mut di,
-        std::ptr::null_mut(),
-    );
-    if hr < 0 || di.is_null() {
-        return Err(format!("DirectInput8Create falló ({hr:#X})"));
-    }
+/// Vtable de un dispositivo de DirectInput creado con la interfaz `di` (lo crea y lo suelta).
+unsafe fn device_vtable(di: *mut c_void, device_guid: &Guid) -> Result<usize, String> {
     let di_vtable = *(di as *const *const usize);
     let create_device: CreateDevice = std::mem::transmute(*di_vtable.add(3));
-    let release_di: Release = std::mem::transmute(*di_vtable.add(2));
     let mut device: *mut c_void = std::ptr::null_mut();
     let hr = create_device(di, device_guid, &mut device, std::ptr::null_mut());
     if hr < 0 || device.is_null() {
-        release_di(di);
         return Err(format!("CreateDevice falló ({hr:#X})"));
     }
     let vtable = *(device as *const usize);
     let release_device: Release = std::mem::transmute(*(vtable as *const usize).add(2));
     release_device(device);
-    release_di(di);
     Ok(vtable)
 }
 
-/// Reemplaza `GetDeviceState` y `GetDeviceData` de los teclados y mouses de DirectInput.
-/// Devuelve cuántas vtables distintas reemplazó.
+/// Crea una interfaz de DirectInput 8 (`iid`: ANSI o Unicode).
+unsafe fn direct_input(create: Create, iid: &Guid) -> Result<*mut c_void, String> {
+    let mut di: *mut c_void = std::ptr::null_mut();
+    let hinst = GetModuleHandleW(std::ptr::null());
+    let hr = create(hinst, DIRECTINPUT_VERSION, iid, &mut di, std::ptr::null_mut());
+    if hr < 0 || di.is_null() {
+        return Err(format!("DirectInput8Create falló ({hr:#X})"));
+    }
+    Ok(di)
+}
+
+/// Reemplaza `GetDeviceState` y `GetDeviceData` de los dispositivos de DirectInput: teclado,
+/// mouse y el primer mando conectado (si hay), y `CreateDevice` para los que el juego cree
+/// después. Devuelve cuántas vtables de dispositivo reemplazó.
 pub fn install() -> Result<usize, String> {
     let name: Vec<u16> = "dinput8.dll".encode_utf16().chain([0]).collect();
     // SAFETY: carga de una DLL del sistema que el juego ya usa; se buscan funciones conocidas y
@@ -270,24 +354,37 @@ pub fn install() -> Result<usize, String> {
             return Err("dinput8.dll sin DirectInput8Create".into());
         }
         let create: Create = std::mem::transmute(f);
-        let kinds: [(&Guid, &Guid); SLOTS] = [
-            (&IID_IDIRECTINPUT8A, &GUID_SYS_KEYBOARD),
-            (&IID_IDIRECTINPUT8A, &GUID_SYS_MOUSE),
-            (&IID_IDIRECTINPUT8W, &GUID_SYS_KEYBOARD),
-            (&IID_IDIRECTINPUT8W, &GUID_SYS_MOUSE),
-        ];
-        let mut done: Vec<usize> = Vec::new();
-        for (slot, (iid, device)) in kinds.into_iter().enumerate() {
-            let vtable = device_vtable(create, iid, device)?;
-            if done.contains(&vtable) {
-                continue;
-            }
-            let (state, data) = di_hooks()[slot];
-            patch(vtable, 9, state, &ORIG_STATE[slot])?;
-            patch(vtable, 10, data, &ORIG_DATA[slot])?;
-            done.push(vtable);
+        let creates: [unsafe extern "system" fn(_, _, _, _) -> i32; 2] =
+            [create_device_a, create_device_w];
+        for (variant, iid) in [&IID_IDIRECTINPUT8A, &IID_IDIRECTINPUT8W]
+            .into_iter()
+            .enumerate()
+        {
+            let di = direct_input(create, iid)?;
+            let di_vtable = *(di as *const *const usize);
+            let release_di: Release = std::mem::transmute(*di_vtable.add(2));
+            let mut devices = vec![GUID_SYS_KEYBOARD, GUID_SYS_MOUSE];
+            // El primer mando conectado (DI8DEVCLASS_GAMECTRL, DIEDFL_ATTACHEDONLY).
+            let enum_devices: EnumDevices = std::mem::transmute(*di_vtable.add(4));
+            let mut pad: Option<Guid> = None;
+            enum_devices(di, 4, first_device, (&mut pad as *mut Option<Guid>).cast(), 1);
+            devices.extend(pad);
+            let result = devices.iter().try_for_each(|guid| {
+                hook_device_vtable(device_vtable(di, guid)?).map(|_| ())
+            });
+            // CreateDevice de esta variante, para los dispositivos que cree el juego.
+            let result = result.and_then(|()| {
+                patch(
+                    di_vtable as usize,
+                    3,
+                    creates[variant] as usize,
+                    &ORIG_CREATE[variant],
+                )
+            });
+            release_di(di);
+            result?;
         }
-        Ok(done.len())
+        Ok(PATCHED.lock().unwrap_or_else(|e| e.into_inner()).len())
     }
 }
 
@@ -330,10 +427,12 @@ fn count(stat: usize) {
 
 fn log_stats() {
     let n: Vec<u32> = STATS.iter().map(|s| s.swap(0, Ordering::Relaxed)).collect();
+    let (xinput, joystick) = crate::pad::take_stats();
     crate::log_event(&format!(
         "Forja cerrada. Con la forja abierta se le ocultaron al juego: DirectInput {} lecturas \
          de teclado, {} de mouse y {} eventos; {} GetKeyState, {} GetKeyboardState, \
-         {} GetCursorPos",
+         {} GetCursorPos. Lecturas de mando desde la última vez: {xinput} XInput (conectado), \
+         {joystick} joystick de DirectInput",
         n[STAT_DI_KEYBOARD],
         n[STAT_DI_MOUSE],
         n[STAT_DI_EVENTS],
