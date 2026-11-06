@@ -31,8 +31,9 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Params desde `regulation.bin` y nombres desde los textos del juego (sin CSV) | ✔ probado en el juego |
 | Solo en la Roundtable (con Relic Rites abierto) | ✔ probado en el juego |
 | Seamless Co-op (perfil `me3/relics-reforged-seamless.me3`, con `load_early`) | ✔ probado: forja guardada en el save de Seamless |
-| Datos del mod en `%APPDATA%\RelicsReforged`: registro de forjas (se mueve solo desde la carpeta de la DLL) y copia del save antes de la primera forja de cada sesión (últimas 10) | Compila; falta probarlo en el juego |
-| Aviso en pantalla (inglés y español) si la versión del juego no es compatible; en desarrollo se fuerza con `probar_aviso_version.txt` junto a la DLL | Compila; falta probarlo en el juego |
+| Datos del mod en `%APPDATA%\RelicsReforged`: registro de forjas (se mueve solo desde la carpeta de la DLL) y copia del save antes de la primera forja de cada sesión (últimas 10) | ✔ probado: registro movido, una copia por sesión |
+| Aviso en pantalla (inglés y español) si la versión del juego no es compatible; en desarrollo se fuerza con `probar_aviso_version.txt` junto a la DLL | ✔ probado (forzado) |
+| Publicación (`tools/package.ps1`): DLL pública y perfiles de `dist/` | Perfil sin conexión ✔ probado (me3 crea la copia del save). Perfil de Seamless: falta probarlo con la carpeta `SeamlessCoop` copiada. Sin esa carpeta, me3 solo avisa en su log y arranca el juego sin Seamless: por eso el perfil también lleva `savefile` (Seamless lo ignora) |
 
 ## Estructura
 

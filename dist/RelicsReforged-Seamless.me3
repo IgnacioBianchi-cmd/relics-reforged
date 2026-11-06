@@ -11,6 +11,14 @@ profileVersion = "v1"
 # nrsc_settings.ini) junto a este archivo. Seamless usa su propio save (NR0000.co2 por defecto,
 # ver save_file_extension en nrsc_settings.ini), así que tu save normal no se toca.
 
+# Safety net: Seamless ignores this line and uses its own save. If the SeamlessCoop folder is
+# missing, me3 starts the game without Seamless, and then this copy is used instead of your
+# normal save.
+# Red de seguridad: Seamless ignora esta línea y usa su propio save. Si falta la carpeta
+# SeamlessCoop, me3 arranca el juego sin Seamless, y entonces se usa esta copia en vez de tu save
+# normal.
+savefile = "NR0000_RelicsReforged.sl2"
+
 [[supports]]
 game = "nightreign"
 

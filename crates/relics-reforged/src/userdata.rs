@@ -132,8 +132,13 @@ pub fn backup_save_once() -> Result<Option<PathBuf>, String> {
     std::fs::copy(&save, &dest).map_err(|e| format!("{}: {e}", save.display()))?;
     BACKED_UP.store(true, Ordering::SeqCst);
     // Solo los últimos KEEP_BACKUPS (el nombre empieza con la fecha: el orden alfabético sirve).
+    // Solo se miran los respaldos propios: lo demás que haya en la carpeta no se toca.
     if let Ok(entries) = std::fs::read_dir(&backups) {
-        let mut files: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        let mut files: Vec<PathBuf> = entries
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with(|c: char| c.is_ascii_digit()))
+            .map(|e| e.path())
+            .collect();
         files.sort();
         let extra = files.len().saturating_sub(KEEP_BACKUPS);
         for old in &files[..extra] {
