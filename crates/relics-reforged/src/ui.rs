@@ -978,7 +978,7 @@ impl Menu {
         let right_w = avail[0] - left_w - gap;
 
         // Encabezado izquierdo: murk y cantidad.
-        ui.text_colored(GOLD, format!("Murk  {murk}"));
+        ui.text_colored(GOLD, format!("Murk  {}", relic_rules::lang::number(murk)));
         ui.same_line_with_spacing(0.0, 28.0);
         ui.text_disabled(format!("{}: {}", tr("Reliquias", "Relics"), relics.len()));
         // Encabezado derecho, arriba de la lista (como el de la grilla del juego): texto a
@@ -1141,7 +1141,7 @@ impl Menu {
             None => hint(
                 ui,
                 tr(
-                    "Elegila en la lista de la derecha.",
+                    "Elígela en la lista de la derecha.",
                     "Choose it from the list on the right.",
                 ),
             ),
@@ -1165,12 +1165,12 @@ impl Menu {
         ) {
             (None, _) => hint(
                 ui,
-                tr("Primero elegí la receptora.", "Choose the target first."),
+                tr("Primero elige la receptora.", "Choose the target first."),
             ),
             (Some(_), None) => hint(
                 ui,
                 tr(
-                    "Elegila en la lista de la derecha. Se destruye.",
+                    "Elígela en la lista de la derecha. Se destruye.",
                     "Choose it from the list on the right. It is destroyed.",
                 ),
             ),
@@ -1233,8 +1233,8 @@ impl Menu {
                 ui,
                 &match relic_rules::lang::get() == relic_rules::lang::Lang::Es {
                     true => format!(
-                        "Elegí 3 en la lista de la derecha que sumen al menos {needed} puntos \
-                         (chica 1, mediana 2, grande 3)."
+                        "Elige 3 en la lista de la derecha que sumen al menos {needed} puntos \
+                         (delicada 1, bruñida 2, grandiosa 3)."
                     ),
                     false => format!(
                         "Choose 3 from the list on the right adding up to at least {needed} \
@@ -1272,7 +1272,7 @@ impl Menu {
             hint(
                 ui,
                 tr(
-                    "Completá la selección para ver el resultado.",
+                    "Completa la selección para ver el resultado.",
                     "Complete the selection to see the result.",
                 ),
             );
@@ -1360,7 +1360,7 @@ impl Menu {
             self.section(
                 ui,
                 tr(
-                    "Elegí la reliquia que querés mejorar",
+                    "Elige la reliquia que quieres mejorar",
                     "Choose the relic you want to improve",
                 ),
             );
@@ -1390,7 +1390,7 @@ impl Menu {
             self.section(
                 ui,
                 tr(
-                    "Elegí la donante (se destruye)",
+                    "Elige la donante (se destruye)",
                     "Choose the donor (it is destroyed)",
                 ),
             );
@@ -1417,7 +1417,7 @@ impl Menu {
         self.section(
             ui,
             tr(
-                "Elegí 3 sacrificios (se destruyen)",
+                "Elige 3 sacrificios (se destruyen)",
                 "Choose 3 sacrifices (they are destroyed)",
             ),
         );
@@ -1934,7 +1934,7 @@ impl Menu {
             if list.is_empty() {
                 hint(
                     ui,
-                    tr("No hay reliquias que sirvan acá.", "No usable relics here."),
+                    tr("No hay reliquias que sirvan aquí.", "No usable relics here."),
                 );
             }
             let line = ui.text_line_height();

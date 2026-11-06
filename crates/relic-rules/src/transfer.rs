@@ -183,7 +183,7 @@ impl fmt::Display for TransferError {
             }
             TransferError::NotEnoughPoints { needed, have } if es => write!(
                 f,
-                "los sacrificios suman {have} punto(s) y hacen falta {needed} (chica 1, mediana 2, grande 3)"
+                "los sacrificios suman {have} punto(s) y hacen falta {needed} (delicada 1, bruñida 2, grandiosa 3)"
             ),
             TransferError::NotEnoughPoints { needed, have } => write!(
                 f,
@@ -198,9 +198,11 @@ impl fmt::Display for TransferError {
                 "this relic already has the maximum of {limit} forged effect(s)"
             ),
             TransferError::NotEnoughMurk { needed, have } if es => {
-                write!(f, "hacen falta {needed} de murk y tenés {have}")
+                let (needed, have) = (crate::lang::number(*needed), crate::lang::number(*have));
+                write!(f, "hacen falta {needed} de murk y tienes {have}")
             }
             TransferError::NotEnoughMurk { needed, have } => {
+                let (needed, have) = (crate::lang::number(*needed), crate::lang::number(*have));
                 write!(f, "{needed} murk is needed and you have {have}")
             }
             TransferError::ResultInvalid(v) if es => {

@@ -328,10 +328,11 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     if dry_run {
         let (names, cost, points, note) = (
             names(&plan.new_target),
-            plan.murk_cost,
+            lang::number(plan.murk_cost),
             plan.sacrifice_points,
             forged_note(plan.new_target_forge_count),
         );
+        let (murk, new_murk) = (lang::number(murk), lang::number(new_murk));
         return Ok(match lang::get() {
             Lang::Es => format!(
                 "{relic_name} quedaría así:{names}\nCosto: {cost} de murk ({murk} -> {new_murk})\n\
@@ -465,10 +466,11 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
 
     let (names, cost, note, ids) = (
         names(&plan.new_target),
-        plan.murk_cost,
+        lang::number(plan.murk_cost),
         forged_note(plan.new_target_forge_count),
         &plan.new_target_forged,
     );
+    let (murk, new_murk) = (lang::number(murk), lang::number(new_murk));
     Ok(match lang::get() {
         Lang::Es => format!(
             "Forja hecha: {relic_name} ahora tiene:{names}\nMurk {murk} -> {new_murk} \
