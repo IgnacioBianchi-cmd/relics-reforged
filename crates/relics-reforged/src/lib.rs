@@ -10,6 +10,7 @@ mod forge;
 mod game;
 mod hid;
 mod input_block;
+mod input_diag;
 mod mainthread;
 mod msg;
 mod pad;
@@ -145,6 +146,7 @@ fn run(module: usize) {
         Ok(()) => log.line("Bloqueo del mando del juego instalado (XInputGetState)"),
         Err(e) => log.line(&format!("ERROR: no pude instalar el bloqueo del mando: {e}")),
     }
+    input_diag::install(base);
     match hid::install(base).as_slice() {
         [] => log.line("Lectura de mandos de PlayStation por HID instalada (kernel32)"),
         missing => log.line(&format!(
@@ -250,6 +252,7 @@ fn run(module: usize) {
                 let named = Arc::new(named);
                 ui::start(module, game, named.clone(), dll_dir.clone());
                 log.line(&format!("Menú: se abre con {}", ui::TOGGLE_KEY_NAME));
+                input_diag::run();
                 data = Some(named);
                 menu_started = true;
             }

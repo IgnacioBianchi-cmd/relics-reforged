@@ -201,6 +201,25 @@ struct MemoryBasicInformation {
     kind: u32,
 }
 
+/// Si `addr` está en memoria comprometida y ejecutable (código).
+pub fn is_executable(addr: usize) -> bool {
+    let mut info = std::mem::MaybeUninit::<MemoryBasicInformation>::zeroed();
+    // SAFETY: VirtualQuery solo escribe en `info`.
+    let n = unsafe {
+        VirtualQuery(
+            addr as *const c_void,
+            info.as_mut_ptr(),
+            std::mem::size_of::<MemoryBasicInformation>(),
+        )
+    };
+    if n == 0 {
+        return false;
+    }
+    // SAFETY: VirtualQuery la llenó.
+    let info = unsafe { info.assume_init() };
+    info.state == 0x1000 && info.protect & 0xF0 != 0
+}
+
 /// Regiones de memoria privada, comprometida y escribible del proceso: (base, tamaño).
 pub fn writable_regions() -> Vec<(usize, usize)> {
     const MEM_COMMIT: u32 = 0x1000;
