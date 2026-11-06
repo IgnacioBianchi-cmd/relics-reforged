@@ -1,0 +1,24 @@
+profileVersion = "v1"
+
+# Relics Reforged + Seamless Co-op. Double-click this file to play.
+# Relics Reforged + Seamless Co-op. Doble clic en este archivo para jugar.
+#
+# Copy the "SeamlessCoop" folder of your Seamless Co-op install (the one with nrsc.dll and
+# nrsc_settings.ini) next to this file. Seamless uses its own save (NR0000.co2 by default, see
+# save_file_extension in nrsc_settings.ini), so your normal save is never touched.
+#
+# Copiá la carpeta "SeamlessCoop" de tu instalación de Seamless Co-op (la que tiene nrsc.dll y
+# nrsc_settings.ini) junto a este archivo. Seamless usa su propio save (NR0000.co2 por defecto,
+# ver save_file_extension en nrsc_settings.ini), así que tu save normal no se toca.
+
+[[supports]]
+game = "nightreign"
+
+# Seamless Co-op has to load before the game starts.
+# Seamless Co-op tiene que cargarse antes de que arranque el juego.
+[[natives]]
+path = 'SeamlessCoop/nrsc.dll'
+load_early = true
+
+[[natives]]
+path = 'relics_reforged.dll'

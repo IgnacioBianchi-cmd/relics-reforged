@@ -1,0 +1,17 @@
+profileVersion = "v1"
+
+# Relics Reforged - offline, without Seamless Co-op. Double-click this file to play.
+# Relics Reforged - sin conexión, sin Seamless Co-op. Doble clic en este archivo para jugar.
+#
+# The mod works on a copy of your save: the first time, me3 copies NR0000.sl2 to the file below.
+# Your normal save is never touched. To use the mod on your normal save, delete the savefile line.
+#
+# El mod trabaja sobre una copia de tu save: la primera vez, me3 copia NR0000.sl2 al archivo de
+# abajo. Tu save normal no se toca. Para usar el mod en tu save normal, borrá la línea savefile.
+savefile = "NR0000_RelicsReforged.sl2"
+
+[[supports]]
+game = "nightreign"
+
+[[natives]]
+path = 'relics_reforged.dll'
