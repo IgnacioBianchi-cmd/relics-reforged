@@ -26,6 +26,8 @@ At the Roundtable Hold, open Relic Rites. With the cursor on the equipped relic 
 (keyboard) or R2/RT (controller), or click "F7: Forge relics". Pick the relic to improve and the
 effect to replace, the donor and its effect, and 3 sacrifices; check the preview and forge.
 Works with mouse, keyboard (arrows + Enter) and controller.
+After a forge, leaving the forge closes Relic Rites: the game only updates its relic list when
+the menu is opened again.
 
 SAVES
 - RelicsReforged.me3 works on a copy of your save (NR0000_RelicsReforged.sl2). Your normal save
@@ -78,6 +80,8 @@ En la Mesa Redonda, abrí Ritos de reliquias. Con el cursor en los espacios de r
 equipadas, apretá F7 (teclado) o R2/RT (mando), o hacé clic en "F7: Forjar reliquias". Elegí la
 reliquia a mejorar y el efecto a reemplazar, la donante y su efecto, y 3 sacrificios; revisá la
 vista previa y forjá. Funciona con mouse, teclado (flechas + Enter) y mando.
+Después de una forja, al salir de la forja se cierra Ritos de reliquias: el juego solo
+actualiza su lista de reliquias al volver a abrir el menú.
 
 SAVES
 - RelicsReforged.me3 trabaja sobre una copia de tu save (NR0000_RelicsReforged.sl2). Tu save

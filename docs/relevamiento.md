@@ -304,6 +304,13 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
   - Fotos de memoria de la ventana y de los objetos a los que apunta (9 mediciones de 1 s, `tools/f8_states.py`): un valor pareció servir (`[ventana+0xC00]+0x2EC` = 2 en slots y 1 eligiendo, en 4 fotos), pero en otras sesiones ese puntero era 0. No quedó ningún valor estable.
   - No todos los métodos de la vtable reciben la ventana en `rcx`: para quedarse con la ventana hay que verificar el objeto (por ejemplo, que su vtable lleve a los ganchos).
 
+### Lista de Relic Rites después de forjar ✔ (2026-11-06)
+
+- **Problema:** Relic Rites arma su lista de reliquias al abrirse y no la rehace sola. Después de forjar con el menú abierto, las 4 reliquias que se borraron siguen en la grilla como reliquias vacías (efectos "-") y el contador no baja; al reabrirlo desaparecen. El inventario y el save están bien (el log del mod da 220 → 216 → 212). Elegir una de esas apunta a una reliquia que ya no existe.
+- La lista la arma la interfaz en Flash (Scaleform): al ordenar o filtrar le vuelve a pedir al juego cada reliquia (`nr+9C5320`, que llena los campos de un elemento, llamada desde `nr+123F880`, código de llamadas desde el script). Encontrado con `watchx` sobre una **entrada del inventario** (no sobre la reliquia: al ordenar, el juego no lee los objetos de ítem). Truco: `watchx` acepta una RVA "negativa" (dirección − base en complemento a 2) para vigilar memoria del heap.
+- Ordenar o activar y desactivar un filtro rehacen la lista (sin actualizar el contador total), pero dependen del estado del filtro del juego (pestaña de filtro u orden, posición del cursor), que el mod no puede leer. Abrir el filtro con 4 y cerrarlo con Q no alcanza.
+- **Solución:** al salir de la forja después de una forja, el mod cierra Relic Rites apretándole Q al juego (`input_block::press_key`, 120 ms en las lecturas de `GetDeviceState` del teclado; el juego no lee el teclado de otra forma). Espera a que se suelten las teclas, prueba hasta 3 veces cada 700 ms y para cuando `relic_menu` lo da por cerrado. Probado: 1 Q, lista y contador correctos al reabrir.
+
 ### Saves de prueba
 
 - Respaldos en `data/save/backups/` (no van a git). Para restaurar: con el juego cerrado, copiar sobre `NR_RelicsReforged.sl2` y `.bak`, y **ponerles la fecha actual** (la carpeta tiene `steam_autocloud.vdf`).

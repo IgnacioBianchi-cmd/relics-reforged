@@ -122,6 +122,7 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
         ["hook"] => hook(ctx),
         ["snap", name] => crate::snap::take(ctx.game, name),
         ["locks"] => locks(ctx),
+        ["menu"] => Ok(menu_calls()),
         ["find", words @ ..] if !words.is_empty() => crate::search::find(ctx.game, words),
         ["findtext", words @ ..] if !words.is_empty() => crate::search::find_text(&words.join(" ")),
         ["fmg", addr] => crate::search::fmg_of(crate::search::parse_addr(ctx.game, addr)?),
@@ -197,6 +198,25 @@ fn obj(ctx: &Context, handle: u32) -> Result<String, String> {
         }
     }
     Ok(out)
+}
+
+/// Llamadas a cada método de la ventana de Relic Rites desde el `menu` anterior, con el promedio
+/// por frame (el método 42 va una vez por frame). Sirve para ver qué métodos corre una acción.
+fn menu_calls() -> String {
+    static LAST: std::sync::Mutex<Option<[u64; 50]>> = std::sync::Mutex::new(None);
+    let now = crate::relic_menu::call_counts();
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    let before = last.unwrap_or([0; 50]);
+    *last = Some(now);
+    let frames = (now[42] - before[42]).max(1);
+    let mut out = format!("métodos de AntiqueEquipDialog desde el último `menu` ({frames} frames):");
+    for (i, (a, b)) in now.iter().zip(before).enumerate() {
+        let d = a - b;
+        if d > 0 {
+            let _ = write!(out, "\n  {i:2}: {d} ({:.2}/frame)", d as f64 / frames as f64);
+        }
+    }
+    out
 }
 
 fn murk(ctx: &Context, old: u32, new: u32) -> Result<String, String> {

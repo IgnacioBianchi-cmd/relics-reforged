@@ -95,6 +95,27 @@ static ORIG_CREATE: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
 /// Con la forja recién cerrada, el teclado de DirectInput ya no tiene teclas apretadas.
 static KEYS_UP: AtomicBool = AtomicBool::new(false);
 
+/// Tecla (código DIK) que el mod le "aprieta" al juego, y hasta cuándo. Ver [`press_key`].
+static INJECTED: Mutex<Option<(u8, Instant)>> = Mutex::new(None);
+/// Cuánto dura cada tecla apretada por el mod: unos 7 frames a 60 FPS.
+const PRESS_TIME: Duration = Duration::from_millis(120);
+/// Q en DirectInput (`DIK_Q`).
+pub const DIK_Q: u8 = 0x10;
+
+/// Le aprieta al juego la tecla `dik` durante [`PRESS_TIME`], en las lecturas del teclado por
+/// DirectInput (el juego lee el teclado solo con `GetDeviceState`). No hace nada mientras la
+/// forja bloquea la entrada. Lo usa la forja para cerrar Relic Rites (Q) después de forjar.
+pub fn press_key(dik: u8) {
+    *INJECTED.lock().unwrap_or_else(|e| e.into_inner()) = Some((dik, Instant::now() + PRESS_TIME));
+}
+
+fn injected_key() -> Option<u8> {
+    match *INJECTED.lock().unwrap_or_else(|e| e.into_inner()) {
+        Some((dik, until)) if Instant::now() < until => Some(dik),
+        _ => None,
+    }
+}
+
 /// Llamar en cada frame con el estado de la forja.
 pub fn set_menu_open(open: bool) {
     let was = MENU_OPEN.swap(open, Ordering::Relaxed);
@@ -179,6 +200,10 @@ unsafe fn state_hook(slot: usize, this: *mut c_void, cb: u32, data: *mut u8) -> 
             _ => {}
         }
         std::ptr::write_bytes(data, 0, cb as usize);
+    } else if result >= 0 && !data.is_null() && cb == 256 {
+        if let Some(dik) = injected_key() {
+            *data.add(dik as usize) |= 0x80;
+        }
     }
     result
 }

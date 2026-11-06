@@ -81,6 +81,12 @@ fn calls(i: usize) -> u64 {
     CALLS[i].load(Ordering::Relaxed)
 }
 
+/// Llamadas a cada método de la ventana desde que se instaló el gancho (comando `menu`).
+#[cfg(feature = "dev")]
+pub fn call_counts() -> [u64; VTABLE_LEN] {
+    std::array::from_fn(calls)
+}
+
 /// ¿Se llamó a algún método de la ventana de Relic Rites en los últimos 300 ms?
 pub fn is_open() -> bool {
     if !INSTALLED.load(Ordering::Relaxed) {

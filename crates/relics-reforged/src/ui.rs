@@ -458,6 +458,29 @@ struct Shared {
     last: Option<Result<String, String>>,
     last_at: Option<std::time::Instant>,
     forging: bool,
+    /// Una forja cambió el inventario: Relic Rites tiene su lista vieja (las reliquias borradas
+    /// siguen ahí, vacías, hasta reabrirlo). Al salir de la forja se cierra (ver `CloseRites`).
+    inventory_changed: bool,
+}
+
+/// Después de forjar, al salir de la forja, el mod cierra Relic Rites apretando Q por el juego.
+/// Relic Rites arma su lista de reliquias al abrirse y no la rehace sola: las que la forja borró
+/// quedan como reliquias vacías (con el contador viejo) hasta reabrirlo, y elegir una apunta a
+/// una reliquia que ya no existe. Lo único que rehace la lista sin cerrar (ordenar, o activar y
+/// desactivar un filtro) depende del estado del filtro del juego, que el mod no puede leer.
+struct CloseRites {
+    presses: u32,
+    next_at: std::time::Instant,
+    started: std::time::Instant,
+}
+
+impl CloseRites {
+    /// Q de a una, hasta 3 (desde la grilla, la primera vuelve a los slots), con tiempo para
+    /// ver si Relic Rites se cerró antes de la siguiente (`relic_menu` tarda 300 ms en darlo
+    /// por cerrado).
+    const MAX_PRESSES: u32 = 3;
+    const EVERY: std::time::Duration = std::time::Duration::from_millis(700);
+    const GIVE_UP: std::time::Duration = std::time::Duration::from_secs(6);
 }
 
 /// `FontId` es un puntero a la fuente dentro del atlas de ImGui; solo se usa en el hilo de render.
@@ -659,6 +682,8 @@ struct Menu {
     was_visible: AtomicBool,
     /// Última relectura de las reliquias.
     last_refresh: Mutex<Option<std::time::Instant>>,
+    /// Cerrando Relic Rites después de forjar.
+    closing_rites: Option<CloseRites>,
 }
 
 impl Menu {
@@ -709,6 +734,7 @@ impl Menu {
             hover_prev: AtomicU64::new(0),
             was_visible: AtomicBool::new(false),
             last_refresh: Mutex::new(None),
+            closing_rites: None,
         }
     }
 
@@ -1038,8 +1064,12 @@ impl Menu {
                     )
                 }
             };
+            let close_note = tr(
+                "Al salir de la forja se cierra Ritos de reliquias, para que el juego actualice su lista.",
+                "Leaving the forge closes Relic Rites, so the game updates its list.",
+            );
             let result = forge::forge(game, &data, &dir, Menu::order(key, false))
-                .map(|msg| msg + &backup_note);
+                .map(|msg| format!("{msg}\n{close_note}{backup_note}"));
             match &result {
                 Ok(msg) => crate::log_event(&format!("[menú] {msg}")),
                 Err(e) => crate::log_event(&format!("[menú] ERROR: {e}")),
@@ -1055,16 +1085,47 @@ impl Menu {
                 s.forging = false;
                 s.preview = None;
             }
-            if ok {
-                // Las reliquias cambiaron: hay que volver a leerlas.
-                if let Ok((relics, murk)) = load(&game, &data, &dir) {
-                    let mut s = shared.lock().unwrap_or_else(|e| e.into_inner());
+            // Las reliquias cambiaron (también si la forja quedó a medias): se vuelven a leer, y
+            // Relic Rites tiene que rehacer su lista.
+            let reloaded = load(&game, &data, &dir);
+            let mut s = shared.lock().unwrap_or_else(|e| e.into_inner());
+            match reloaded {
+                Ok((relics, murk)) => {
+                    s.inventory_changed |= ok || relics.len() != s.relics.len();
                     s.relics = relics;
                     s.murk = murk;
                 }
+                Err(_) => s.inventory_changed |= ok,
             }
         });
         self.reset_selection();
+    }
+
+    /// Un paso del cierre de Relic Rites después de forjar (ver `CloseRites`): espera a que se
+    /// suelten las teclas con que se cerró la forja y aprieta Q, de a una.
+    fn close_rites_step(&mut self) {
+        if self.visible.load(Ordering::Relaxed) {
+            return;
+        }
+        let Some(c) = self.closing_rites.as_mut() else {
+            return;
+        };
+        let now = std::time::Instant::now();
+        let out_of_presses = c.presses >= CloseRites::MAX_PRESSES && now >= c.next_at;
+        if out_of_presses || now.duration_since(c.started) > CloseRites::GIVE_UP {
+            crate::log_event(&format!(
+                "ERROR: no pude cerrar Relic Rites después de forjar ({} Q)",
+                c.presses
+            ));
+            self.closing_rites = None;
+            return;
+        }
+        if now < c.next_at || crate::input_block::blocked() {
+            return;
+        }
+        crate::input_block::press_key(crate::input_block::DIK_Q);
+        c.presses += 1;
+        c.next_at = now + CloseRites::EVERY;
     }
 
     /// El menú ocupa la pantalla de Relic Rites (salvo su encabezado), como si fuera una sección
@@ -2611,12 +2672,19 @@ impl ImguiRenderLoop for Menu {
     fn render(&mut self, ui: &mut Ui) {
         // La forja vive dentro de Relic Rites: fuera de ese menú no se muestra nada.
         if !self.game.relic_rites_open() {
+            if let Some(c) = self.closing_rites.take() {
+                crate::log_event(&format!(
+                    "Relic Rites cerrado después de forjar, para que rehaga su lista ({} Q)",
+                    c.presses
+                ));
+            }
             if self.visible.swap(false, Ordering::Relaxed) {
                 self.reset_selection();
             }
             crate::input_block::set_menu_open(false);
             return;
         }
+        self.close_rites_step();
         self.read_input(ui);
         // La forja solo se ofrece en la pantalla principal de Relic Rites (cursor en los slots):
         // no mientras se elige o se mira una reliquia en la grilla.
@@ -2654,8 +2722,21 @@ impl ImguiRenderLoop for Menu {
         let open = self.visible.load(Ordering::Relaxed);
         crate::input_block::set_menu_open(open);
         match (self.was_visible.swap(open, Ordering::Relaxed), open) {
-            (false, true) => crate::sound::open(),
-            (true, false) => crate::sound::close(),
+            (false, true) => {
+                crate::sound::open();
+                self.closing_rites = None;
+            }
+            (true, false) => {
+                crate::sound::close();
+                if std::mem::take(&mut self.shared().inventory_changed) {
+                    let now = std::time::Instant::now();
+                    self.closing_rites = Some(CloseRites {
+                        presses: 0,
+                        next_at: now,
+                        started: now,
+                    });
+                }
+            }
             _ => {}
         }
     }
