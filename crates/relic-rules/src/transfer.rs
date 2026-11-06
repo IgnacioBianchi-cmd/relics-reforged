@@ -495,6 +495,8 @@ mod tests {
         };
         // Común con común: anda.
         assert!(req(&others[2], &normal, &[&others[0], &others[1], &small(12)]).is_ok());
+        // Las Deep (grupo 251) no son únicas.
+        assert!(!data.relic_types[&2].is_unique());
         assert_eq!(
             req(&normal, &unique, &refs).unwrap_err(),
             TransferError::Unique(Role::Target)

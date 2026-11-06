@@ -75,6 +75,8 @@ pub fn sample_data() -> GameData {
     ] {
         data.relic_types.insert(rt.id, rt);
     }
+    // Las Deep aleatorias del juego llevan todas el grupo 251.
+    data.relic_types.get_mut(&2).unwrap().sort_group = 251;
     // Como el 3, pero del Small Jar Bazaar (única).
     let mut unique = relic(1_005_000, false, [110, -1, -1], [-1, -1, -1]);
     unique.sort_group = 250;

@@ -260,6 +260,22 @@ fn lista_de_sp_effects_coincide_con_el_juego() {
     }
 }
 
+/// Las Deep aleatorias se pueden forjar: ninguna cuenta como única del Bazaar (todas llevan el
+/// grupo 251, que no distingue nada). Las normales del grupo 250 sí son únicas.
+#[test]
+fn deep_aleatorias_no_son_unicas() {
+    let Some((data, _)) = load() else { return };
+    let mut deep = 0;
+    for t in data.relic_types.values() {
+        if t.is_deep && relic_kind(&data, t.id).is_random() {
+            deep += 1;
+            assert!(!t.is_unique(), "{} ({}) figura como única", t.name, t.id);
+        }
+    }
+    assert!(deep > 200, "Deep aleatorias: {deep}");
+    assert!(data.relic_types[&1_005_011].is_unique());
+}
+
 #[test]
 fn transferencias_entre_reliquias_reales() {
     let Some((data, relics)) = load() else { return };

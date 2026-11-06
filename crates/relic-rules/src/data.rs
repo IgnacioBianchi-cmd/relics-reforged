@@ -46,8 +46,9 @@ pub struct RelicType {
     pub is_deep: bool,
     pub is_salable: bool,
     pub color: u8,
-    /// `sortGroupId`: 255 en las reliquias comunes; 250 (normales) y 251 (Deep) en las del Small
-    /// Jar Bazaar, también en las aleatorias, que el juego no deja vender.
+    /// `sortGroupId`: 255 en las reliquias normales comunes; 250 en las normales del Small Jar
+    /// Bazaar (también las aleatorias, que el juego no deja vender); 251 en **todas** las Deep
+    /// aleatorias (no marca las del Bazaar: no hay otro grupo de Deep aleatorias).
     pub sort_group: u8,
     /// Tabla de efectos de cada slot (`attachEffectTableId_1..3`).
     pub slot_tables: [TableId; 3],
@@ -60,8 +61,12 @@ pub struct RelicType {
 impl RelicType {
     /// Reliquia única del Small Jar Bazaar: no se puede vender, así que tampoco se usa en la forja
     /// (el juego nunca prevé que desaparezca o cambie).
+    ///
+    /// Solo el grupo 250 (normales). El 251 lo comparten las 216 Deep aleatorias del juego
+    /// (`200xxxx` y `201xxxx`), así que no distingue nada: tomarlo como "única" dejaba todas las
+    /// Deep fuera de la forja.
     pub fn is_unique(&self) -> bool {
-        matches!(self.sort_group, 250 | 251)
+        self.sort_group == 250
     }
 }
 
