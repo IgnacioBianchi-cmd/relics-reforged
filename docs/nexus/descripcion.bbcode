@@ -1,0 +1,127 @@
+[center][size=6][b]Relics Reforged[/b][/size]
+[size=3]Move one effect from a relic you don't need onto one you want to keep.[/size][/center]
+
+[line]
+
+[size=4][b]What it does[/b][/size]
+You finally rolled the effect you wanted... on a relic whose other two effects are useless. Relics Reforged adds a forge to [b]Relic Rites[/b] at the Roundtable Hold: pick an effect on a [b]donor[/b] relic and transfer it onto a [b]target[/b] relic, replacing one of its effects.
+
+[list]
+[*][b]Always a legal relic.[/b] The result is always a combination the game itself could have rolled for that relic: every effect must fit one of the relic's slot tables, exclusive effects can't stack, and effects are re-sorted the way the game sorts them. The mod never creates impossible relics; it only cuts down the RNG.
+[*][b]It has a cost.[/b] The donor and [b]3 sacrifice relics[/b] are destroyed, and you pay [b]murk[/b].
+[*][b]Curses travel with their effect.[/b] Moving a Deep effect that comes with a curse moves the curse too.
+[*][b]Your build is safe.[/b] Favorites, equipped relics and relics used in vessels or presets can't be used as donor or sacrifice.
+[/list]
+
+[size=4][b]Rules[/b][/size]
+[list]
+[*]Normal relics forge with normal relics, Deep relics with Deep relics.
+[*]Sacrifices: exactly 3. Each one is worth 1, 2 or 3 points (Delicate, Polished, Grand). The target needs at least 3 / 5 / 7 points (1 / 2 / 3 effects).
+[*]Murk: 2,500 / 5,000 / 10,000 for a target with 1 / 2 / 3 effects, doubled for Deep relics.
+[*]Forge limit per relic: 1 / 1 / 2 forges (1 / 2 / 3 effects). Forged effects are shown in gold.
+[*]Fixed relics (the ones that always come with the same effects) and the unique Small Jar Bazaar relics can't be forged.
+[*]Only at the Roundtable Hold, with Relic Rites open.
+[/list]
+
+[size=4][b]How to use[/b][/size]
+In Relic Rites, with the cursor on your equipped relic slots, press [b]F7[/b] (keyboard) or [b]R2 / RT[/b] (controller), or click "F7: Forge relics" at the bottom.
+[list=1]
+[*]Choose the relic to improve and the effect to replace.
+[*]Choose the donor and the effect to transfer.
+[*]Choose 3 sacrifices.
+[*]Check the preview (cost, points, forge count) and forge. Forging asks for confirmation twice.
+[/list]
+The forge looks and sounds like the game's own menus: relic and effect icons, search, the same filter as Relic Rites (color, size, type, favorites and up to 3 effect conditions) and sorting. It works with [b]mouse, keyboard and controller[/b]; while it's open, the game doesn't receive your inputs.
+
+[size=4][b]Requirements[/b][/size]
+[list]
+[*][b]Elden Ring Nightreign 1.3.3.[/b] On any other game version the mod stays off and shows a notice for the first minute; the game runs normally.
+[*][url=https://me3.help]me3[/url] 0.13 or newer.
+[*]Optional: Seamless Co-op for Nightreign, to play with friends.
+[/list]
+
+[size=4][b]Installation[/b][/size]
+[list=1]
+[*]Install [url=https://me3.help]me3[/url] with its installer.
+[*]Unzip the [b]RelicsReforged[/b] folder anywhere (not inside the game folder).
+[*][b]Offline:[/b] double-click [b]RelicsReforged.me3[/b].
+[b]With Seamless Co-op:[/b] copy the [b]SeamlessCoop[/b] folder from your game folder (Game\SeamlessCoop, with nrsc.dll and nrsc_settings.ini) into the RelicsReforged folder, then double-click [b]RelicsReforged-Seamless.me3[/b].
+[/list]
+Only players who want to forge need the mod.
+
+[size=4][b]Saves and safety[/b][/size]
+[list]
+[*][b]Offline profile:[/b] the mod works on a copy of your save (NR0000_RelicsReforged.sl2). Your normal save is never touched.
+[*][b]Seamless profile:[/b] the mod works on the Seamless save (NR0000.co2 by default). If the SeamlessCoop folder is missing, the game starts without Seamless on the mod's copy, never on your normal save.
+[*][b]Automatic backup:[/b] before the first forge of every session, your save is copied to %APPDATA%\RelicsReforged\backups (the last 10 are kept).
+[*]me3 keeps the game offline. [b]Do not use this mod online.[/b]
+[/list]
+
+[size=4][b]Languages[/b][/size]
+The forge follows the game's language: Spanish if the game is in Spanish, English otherwise. Relic and effect names always come from the game itself, in your language.
+
+[size=4][b]Known limitations[/b][/size]
+[list]
+[*]Tested at 1920x1080. The menu scales with the screen height; other resolutions and aspect ratios haven't been tested yet.
+[*]Controllers: tested with a PlayStation controller through Steam Input. Xbox controllers should work but haven't been tested.
+[*]A full co-op session with players without the mod hasn't been tested yet.
+[/list]
+Found a bug? Please attach [b]relics_reforged.log[/b] (in the mod folder) to your report.
+
+[size=4][b]Uninstall[/b][/size]
+Delete the RelicsReforged folder, and %APPDATA%\RelicsReforged if you don't want the forge record and the save backups.
+
+[size=4][b]Credits[/b][/size]
+[list]
+[*][url=https://github.com/garyttierney/me3]me3[/url], the mod loader.
+[*][url=https://github.com/veeenu/hudhook]hudhook[/url] and [url=https://github.com/ocornut/imgui]Dear ImGui[/url] ([url=https://github.com/imgui-rs/imgui-rs]imgui-rs[/url]), for the in-game menu.
+[*]Smithbox and SoulsFormats, whose param definitions and file formats made the research possible.
+[*]All icons, textures, texts and sounds are read from your own game install: nothing from the game is redistributed.
+[/list]
+Source code (MIT license): [SOURCE LINK]
+
+[line]
+
+[spoiler]
+[size=4][b]Español[/b][/size]
+
+[b]Qué hace[/b]
+Pasá un efecto de una reliquia que no te sirve a otra que querés conservar. En Ritos de reliquias, en la Mesa Redonda, elegís un efecto de una reliquia [b]donante[/b] y reemplaza uno de la reliquia [b]receptora[/b].
+[list]
+[*][b]Siempre una reliquia legal:[/b] el resultado es una combinación que el juego podría haber generado para esa reliquia. El mod no crea reliquias imposibles, solo reduce cuánto azar hace falta.
+[*][b]Tiene un costo:[/b] la donante y [b]3 sacrificios[/b] se destruyen, y se paga [b]murk[/b].
+[*][b]La maldición viaja con su efecto.[/b]
+[*][b]Tu build está a salvo:[/b] las favoritas, las equipadas y las que están en recipientes o preajustes no pueden ser donantes ni sacrificios.
+[/list]
+
+[b]Reglas[/b]
+[list]
+[*]Normales con normales, de las profundidades con de las profundidades.
+[*]3 sacrificios de 1, 2 o 3 puntos (delicada, bruñida, grandiosa). La receptora pide al menos 3 / 5 / 7 puntos (1 / 2 / 3 efectos).
+[*]Murk: 2.500 / 5.000 / 10.000 según los efectos de la receptora, el doble si es de las profundidades.
+[*]Límite de forjas por reliquia: 1 / 1 / 2. Los efectos forjados se ven en dorado.
+[*]No se forjan las reliquias fijas (las que siempre traen los mismos efectos) ni las únicas del Small Jar Bazaar.
+[*]Solo en la Mesa Redonda, con Ritos de reliquias abierto.
+[/list]
+
+[b]Cómo se usa[/b]
+En Ritos de reliquias, con el cursor en los espacios de reliquias equipadas, apretá [b]F7[/b] (teclado) o [b]R2 / RT[/b] (mando), o hacé clic en "F7: Forjar reliquias". Elegí la reliquia a mejorar y el efecto a reemplazar, la donante y su efecto, y 3 sacrificios; revisá la vista previa y forjá (pide confirmación dos veces). Funciona con mouse, teclado y mando.
+
+[b]Requisitos[/b]
+Elden Ring Nightreign 1.3.3 (en otra versión el mod se apaga y avisa), [url=https://me3.help]me3[/url] 0.13 o más nuevo y, para jugar con amigos, Seamless Co-op.
+
+[b]Instalación[/b]
+[list=1]
+[*]Instalá [url=https://me3.help]me3[/url].
+[*]Descomprimí la carpeta [b]RelicsReforged[/b] donde quieras (no dentro de la carpeta del juego).
+[*][b]Sin conexión:[/b] doble clic en [b]RelicsReforged.me3[/b]. [b]Con Seamless:[/b] copiá la carpeta [b]SeamlessCoop[/b] del juego (Game\SeamlessCoop) dentro de la carpeta RelicsReforged y hacé doble clic en [b]RelicsReforged-Seamless.me3[/b].
+[/list]
+
+[b]Saves[/b]
+Sin conexión, el mod usa una copia de tu save (NR0000_RelicsReforged.sl2); con Seamless, el save de Seamless. Tu save normal no se toca. Antes de la primera forja de cada sesión se guarda una copia en %APPDATA%\RelicsReforged\backups. No uses este mod online.
+
+[b]Idioma[/b]
+El menú está en español si el juego está en español; si no, en inglés. Los nombres de reliquias y efectos salen del propio juego.
+
+Si encontrás un error, adjuntá [b]relics_reforged.log[/b] (en la carpeta del mod).
+[/spoiler]

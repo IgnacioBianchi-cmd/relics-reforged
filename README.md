@@ -45,6 +45,7 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | `crates/re-tools/` | `disasm`: desensamblador del volcado de `nightreign.exe` (comando `dumpimage` de la DLL) |
 | `me3/relics-reforged-dev.me3` | Perfil de me3 para probar, con un save aparte (`NR_RelicsReforged.sl2`) |
 | `docs/relevamiento.md` | Todo lo averiguado: formato del save, params, punteros, reglas |
+| `docs/nexus/` | Página de Nexus Mods: descripción en BBCode (`descripcion.bbcode`) y ficha con resumen, archivo, changelog, capturas y lo que falta antes de publicar (`ficha.md`) |
 | `dist/` | Lo que va en la publicación: perfiles de me3 (`RelicsReforged.me3`, sin conexión y con una copia del save; `RelicsReforged-Seamless.me3`, con la carpeta `SeamlessCoop` del usuario) y el `README.txt` para el usuario |
 | `tools/package.ps1` | Arma la publicación: compila la DLL pública en `target/public` y deja la carpeta y el zip en `target/dist` |
 | `tools/` | Scripts de análisis (Python/PowerShell) usados en el relevamiento |
