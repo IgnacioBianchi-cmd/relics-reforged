@@ -48,6 +48,8 @@ UNINSTALL
 Delete the RelicsReforged folder (and %APPDATA%\RelicsReforged if you don't want the forge
 record and the save backups).
 
+Source code (MIT license): https://github.com/IgnacioBianchi-cmd/relics-reforged
+
 
 -----------------------------------------------------------------------------------------------
 ESPAÑOL
@@ -97,3 +99,5 @@ ARCHIVOS
 DESINSTALAR
 Borrá la carpeta RelicsReforged (y %APPDATA%\RelicsReforged si no querés el registro de forjas
 ni las copias del save).
+
+Código fuente (licencia MIT): https://github.com/IgnacioBianchi-cmd/relics-reforged

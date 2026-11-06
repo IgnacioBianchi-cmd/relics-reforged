@@ -1,5 +1,14 @@
 # Relics Reforged
 
+**English:** an Elden Ring Nightreign mod that moves one effect from a relic onto another, inside
+Relic Rites, always producing a relic the game itself could have rolled. Download, install
+instructions and the full description in English are on Nexus Mods
+([`docs/nexus/descripcion.bbcode`](docs/nexus/descripcion.bbcode) has the same text); the end-user
+readme is [`dist/README.txt`](dist/README.txt). The source code and its docs are in Spanish.
+Released under the [MIT license](LICENSE).
+
+---
+
 Mod para **Elden Ring Nightreign** que permite transferir un efecto de una reliquia a otra,
 para que un buen roll sirva aunque la reliquia entera no lo sea.
 

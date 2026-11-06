@@ -66,8 +66,7 @@ español para la sección en español.
 
 ## Antes de publicar
 
-- [ ] Completar `[SOURCE LINK]` en la descripción (por ejemplo, un repositorio público en GitHub) o
-  sacar esa línea.
+- [x] Link al código en la descripción: https://github.com/IgnacioBianchi-cmd/relics-reforged.
 - [ ] Sesión de Seamless con un amigo, con y sin el mod del otro lado.
 - [ ] Probar en otra PC (otra ruta del juego, sin `data/export`).
 - [ ] Pasar la rama a `main` y etiquetar la versión (`v0.1.0`).
