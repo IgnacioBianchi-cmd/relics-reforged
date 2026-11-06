@@ -8,6 +8,12 @@ license.workspace = true
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+# Herramientas de desarrollo: archivo de comandos (lee y escribe memoria del juego), rastreador,
+# perfilador, búsqueda en memoria, diagnóstico de entrada, lectura de mandos por HID (sin
+# confirmar) y nombres desde data/export. La versión pública se compila sin esto.
+dev = []
+
 [dependencies]
 relic-rules = { path = "../relic-rules" }
 nr-assets = { path = "../nr-assets" }

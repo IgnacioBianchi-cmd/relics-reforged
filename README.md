@@ -59,15 +59,23 @@ Los tests de `tests/real_data.rs` usan datos reales si existen:
 
 Si faltan, esos tests se saltean y pasan.
 
-Para probar en el juego:
+Hay dos versiones de la DLL:
 
-```bash
-cargo build --release -p relics-reforged
-```
+- **Pública** (la que se publica): solo la forja, el menú y su registro.
 
-Después, doble clic en `me3/relics-reforged-dev.me3`. El log queda en `target/release/relics_reforged.log`.
+  ```bash
+  cargo build --release -p relics-reforged
+  ```
 
-El menú y sus mensajes salen en inglés o en español según el idioma del juego (por defecto, inglés; ver `relic_rules::lang`). En el juego, con **Relic Rites** abierto en la Roundtable, **F7** (o un clic en "F7 :Forge relics") abre el menú a pantalla completa: a la izquierda receptora y efecto a reemplazar, donante y efecto a transferir, 3 sacrificios, vista previa y forja (con doble confirmación); a la derecha, la lista de reliquias del paso actual, con la imagen de cada reliquia y el ícono de cada efecto. Q (o F7, o Esc) vuelve a Relic Rites; R refresca y C empieza de nuevo. Arriba de la lista: búsqueda, 4 abre el filtro (en el panel izquierdo, con hasta 3 condiciones de efecto) y 5 cambia el orden. Con la forja abierta, el juego no recibe teclado, mouse ni mando. Para pruebas sin menú está el archivo de comandos (`crates/relics-reforged/src/commands.rs`).
+- **Desarrollo** (feature `dev`): suma el archivo de comandos `relics_reforged_cmd.txt` (lee y escribe memoria del juego), el rastreador, el perfilador, la búsqueda en memoria, el diagnóstico de entrada, la lectura de mandos por HID (sin confirmar), los nombres desde `data/export` y el inventario completo en el log. **No se publica.**
+
+  ```bash
+  cargo build --release -p relics-reforged --features dev
+  ```
+
+Las dos quedan en `target/release/relics_reforged.dll` (la última que se compiló). Para probar, doble clic en `me3/relics-reforged-dev.me3`. El log queda en `target/release/relics_reforged.log`.
+
+El menú y sus mensajes salen en inglés o en español según el idioma del juego (por defecto, inglés; ver `relic_rules::lang`). En el juego, con **Relic Rites** abierto en la Roundtable, **F7** (o un clic en "F7 :Forge relics") abre el menú a pantalla completa: a la izquierda receptora y efecto a reemplazar, donante y efecto a transferir, 3 sacrificios, vista previa y forja (con doble confirmación); a la derecha, la lista de reliquias del paso actual, con la imagen de cada reliquia y el ícono de cada efecto. Q (o F7, o Esc) vuelve a Relic Rites; R refresca y C empieza de nuevo. Arriba de la lista: búsqueda, 4 abre el filtro (en el panel izquierdo, con hasta 3 condiciones de efecto) y 5 cambia el orden. Con la forja abierta, el juego no recibe teclado, mouse ni mando. En la versión de desarrollo, para pruebas sin menú está el archivo de comandos (`crates/relics-reforged/src/commands.rs`).
 
 Con teclado o mando, un cursor recorre botones y filas: arriba/abajo dentro de un panel, izquierda/derecha cambia de panel, Enter/Espacio o A elige. En el selector de efectos, A o derecha abren un grupo. Los controles muestran las teclas o los botones según lo último que se usó.
 

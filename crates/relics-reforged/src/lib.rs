@@ -1,25 +1,40 @@
 //! # Relics Reforged (DLL)
 //!
-//! Versión de desarrollo. Al cargar la partida escribe en `relics_reforged.log`, junto a la
-//! DLL, el murk y todas las reliquias leídas de la memoria del juego, validadas con el motor de
-//! reglas. Solo modifica algo si se lo pide un comando de `relics_reforged_cmd.txt`
-//! (ver [`commands`]).
+//! Se carga con me3. Deja un registro en `relics_reforged.log`, junto a la DLL, y abre la forja
+//! dentro de Relic Rites (ver [`ui`]).
+//!
+//! Con la feature `dev` (versión de desarrollo) suma las herramientas usadas para el
+//! relevamiento: comandos en `relics_reforged_cmd.txt` (ver `commands`), que leen y escriben
+//! memoria del juego, el rastreador, el perfilador, el diagnóstico de entrada, los nombres desde
+//! `data/export` y el inventario completo en el log. La versión pública no las tiene.
 
+// Sin `dev` queda código que solo usan las herramientas de desarrollo (lecturas de memoria,
+// el lector de HID sin instalar): no es un error.
+#![cfg_attr(not(feature = "dev"), allow(dead_code))]
+
+#[cfg(feature = "dev")]
 mod commands;
 mod forge;
 mod game;
+/// Mandos por HID: sin confirmar que el juego los lea así; solo se instala en desarrollo (sin el
+/// gancho, no ve nada).
 mod hid;
 mod input_block;
+#[cfg(feature = "dev")]
 mod input_diag;
 mod mainthread;
 mod msg;
 mod pad;
+#[cfg(feature = "dev")]
 mod profiler;
 mod relic_menu;
+#[cfg(feature = "dev")]
 mod search;
+#[cfg(feature = "dev")]
 mod snap;
 mod sound;
 mod steam_input;
+#[cfg(feature = "dev")]
 mod tracer;
 mod ui;
 mod win;
@@ -27,7 +42,9 @@ mod win;
 use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "dev")]
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -105,11 +122,14 @@ fn run(module: usize) {
         return;
     };
 
+    #[cfg(feature = "dev")]
     log.line(&format!(
         "Relics Reforged v{} (desarrollo: comandos en {})",
         env!("CARGO_PKG_VERSION"),
         commands::FILE_NAME
     ));
+    #[cfg(not(feature = "dev"))]
+    log.line(&format!("Relics Reforged v{}", env!("CARGO_PKG_VERSION")));
     log.line(&format!("DLL: {}", dll_path.display()));
 
     let base = win::main_module_base();
@@ -147,13 +167,16 @@ fn run(module: usize) {
         Ok(()) => log.line("Bloqueo del mando del juego instalado (XInputGetState)"),
         Err(e) => log.line(&format!("ERROR: no pude instalar el bloqueo del mando: {e}")),
     }
-    input_diag::install(base);
-    match hid::install(base).as_slice() {
-        [] => log.line("Lectura de mandos de PlayStation por HID instalada (kernel32)"),
-        missing => log.line(&format!(
-            "ERROR: mandos por HID incompletos; no pude reemplazar: {}",
-            missing.join(", ")
-        )),
+    #[cfg(feature = "dev")]
+    {
+        input_diag::install(base);
+        match hid::install(base).as_slice() {
+            [] => log.line("Lectura de mandos de PlayStation por HID instalada (kernel32)"),
+            missing => log.line(&format!(
+                "ERROR: mandos por HID incompletos; no pude reemplazar: {}",
+                missing.join(", ")
+            )),
+        }
     }
     match relic_menu::install(base) {
         Ok(()) => log.line("Detección de Relic Rites instalada (vtable de AntiqueEquipDialog)"),
@@ -165,6 +188,7 @@ fn run(module: usize) {
     let mut data = load_game_data(&dll_path, &mut log).map(Arc::new);
     let dll_dir = dll_path.parent().unwrap_or(Path::new(".")).to_path_buf();
     // Por si quedó un archivo de comandos de una sesión anterior.
+    #[cfg(feature = "dev")]
     let _ = std::fs::remove_file(dll_dir.join(commands::FILE_NAME));
     // El menú arranca cuando la partida está cargada, con los nombres ya leídos del juego.
     let mut menu_started = false;
@@ -175,20 +199,23 @@ fn run(module: usize) {
     let mut dumped: Option<(u32, Vec<LiveRelic>)> = None;
     loop {
         std::thread::sleep(Duration::from_secs(1));
-        let mut ctx = commands::Context {
-            game: &game,
-            data: data.as_deref(),
-            dll_dir: &dll_dir,
-            dump_requested: false,
-        };
-        commands::poll(&mut ctx, &mut log);
-        if ctx.dump_requested {
-            dumped = None;
-        }
-        log_hits(&mut log, base);
-        if tracer::is_active() {
-            // Leer la página vigilada consumiría la guarda: no tocamos el inventario.
-            continue;
+        #[cfg(feature = "dev")]
+        {
+            let mut ctx = commands::Context {
+                game: &game,
+                data: data.as_deref(),
+                dll_dir: &dll_dir,
+                dump_requested: false,
+            };
+            commands::poll(&mut ctx, &mut log);
+            if ctx.dump_requested {
+                dumped = None;
+            }
+            log_hits(&mut log, base);
+            if tracer::is_active() {
+                // Leer la página vigilada consumiría la guarda: no tocamos el inventario.
+                continue;
+            }
         }
         let (Some(murk), relics) = (game.murk(), game.relics()) else {
             if !waiting_logged {
@@ -253,6 +280,7 @@ fn run(module: usize) {
                 let named = Arc::new(named);
                 ui::start(module, game, named.clone(), dll_dir.clone());
                 log.line(&format!("Menú: se abre con {}", ui::TOGGLE_KEY_NAME));
+                #[cfg(feature = "dev")]
                 input_diag::run();
                 match steam_input::install() {
                     Ok(()) => log.line("Mando por Steam Input enganchado (SteamInput006)"),
@@ -266,6 +294,7 @@ fn run(module: usize) {
 }
 
 /// Escribe en el log las escrituras que anotó el rastreador, con direcciones relativas al módulo.
+#[cfg(feature = "dev")]
 fn log_hits(log: &mut Log, base: usize) {
     let size = win::pe_info(base).map_or(0, |(_, s)| s as usize);
     let rel = |a: usize| {
@@ -304,6 +333,7 @@ fn log_hits(log: &mut Log, base: usize) {
 fn load_game_data(dll_path: &Path, log: &mut Log) -> Option<GameData> {
     let exe = win::module_path(win::main_module_base()).unwrap_or_default();
     let regulation = exe.with_file_name("regulation.bin");
+    #[cfg_attr(not(feature = "dev"), allow(unused_mut))]
     let mut data = match std::fs::read(&regulation)
         .map_err(|e| e.to_string())
         .and_then(|raw| GameData::from_regulation(&raw).map_err(|e| e.to_string()))
@@ -325,28 +355,34 @@ fn load_game_data(dll_path: &Path, log: &mut Log) -> Option<GameData> {
         data.tables.len()
     ));
 
-    let csv_dir: Option<PathBuf> = dll_path
-        .ancestors()
-        .skip(1)
-        .take(6)
-        .map(|dir| dir.join("data").join("export"))
-        .find(|dir| dir.join("AttachEffectParam.csv").exists());
-    match csv_dir.map(|dir| (GameData::from_csv_dir(&dir), dir)) {
-        Some((Ok(csv), dir)) => {
-            for (id, e) in data.effects.iter_mut() {
-                if let Some(c) = csv.effects.get(id) {
-                    e.name = c.name.clone();
+    // La versión pública toma los nombres solo de los textos del juego (ver `msg`).
+    #[cfg(not(feature = "dev"))]
+    let _ = dll_path;
+    #[cfg(feature = "dev")]
+    {
+        let csv_dir: Option<PathBuf> = dll_path
+            .ancestors()
+            .skip(1)
+            .take(6)
+            .map(|dir| dir.join("data").join("export"))
+            .find(|dir| dir.join("AttachEffectParam.csv").exists());
+        match csv_dir.map(|dir| (GameData::from_csv_dir(&dir), dir)) {
+            Some((Ok(csv), dir)) => {
+                for (id, e) in data.effects.iter_mut() {
+                    if let Some(c) = csv.effects.get(id) {
+                        e.name = c.name.clone();
+                    }
                 }
-            }
-            for (id, t) in data.relic_types.iter_mut() {
-                if let Some(c) = csv.relic_types.get(id) {
-                    t.name = c.name.clone();
+                for (id, t) in data.relic_types.iter_mut() {
+                    if let Some(c) = csv.relic_types.get(id) {
+                        t.name = c.name.clone();
+                    }
                 }
+                log.line(&format!("Nombres tomados de {}", dir.display()));
             }
-            log.line(&format!("Nombres tomados de {}", dir.display()));
+            Some((Err(e), _)) => log.line(&format!("No pude leer los nombres de los CSV: {e}")),
+            None => log.line("Sin CSV de nombres: se usan los textos del juego"),
         }
-        Some((Err(e), _)) => log.line(&format!("No pude leer los nombres de los CSV: {e}")),
-        None => log.line("Sin CSV de nombres: el menú muestra IDs"),
     }
     Some(data)
 }
@@ -403,7 +439,10 @@ fn dump(log: &mut Log, data: Option<&GameData>, murk: u32, relics: &[LiveRelic])
                 r.effects, r.curses
             );
         }
-        log.line(&text);
+        // El detalle de cada reliquia solo en desarrollo; la versión pública anota el resumen.
+        if cfg!(feature = "dev") {
+            log.line(&text);
+        }
     }
     if data.is_some() {
         log.line(&format!(
