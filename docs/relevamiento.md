@@ -252,6 +252,15 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - `input_block.rs` crea un teclado propio para conseguir la vtable de los dispositivos de `dinput8.dll` (la comparten todos, también los del juego) y reemplaza `GetDeviceState` (9) y `GetDeviceData` (10), en la variante ANSI y la Unicode. Con la forja abierta llaman al original y después devuelven "nada apretado" y "sin eventos". Al cerrar sigue bloqueando hasta que se suelten todas las teclas (o 1,5 s), para que la Q con la que se cierra no le llegue al juego.
 - Probado: con la forja abierta Relic Rites no se mueve con ninguna tecla, y Q vuelve a Relic Rites sin cerrarlo.
 
+### Mando (2026-11-06, sin probar en el juego)
+
+- Importaciones de entrada de `nightreign.exe`: `XINPUT1_4.dll` por ordinal (#2 `XInputGetState`, #3 `XInputSetState`), `DINPUT8.dll` (`DirectInput8Create`) y `SETUPAPI.dll` (enumera dispositivos; ¿mandos de PlayStation por HID?). No usa Raw Input ni Windows.Gaming.Input.
+- `pad.rs` reemplaza la entrada #2 de la tabla de importaciones: con la forja abierta (y al cerrarla, hasta que se suelte todo) el juego recibe el mando suelto con el mismo número de paquete. Mientras la forja se ofrece en Relic Rites, el juego no ve R3, el botón que la abre.
+- La forja lee el mando con el `XInputGetState` original. Un mando desconectado tarda en responder: se busca cada 2 s.
+- Glifos del mando en `SB_KG_0` del atlas del menú: los botones de la derecha son `KG_R_D` (A), `KG_R_R` (B), `KG_R_L` (X), `KG_R_U` (Y); `KG_L_*` el D-pad, `KG_L1/R1` los bumpers, `KG_L2/R2` los gatillos, `KG_L3/R3` los sticks, `KG_Back` (View) y `KG_Start` (Menu). Hay variantes `KG_XboxSeries_*`, `KG_PS4_*` y `KG_PS5_*`.
+- La navegación de ImGui no se usa: con paneles y listas que se desplazan dentro de ventanas hijas, `NavFlattened` (beta) no puntúa bien los elementos recortados. El cursor es propio (`Nav` en `ui.rs`).
+- Falta medir dónde termina la barra de Relic Rites con los glifos del mando: por ahora, con el mando, el botón de la forja va arriba a la derecha.
+
 ### Seamless Co-op ✔ (2026-11-05)
 
 - Probado con Seamless Co-op 1.1.3 (`nrsc.dll`) y me3: la forja funciona y persiste.

@@ -20,8 +20,10 @@
 //! mensajes con `PeekMessageW` de su tabla de importaciones: los de la ventana los frena el
 //! filtro de hudhook.
 //!
-//! Al cerrar la forja se sigue bloqueando hasta que se suelten todas las teclas y botones (o
-//! 1,5 s), para que la tecla o el clic con que se cerró no le llegue al juego.
+//! El mando (XInput) se bloquea en [`pad`](crate::pad), con el mismo criterio.
+//!
+//! Al cerrar la forja se sigue bloqueando hasta que se suelten todas las teclas y botones, también
+//! los del mando (o 1,5 s), para que la tecla o el clic con que se cerró no le llegue al juego.
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicUsize, Ordering};
@@ -102,14 +104,16 @@ pub fn set_menu_open(open: bool) {
     }
 }
 
-fn blocked() -> bool {
+/// Si el juego no tiene que ver teclado, mouse ni mando: con la forja abierta, y al cerrarla
+/// hasta que se suelte todo.
+pub(crate) fn blocked() -> bool {
     if MENU_OPEN.load(Ordering::Relaxed) {
         return true;
     }
     let mut releasing = RELEASING.lock().unwrap_or_else(|e| e.into_inner());
     match *releasing {
         Some(at) if at.elapsed() < RELEASE_TIMEOUT => {
-            if KEYS_UP.load(Ordering::Relaxed) && mouse_released() {
+            if KEYS_UP.load(Ordering::Relaxed) && mouse_released() && crate::pad::released() {
                 *releasing = None;
                 false
             } else {
@@ -202,7 +206,7 @@ di_hooks! {
 
 /// Reemplaza la entrada `index` de `vtable`, guardando antes la original en `orig` (el gancho
 /// puede llamarse apenas se escribe la entrada).
-unsafe fn patch(
+pub(crate) unsafe fn patch(
     vtable: usize,
     index: usize,
     hook: usize,
@@ -400,8 +404,24 @@ fn c_string(addr: usize) -> Option<String> {
     Some(String::from_utf8_lossy(&bytes[..end]).into_owned())
 }
 
+/// Una función importada: por nombre o por ordinal.
+#[derive(Clone, Copy)]
+enum Import<'a> {
+    Name(&'a str),
+    Ordinal(u16),
+}
+
 /// Dirección de la entrada de la tabla de importaciones de `module` para `dll!func`.
 fn iat_slot(module: usize, dll: &str, func: &str) -> Option<usize> {
+    iat_slot_of(module, dll, Import::Name(func))
+}
+
+/// Dirección de la entrada de la tabla de importaciones de `module` para `dll!#ordinal`.
+pub(crate) fn iat_slot_ordinal(module: usize, dll: &str, ordinal: u16) -> Option<usize> {
+    iat_slot_of(module, dll, Import::Ordinal(ordinal))
+}
+
+fn iat_slot_of(module: usize, dll: &str, func: Import) -> Option<usize> {
     let pe = module + win::read::<u32>(module + 0x3C)? as usize;
     // Directorio de importaciones: entrada 1 de los data directories de un PE32+.
     let imports = win::read::<u32>(pe + 24 + 112 + 8)? as usize;
@@ -419,9 +439,14 @@ fn iat_slot(module: usize, dll: &str, func: &str) -> Option<usize> {
                 if entry == 0 {
                     break;
                 }
-                if entry >> 63 == 0
-                    && c_string(module + (entry as usize & 0x7FFF_FFFF) + 2)? == func
-                {
+                let found = match func {
+                    Import::Ordinal(n) => entry >> 63 == 1 && entry as u16 == n,
+                    Import::Name(name) => {
+                        entry >> 63 == 0
+                            && c_string(module + (entry as usize & 0x7FFF_FFFF) + 2)? == name
+                    }
+                };
+                if found {
                     return Some(module + thunks + 8 * k);
                 }
             }

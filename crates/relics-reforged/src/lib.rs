@@ -11,6 +11,7 @@ mod game;
 mod input_block;
 mod mainthread;
 mod msg;
+mod pad;
 mod profiler;
 mod relic_menu;
 mod search;
@@ -138,6 +139,10 @@ fn run(module: usize) {
             "ERROR: bloqueo de mouse incompleto; no pude reemplazar: {}",
             missing.join(", ")
         )),
+    }
+    match pad::install(base) {
+        Ok(()) => log.line("Bloqueo del mando del juego instalado (XInputGetState)"),
+        Err(e) => log.line(&format!("ERROR: no pude instalar el bloqueo del mando: {e}")),
     }
     match relic_menu::install(base) {
         Ok(()) => log.line("Detección de Relic Rites instalada (vtable de AntiqueEquipDialog)"),

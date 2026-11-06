@@ -1,6 +1,7 @@
 //! Menú dentro del juego (Dear ImGui sobre DirectX 12, con hudhook).
 //!
-//! Se abre y se cierra con F7. Mientras está abierto, el teclado y el mouse no le llegan al juego.
+//! Se abre y se cierra con F7 (R3 en el mando). Mientras está abierto, el teclado, el mouse y el
+//! mando no le llegan al juego; se maneja con el mouse o con un cursor de teclado y mando ([`Nav`]).
 //! El menú corre en el hilo de render: todo lo que lee o escribe datos del juego se hace en hilos
 //! aparte (la forja, a su vez, en el hilo principal), para no trabar el frame.
 
@@ -21,8 +22,7 @@ use nr_assets::IconAtlas;
 use crate::forge::{self, Order};
 use crate::game::{is_favorite, Game};
 
-pub const TOGGLE_KEY_NAME: &str = "F7";
-const TOGGLE_KEY: Key = Key::F7;
+pub const TOGGLE_KEY_NAME: &str = "F7 (R3 en el mando)";
 
 const RED: [f32; 4] = [1.0, 0.45, 0.4, 1.0];
 const GREEN: [f32; 4] = [0.5, 0.9, 0.5, 1.0];
@@ -49,23 +49,68 @@ pub fn start(module: usize, game: Game, data: Arc<GameData>, dll_dir: PathBuf) {
     });
 }
 
-/// Glifo de la tecla F7 en el atlas del juego (mismo estilo que F1/F2 en Relic Rites).
-const KEY_ICON: &str = "KG_Key_F7";
 /// Fondo de panel con bordes difuminados y la línea blanca con brillo de arriba de los paneles
 /// de Relic Rites; una línea fina para separar secciones.
 const PANEL_BG: &str = "MENU_In_bg_05";
 const PANEL_LINE: &str = "MENU_In_Line_02";
 const SEP_LINE: &str = "MENU_In_Line_00";
-/// Teclas de los controles propios: (glifo, tecla, tecla de ImGui).
-const KEY_BACK: (&str, &str, Key) = ("KG_Key_Q", "Q", Key::Q);
-const KEY_REFRESH: (&str, &str, Key) = ("KG_Key_R", "R", Key::R);
-const KEY_CLEAR: (&str, &str, Key) = ("KG_Key_C", "C", Key::C);
-const KEY_FILTER: (&str, &str, Key) = ("KG_Key_4", "4", Key::Alpha4);
-const KEY_SORT: (&str, &str, Key) = ("KG_Key_5", "5", Key::Alpha5);
-const KEY_RESET: (&str, &str, Key) = ("KG_Key_1", "1", Key::Alpha1);
-const KEY_REMOVE: (&str, &str, Key) = ("KG_Key_2", "2", Key::Alpha2);
-/// Fuera del filtro, el 2 borra el texto buscado.
-const KEY_CLEAR_SEARCH: (&str, &str, Key) = KEY_REMOVE;
+
+/// Un control propio: la tecla y el botón del mando, cada uno con su glifo del atlas del juego
+/// (`KG_R_D` = A, `KG_R_R` = B, `KG_R_L` = X, `KG_R_U` = Y, `KG_Back` = View, `KG_Start` = Menu)
+/// y un texto por si falta el glifo.
+struct Control {
+    glyph: &'static str,
+    key_name: &'static str,
+    key: Key,
+    pad_glyph: &'static str,
+    pad_name: &'static str,
+    /// Botón de XInput (`pad::*`).
+    pad: u16,
+}
+
+const fn control(
+    glyph: &'static str,
+    key_name: &'static str,
+    key: Key,
+    pad_glyph: &'static str,
+    pad_name: &'static str,
+    pad: u16,
+) -> Control {
+    Control {
+        glyph,
+        key_name,
+        key,
+        pad_glyph,
+        pad_name,
+        pad,
+    }
+}
+
+use crate::pad;
+
+/// Abre la forja desde Relic Rites (y la cierra).
+const CTRL_TOGGLE: Control = control("KG_Key_F7", "F7", Key::F7, "KG_R3", "R3", pad::OPEN_BUTTON);
+const CTRL_BACK: Control = control("KG_Key_Q", "Q", Key::Q, "KG_R_R", "B", pad::B);
+const CTRL_REFRESH: Control = control("KG_Key_R", "R", Key::R, "KG_Start", "Menu", pad::START);
+const CTRL_CLEAR: Control = control("KG_Key_C", "C", Key::C, "KG_Back", "View", pad::BACK);
+const CTRL_FILTER: Control = control("KG_Key_4", "4", Key::Alpha4, "KG_R_U", "Y", pad::Y);
+const CTRL_SORT: Control = control("KG_Key_5", "5", Key::Alpha5, "KG_R1", "RB", pad::RIGHT_SHOULDER);
+/// Dentro del filtro.
+const CTRL_RESET: Control = control("KG_Key_1", "1", Key::Alpha1, "KG_R_L", "X", pad::X);
+const CTRL_REMOVE: Control = control("KG_Key_2", "2", Key::Alpha2, "KG_Back", "View", pad::BACK);
+/// Fuera del filtro, el 2 (o X) borra el texto buscado.
+const CTRL_CLEAR_SEARCH: Control = control("KG_Key_2", "2", Key::Alpha2, "KG_R_L", "X", pad::X);
+const CONTROLS: [&Control; 9] = [
+    &CTRL_TOGGLE,
+    &CTRL_BACK,
+    &CTRL_REFRESH,
+    &CTRL_CLEAR,
+    &CTRL_FILTER,
+    &CTRL_SORT,
+    &CTRL_RESET,
+    &CTRL_REMOVE,
+    &CTRL_CLEAR_SEARCH,
+];
 /// Puntos de sacrificio: azul claro.
 const POINTS: [f32; 4] = [0.62, 0.76, 1.0, 1.0];
 
@@ -94,21 +139,12 @@ fn load_icons(data: &GameData, out: Arc<Mutex<Option<IconAtlas>>>) {
                 .filter(|t| t.icon_id >= 0)
                 .map(|t| item_icon(t.icon_id)),
         )
+        .chain([PANEL_BG, PANEL_LINE, SEP_LINE].map(String::from))
         .chain(
-            [
-                KEY_ICON,
-                PANEL_BG,
-                PANEL_LINE,
-                SEP_LINE,
-                KEY_BACK.0,
-                KEY_REFRESH.0,
-                KEY_CLEAR.0,
-                KEY_FILTER.0,
-                KEY_SORT.0,
-                KEY_RESET.0,
-                KEY_REMOVE.0,
-            ]
-            .map(String::from),
+            CONTROLS
+                .iter()
+                .flat_map(|c| [c.glyph, c.pad_glyph])
+                .map(String::from),
         )
         .collect();
     wanted.sort();
@@ -303,6 +339,7 @@ fn draw_hint(
     font: Option<TitleFont>,
     icons: Option<&Icons>,
     panel: Option<crate::relic_menu::Panel>,
+    pad_mode: bool,
 ) -> bool {
     use crate::relic_menu::Panel;
     let [w, h] = ui.io().display_size;
@@ -315,7 +352,9 @@ fn draw_hint(
     // slots termina en "M:All Presets" / "M:Todos los preajustes"; en la grilla, en
     // "1:Swap screen" / "1:Cambiar pantalla". Eligiendo la reliquia para un slot la barra es la
     // de la grilla, pero no se distingue de recorrerla: ahí el botón queda en la misma barra.
+    // Con el mando la barra lleva otros glifos y no está medida: va arriba a la derecha.
     let after_presets = match (relic_rules::lang::get(), panel) {
+        _ if pad_mode => None,
         (relic_rules::lang::Lang::En, Some(Panel::Slots)) => Some(1010.0),
         (relic_rules::lang::Lang::En, Some(Panel::Right)) => Some(527.0),
         (relic_rules::lang::Lang::Es, Some(Panel::Slots)) => Some(1322.0),
@@ -339,16 +378,42 @@ fn draw_hint(
         .build(|| {
             let _f = font.map(|f| ui.push_font(f.0));
             ui.set_window_font_scale(s);
-            clicked = key_prompt(
+            clicked = control_prompt(
                 ui,
                 icons,
-                KEY_ICON,
-                TOGGLE_KEY_NAME,
+                &CTRL_TOGGLE,
+                pad_mode,
                 tr("Forjar reliquias", "Forge relics"),
                 s,
             );
         });
     clicked
+}
+
+/// Se usó el mouse en este frame: un clic, la rueda o un movimiento de más de unos píxeles (un
+/// temblor no cuenta).
+fn mouse_used(ui: &Ui) -> bool {
+    let io = ui.io();
+    let [dx, dy] = io.mouse_delta;
+    dx * dx + dy * dy > 9.0
+        || io.mouse_down.iter().any(|&d| d)
+        || io.mouse_wheel != 0.0
+}
+
+/// [`key_prompt`] con la tecla o el botón del mando del control, según lo último que se usó.
+fn control_prompt(
+    ui: &Ui,
+    icons: Option<&Icons>,
+    c: &Control,
+    pad_mode: bool,
+    label: &str,
+    s: f32,
+) -> bool {
+    let (glyph, name) = match pad_mode {
+        true => (c.pad_glyph, c.pad_name),
+        false => (c.glyph, c.key_name),
+    };
+    key_prompt(ui, icons, glyph, name, label, s)
 }
 
 /// Parte un texto en líneas que entren en `width` (corta por palabras).
@@ -516,8 +581,49 @@ impl SortBy {
     }
 }
 
+/// Cursor de teclado y mando. Es propio: la navegación de ImGui no cruza bien entre paneles con
+/// listas que se desplazan. Cada elemento navegable se anota al dibujarse ([`Menu::nav_item`]);
+/// arriba/abajo recorren los de un panel en el orden en que se dibujan, izquierda/derecha cambian
+/// de panel y Enter, Espacio o A activan el elemento con el cursor.
+#[derive(Default)]
+struct Nav {
+    /// El cursor se ve (lo último que se usó fue el teclado o el mando); con el mouse se esconde.
+    active: bool,
+    /// Panel con el cursor: 0 izquierda, 1 derecha.
+    panel: usize,
+    index: [usize; 2],
+    /// Elementos que se dibujaron en cada panel en el frame anterior y en el actual.
+    counts: [usize; 2],
+    seen: [usize; 2],
+    /// Panel que se está dibujando.
+    drawing: usize,
+    /// Qué muestra cada panel: si cambia (otra lista, otro grupo), el cursor vuelve arriba.
+    scope: [String; 2],
+    /// En este frame: el cursor se movió (hay que traerlo a la vista) y se pidió activar.
+    moved: bool,
+    activate: bool,
+    /// Derecha con el cursor ya en el panel derecho: abre el grupo de efectos con "»".
+    push_right: bool,
+    /// El elemento con este id toma el cursor cuando se dibuja.
+    focus_request: Option<String>,
+}
+
+/// Direcciones del cursor: arriba, abajo, izquierda, derecha.
+const NAV_DIRS: [u16; 4] = [pad::DPAD_UP, pad::DPAD_DOWN, pad::DPAD_LEFT, pad::DPAD_RIGHT];
+/// Mantener apretada una dirección repite, como en los menús del juego.
+const REPEAT_DELAY: std::time::Duration = std::time::Duration::from_millis(350);
+const REPEAT_EVERY: std::time::Duration = std::time::Duration::from_millis(90);
+
 struct Menu {
     visible: AtomicBool,
+    nav: Mutex<Nav>,
+    /// Botones del mando en este frame y en el anterior (para detectar cuándo se aprietan).
+    pad_now: u16,
+    pad_prev: u16,
+    /// Desde cuándo y última repetición de cada dirección del mando.
+    pad_repeat: [Option<(std::time::Instant, std::time::Instant)>; 4],
+    /// Lo último que se usó fue el mando: los controles muestran sus botones.
+    pad_mode: bool,
     game: Game,
     data: Arc<GameData>,
     dll_dir: PathBuf,
@@ -574,6 +680,11 @@ impl Menu {
         }
         Menu {
             visible: AtomicBool::new(false),
+            nav: Mutex::new(Nav::default()),
+            pad_now: 0,
+            pad_prev: 0,
+            pad_repeat: [None; 4],
+            pad_mode: false,
             game,
             data,
             dll_dir,
@@ -619,6 +730,190 @@ impl Menu {
             crate::sound::cursor();
         }
         self.hover_prev.store(now, Ordering::Relaxed);
+    }
+
+    fn nav(&self) -> std::sync::MutexGuard<'_, Nav> {
+        self.nav.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Lee el mando y decide si los controles muestran teclas o botones: gana lo último que se
+    /// tocó (el mouse y el teclado vuelven a las teclas).
+    fn read_input(&mut self, ui: &Ui) {
+        self.pad_prev = self.pad_now;
+        let pad = pad::read();
+        self.pad_now = pad.map_or(0, |p| p.buttons);
+        if pad.is_some_and(|p| p.touched) {
+            self.pad_mode = true;
+        }
+        if mouse_used(ui) || Key::VARIANTS.iter().any(|&k| ui.is_key_pressed_no_repeat(k)) {
+            self.pad_mode = false;
+        }
+    }
+
+    /// Se apretó el botón (o alguno de los botones) del mando en este frame.
+    fn pad_pressed(&self, bits: u16) -> bool {
+        self.pad_now & bits & !self.pad_prev != 0
+    }
+
+    /// Se apretó la tecla o el botón del control (la tecla no cuenta mientras se escribe).
+    fn pressed(&self, ui: &Ui, c: &Control) -> bool {
+        (!ui.io().want_text_input && ui.is_key_pressed(c.key)) || self.pad_pressed(c.pad)
+    }
+
+    fn prompt(&self, ui: &Ui, c: &Control, label: &str, s: f32) -> bool {
+        control_prompt(ui, self.icons.as_ref(), c, self.pad_mode, label, s)
+    }
+
+    /// Al empezar el frame de la forja: mueve el cursor con flechas, D-pad o stick izquierdo
+    /// (con repetición) y anota si se pidió activar. El mouse lo esconde.
+    fn nav_begin(&mut self, ui: &Ui) {
+        let typing = ui.io().want_text_input;
+        let keys = [Key::UpArrow, Key::DownArrow, Key::LeftArrow, Key::RightArrow];
+        let mut dirs = [false; 4];
+        let now = std::time::Instant::now();
+        for i in 0..4 {
+            dirs[i] = !typing && ui.is_key_pressed(keys[i]);
+            if self.pad_now & NAV_DIRS[i] == 0 {
+                self.pad_repeat[i] = None;
+                continue;
+            }
+            match self.pad_repeat[i] {
+                None => {
+                    dirs[i] = true;
+                    self.pad_repeat[i] = Some((now, now));
+                }
+                Some((since, last))
+                    if now - since > REPEAT_DELAY && now - last > REPEAT_EVERY =>
+                {
+                    dirs[i] = true;
+                    self.pad_repeat[i] = Some((since, now));
+                }
+                Some(_) => {}
+            }
+        }
+        let activate = (!typing
+            && [Key::Enter, Key::KeypadEnter, Key::Space]
+                .iter()
+                .any(|&k| ui.is_key_pressed_no_repeat(k)))
+            || self.pad_pressed(pad::A);
+        let mouse = mouse_used(ui);
+
+        let mut n = self.nav();
+        n.counts = n.seen;
+        n.seen = [0, 0];
+        n.moved = false;
+        n.activate = false;
+        n.push_right = false;
+        if mouse {
+            n.active = false;
+        }
+        let any = dirs.iter().any(|&d| d) || activate;
+        if !any {
+            return;
+        }
+        if !n.active {
+            // La primera tecla solo muestra el cursor donde estaba.
+            n.active = true;
+            n.moved = true;
+            return;
+        }
+        let p = n.panel;
+        let [up, down, left, right] = dirs;
+        if up && n.index[p] > 0 {
+            n.index[p] -= 1;
+            n.moved = true;
+        }
+        if down && n.index[p] + 1 < n.counts[p] {
+            n.index[p] += 1;
+            n.moved = true;
+        }
+        if left && p == 1 && n.counts[0] > 0 {
+            n.panel = 0;
+            n.moved = true;
+        }
+        if right {
+            if p == 0 && n.counts[1] > 0 {
+                n.panel = 1;
+                n.moved = true;
+            } else if p == 1 {
+                n.push_right = true;
+            }
+        }
+        n.activate = activate;
+    }
+
+    /// Antes de dibujar un panel: lo que muestra (si cambió, el cursor de ese panel vuelve
+    /// arriba). Lo que se dibuja después cuenta para ese panel.
+    fn nav_panel(&self, panel: usize, scope: &str) {
+        let mut n = self.nav();
+        n.drawing = panel;
+        if n.scope[panel] != scope {
+            n.scope[panel] = scope.to_string();
+            n.index[panel] = 0;
+            if n.panel == panel {
+                n.moved = true;
+            }
+        }
+        // El panel con el cursor quedó vacío (o le sobra el índice): se ajusta con lo que se
+        // dibujó en el frame anterior.
+        let count = n.counts[panel];
+        if count > 0 && n.index[panel] >= count {
+            n.index[panel] = count - 1;
+        }
+        if n.panel == panel && count == 0 && n.counts[1 - panel] > 0 && !n.moved {
+            n.panel = 1 - panel;
+        }
+    }
+
+    /// Anota un elemento navegable recién dibujado (el último item de ImGui). Devuelve si tiene
+    /// el cursor y si se activó. Con el cursor recién llegado, lo trae a la vista.
+    fn nav_item(&self, ui: &Ui, id: &str) -> (bool, bool) {
+        let mut n = self.nav();
+        let p = n.drawing;
+        let i = n.seen[p];
+        n.seen[p] += 1;
+        if n.focus_request.as_deref() == Some(id) {
+            n.focus_request = None;
+            n.panel = p;
+            n.index[p] = i;
+            n.moved = true;
+        }
+        if !(n.active && n.panel == p && n.index[p] == i) {
+            return (false, false);
+        }
+        if n.moved {
+            let (min, max) = (ui.item_rect_min(), ui.item_rect_max());
+            let (top, h) = (ui.window_pos()[1], ui.window_size()[1]);
+            let margin = 12.0;
+            if min[1] < top + margin {
+                ui.set_scroll_y(ui.scroll_y() - (top + margin - min[1]));
+            } else if max[1] > top + h - margin {
+                ui.set_scroll_y(ui.scroll_y() + (max[1] - (top + h - margin)));
+            }
+        }
+        (true, std::mem::take(&mut n.activate))
+    }
+
+    /// Para un elemento recién dibujado: si está resaltado (mouse encima o, con el cursor de
+    /// teclado y mando a la vista, el cursor) y si se lo eligió (clic o activado).
+    fn interact(&self, ui: &Ui, id: &str, clicked: bool) -> (bool, bool) {
+        let (focused, activated) = self.nav_item(ui, id);
+        let hovered = if self.nav().active {
+            focused
+        } else {
+            ui.is_item_hovered()
+        };
+        (hovered, clicked || activated)
+    }
+
+    /// Derecha sobre el elemento con el cursor (abre un grupo de efectos).
+    fn take_push_right(&self) -> bool {
+        std::mem::take(&mut self.nav().push_right)
+    }
+
+    /// El elemento `id` toma el cursor cuando se dibuje.
+    fn request_focus(&self, id: &str) {
+        self.nav().focus_request = Some(id.to_string());
     }
 
     fn shared(&self) -> std::sync::MutexGuard<'_, Shared> {
@@ -758,6 +1053,7 @@ impl Menu {
     /// El menú ocupa la pantalla de Relic Rites (salvo su encabezado), como si fuera una sección
     /// más del mismo menú. Abajo lleva su propia barra de controles, como la del juego.
     fn draw(&mut self, ui: &Ui) {
+        self.nav_begin(ui);
         let [w, h] = ui.io().display_size;
         let s = h / 1080.0;
         // Encabezado del juego ("Relic Rites", arriba a la izquierda): queda a la vista.
@@ -822,41 +1118,28 @@ impl Menu {
                 // abierto, Q lo cierra y 1 lo limpia (como en Relic Rites).
                 let (mut back, mut refresh, mut clear, mut reset) = (false, false, false, false);
                 let mut remove = false;
-                {
-                    let icons = self.icons.as_ref();
-                    let (g, k, _) = KEY_BACK;
-                    if self.show_filters {
-                        back |= key_prompt(ui, icons, g, k, tr("Volver", "Back"), s);
-                        ui.same_line_with_spacing(0.0, 14.0 * s);
-                        let (g, k, _) = KEY_RESET;
-                        reset |= key_prompt(ui, icons, g, k, tr("Limpiar", "Reset"), s);
-                        ui.same_line_with_spacing(0.0, 14.0 * s);
-                        let (g, k, _) = KEY_REMOVE;
-                        remove |= key_prompt(
-                            ui,
-                            icons,
-                            g,
-                            k,
-                            tr("Quitar condiciones", "Remove conditions"),
-                            s,
-                        );
-                    } else {
-                        back |= key_prompt(
-                            ui,
-                            icons,
-                            g,
-                            k,
-                            tr("Volver a Ritos de reliquias", "Back to Relic Rites"),
-                            s,
-                        );
-                        ui.same_line_with_spacing(0.0, 14.0 * s);
-                        let (g, k, _) = KEY_REFRESH;
-                        refresh |= key_prompt(ui, icons, g, k, tr("Refrescar", "Refresh"), s);
-                        ui.same_line_with_spacing(0.0, 14.0 * s);
-                        let (g, k, _) = KEY_CLEAR;
-                        clear |=
-                            key_prompt(ui, icons, g, k, tr("Empezar de nuevo", "Start over"), s);
-                    }
+                if self.show_filters {
+                    back |= self.prompt(ui, &CTRL_BACK, tr("Volver", "Back"), s);
+                    ui.same_line_with_spacing(0.0, 14.0 * s);
+                    reset |= self.prompt(ui, &CTRL_RESET, tr("Limpiar", "Reset"), s);
+                    ui.same_line_with_spacing(0.0, 14.0 * s);
+                    remove |= self.prompt(
+                        ui,
+                        &CTRL_REMOVE,
+                        tr("Quitar condiciones", "Remove conditions"),
+                        s,
+                    );
+                } else {
+                    back |= self.prompt(
+                        ui,
+                        &CTRL_BACK,
+                        tr("Volver a Ritos de reliquias", "Back to Relic Rites"),
+                        s,
+                    );
+                    ui.same_line_with_spacing(0.0, 14.0 * s);
+                    refresh |= self.prompt(ui, &CTRL_REFRESH, tr("Refrescar", "Refresh"), s);
+                    ui.same_line_with_spacing(0.0, 14.0 * s);
+                    clear |= self.prompt(ui, &CTRL_CLEAR, tr("Empezar de nuevo", "Start over"), s);
                 }
                 ui.set_window_font_scale(1.0);
                 if back && !self.filter_back() {
@@ -881,52 +1164,49 @@ impl Menu {
                     self.entered = None;
                 }
             });
-        // Teclas (no mientras se escribe en el filtro: ahí las usa ImGui).
-        if !ui.io().want_text_input {
-            if (ui.is_key_pressed(Key::Escape) || ui.is_key_pressed(KEY_BACK.2))
-                && !self.filter_back()
-            {
-                close = true;
-            }
-            if self.show_filters && ui.is_key_pressed(KEY_RESET.2) {
+        // Teclas y botones del mando (las teclas no, mientras se escribe en el filtro: ahí las
+        // usa ImGui).
+        let typing = ui.io().want_text_input;
+        if ((!typing && ui.is_key_pressed(Key::Escape)) || self.pressed(ui, &CTRL_BACK))
+            && !self.filter_back()
+        {
+            close = true;
+        }
+        if self.show_filters && self.pressed(ui, &CTRL_RESET) {
+            crate::sound::decide();
+            self.filter_reset();
+        }
+        if self.show_filters && self.pressed(ui, &CTRL_REMOVE) {
+            crate::sound::decide();
+            self.filters.effects = Default::default();
+            self.picking = None;
+            self.entered = None;
+        }
+        if !self.show_filters && self.pressed(ui, &CTRL_REFRESH) {
+            crate::sound::decide();
+            self.refresh();
+        }
+        if !self.show_filters && !self.filter.is_empty() && self.pressed(ui, &CTRL_CLEAR_SEARCH) {
+            crate::sound::cancel();
+            self.filter.clear();
+        }
+        if !self.show_filters && self.pressed(ui, &CTRL_CLEAR) {
+            crate::sound::decide();
+            self.reset_selection();
+        }
+        if self.pressed(ui, &CTRL_FILTER) {
+            self.show_filters = !self.show_filters;
+            if self.show_filters {
                 crate::sound::decide();
-                self.filter_reset();
-            }
-            if self.show_filters && ui.is_key_pressed(KEY_REMOVE.2) {
-                crate::sound::decide();
-                self.filters.effects = Default::default();
-                self.picking = None;
-                self.entered = None;
-            }
-            if !self.show_filters && ui.is_key_pressed(KEY_REFRESH.2) {
-                crate::sound::decide();
-                self.refresh();
-            }
-            if !self.show_filters
-                && !self.filter.is_empty()
-                && ui.is_key_pressed(KEY_CLEAR_SEARCH.2)
-            {
+            } else {
                 crate::sound::cancel();
-                self.filter.clear();
             }
-            if !self.show_filters && ui.is_key_pressed(KEY_CLEAR.2) {
-                crate::sound::decide();
-                self.reset_selection();
-            }
-            if ui.is_key_pressed(KEY_FILTER.2) {
-                self.show_filters = !self.show_filters;
-                if self.show_filters {
-                    crate::sound::decide();
-                } else {
-                    crate::sound::cancel();
-                }
-                self.picking = None;
-                self.entered = None;
-            }
-            if ui.is_key_pressed(KEY_SORT.2) {
-                crate::sound::tab();
-                self.sort = self.sort.next();
-            }
+            self.picking = None;
+            self.entered = None;
+        }
+        if self.pressed(ui, &CTRL_SORT) {
+            crate::sound::tab();
+            self.sort = self.sort.next();
         }
         self.hover_sound();
         if close {
@@ -996,20 +1276,14 @@ impl Menu {
         };
         let sort_label = format!("{}: {}", tr("Ordenar", "Sort"), self.sort.label());
         let (mut open, mut next, mut clear_search) = (false, false, false);
-        {
-            let icons = self.icons.as_ref();
-            if !self.filter.is_empty() && !self.show_filters {
-                ui.same_line_with_spacing(0.0, 12.0);
-                let (g, k, _) = KEY_CLEAR_SEARCH;
-                clear_search |= key_prompt(ui, icons, g, k, tr("Borrar", "Clear"), 1.0);
-            }
-            ui.same_line_with_spacing(0.0, 20.0);
-            let (g, k, _) = KEY_FILTER;
-            open |= key_prompt(ui, icons, g, k, &filter_label, 1.0);
-            ui.same_line_with_spacing(0.0, 20.0);
-            let (g, k, _) = KEY_SORT;
-            next |= key_prompt(ui, icons, g, k, &sort_label, 1.0);
+        if !self.filter.is_empty() && !self.show_filters {
+            ui.same_line_with_spacing(0.0, 12.0);
+            clear_search |= self.prompt(ui, &CTRL_CLEAR_SEARCH, tr("Borrar", "Clear"), 1.0);
         }
+        ui.same_line_with_spacing(0.0, 20.0);
+        open |= self.prompt(ui, &CTRL_FILTER, &filter_label, 1.0);
+        ui.same_line_with_spacing(0.0, 20.0);
+        next |= self.prompt(ui, &CTRL_SORT, &sort_label, 1.0);
         if open {
             if self.show_filters {
                 crate::sound::cancel();
@@ -1081,6 +1355,20 @@ impl Menu {
                 .shared()
                 .last_at
                 .is_some_and(|t| t.elapsed() > std::time::Duration::from_secs(10));
+        // Lo que muestra cada panel, para el cursor de teclado y mando. El "OK" del mensaje cuenta
+        // como parte del panel izquierdo.
+        let left_scope = if self.show_filters { "filtro" } else { "seleccion" };
+        let right_scope = match (self.show_filters, self.picking) {
+            (true, Some(k)) => format!(
+                "efectos{k}:{:?}:{}",
+                self.entered,
+                self.effect_search.trim().is_empty()
+            ),
+            _ if self.target.is_none() => "receptoras".into(),
+            _ if self.donor.is_none() => "donantes".into(),
+            _ => "sacrificios".into(),
+        };
+        self.nav_panel(0, left_scope);
         if let Some(result) = last.as_ref().filter(|_| !expired) {
             let (color, msg) = match result {
                 Ok(msg) => (GREEN, msg),
@@ -1117,6 +1405,7 @@ impl Menu {
                 }
             });
         ui.same_line_with_spacing(0.0, gap);
+        self.nav_panel(1, &right_scope);
         ui.child_window("derecha")
             .size([right_w, panel_h])
             .always_use_window_padding(true)
@@ -1324,6 +1613,9 @@ impl Menu {
                 if !self.confirm {
                     if self.text_button(ui, "forjar", tr("Forjar", "Forge"), false) {
                         self.confirm = true;
+                        // Con teclado o mando, el cursor pasa a "Cancelar": apretar dos veces
+                        // seguidas no forja.
+                        self.request_focus("btn_cancelar");
                     }
                 } else {
                     colored_wrapped(
@@ -1504,7 +1796,7 @@ impl Menu {
         let [x, y] = ui.cursor_screen_pos();
         let (w, h) = (size[0] + pad[0] * 2.0, size[1] + pad[1] * 2.0);
         let clicked = ui.invisible_button(format!("##btn_{id}"), [w, h]);
-        let hovered = ui.is_item_hovered();
+        let (hovered, clicked) = self.interact(ui, &format!("btn_{id}"), clicked);
         if hovered {
             self.hover(&format!("btn_{id}"));
         }
@@ -1554,11 +1846,20 @@ impl Menu {
         let [x, y] = ui.cursor_screen_pos();
         let w = ui.content_region_avail()[0];
         let clicked = ui.invisible_button(format!("##{id}"), [w, h]);
-        let hovered = ui.is_item_hovered();
+        let (focused, activated) = self.nav_item(ui, &format!("row_{id}"));
+        let hovered = if self.nav().active {
+            focused
+        } else {
+            ui.is_item_hovered()
+        };
+        // Con teclado o mando: en un grupo con "»", activar o ir a la derecha lo abre (el
+        // grupo entero se marca adentro, con "Todas las opciones"); en el resto, activar marca.
+        let open = arrow && focused && (activated || self.take_push_right());
+        let clicked = clicked || activated;
         if hovered {
             self.hover(&format!("row_{id}"));
         }
-        if clicked {
+        if clicked || open {
             crate::sound::decide();
         }
         let b = (line * 1.05).round();
@@ -1612,6 +1913,7 @@ impl Menu {
             );
         }
         match clicked {
+            _ if open => RowClick::Arrow,
             false => RowClick::None,
             true if arrow && ui.io().mouse_pos[0] > bx + b + 6.0 => RowClick::Arrow,
             true => RowClick::Toggle,
@@ -1649,7 +1951,7 @@ impl Menu {
         let [x, y] = ui.cursor_screen_pos();
         let w = ui.content_region_avail()[0];
         let clicked = ui.invisible_button(format!("##cond{k}"), [w, h]);
-        let hovered = ui.is_item_hovered();
+        let (hovered, clicked) = self.interact(ui, &format!("cond{k}"), clicked);
         if hovered {
             self.hover(&format!("cond{k}"));
         }
@@ -1816,6 +2118,12 @@ impl Menu {
                     Some(k)
                 };
                 self.entered = None;
+                // Como en el juego: al abrir la lista de efectos, el cursor pasa a ella.
+                if self.picking.is_some() {
+                    let mut n = self.nav();
+                    n.panel = 1;
+                    n.moved = true;
+                }
             }
         }
         ui.dummy([0.0, 6.0]);
@@ -1985,6 +2293,7 @@ impl Menu {
                 // Sin el relleno azul de ImGui: elegida = borde claro con brillo, como el cursor
                 // de Relic Rites; al pasar el mouse, un relleno tenue.
                 let is_selected = selected.contains(&r.handle);
+                let row_hovered;
                 {
                     let clear = [0.0, 0.0, 0.0, 0.0];
                     let _h = ui.push_style_color(imgui::StyleColor::Header, clear);
@@ -1996,22 +2305,25 @@ impl Menu {
                         imgui::StyleColor::HeaderActive,
                         [0.30, 0.36, 0.52, 0.30],
                     );
-                    if ui
+                    let pressed = ui
                         .selectable_config(format!("##{id}{:X}", r.handle))
                         .selected(is_selected)
                         .size([0.0, row_h])
-                        .build()
-                    {
+                        .build();
+                    let (hovered, pressed) =
+                        self.interact(ui, &format!("{id}{:X}", r.handle), pressed);
+                    row_hovered = hovered;
+                    if pressed {
                         clicked = Some(r.handle);
                         crate::sound::decide();
                     }
                 }
                 // El borde brillante marca las elegidas y, como el cursor del juego, la fila bajo
-                // el mouse (en las tres listas).
-                if ui.is_item_hovered() {
+                // el mouse o el cursor (en las tres listas).
+                if row_hovered {
                     self.hover(&format!("{id}{:X}", r.handle));
                 }
-                if is_selected || ui.is_item_hovered() {
+                if is_selected || row_hovered {
                     glow_frame(ui, [x, y], [x + width, y + row_h]);
                 }
                 if let Some(i) = relic_icon {
@@ -2097,6 +2409,17 @@ impl Menu {
             // El texto va aparte del botón para que baje de línea si no entra (las maldiciones
             // suelen ser largas); clickear el texto también elige el efecto.
             let mut changed = ui.radio_button(format!("##{id}{i}"), value, i);
+            let row_min = ui.item_rect_min();
+            let (focused, activated) = self.nav_item(ui, &format!("radio_{id}{i}"));
+            let value = if target {
+                &mut self.target_slot
+            } else {
+                &mut self.donor_slot
+            };
+            if activated && *value != i {
+                *value = i;
+                changed = true;
+            }
             ui.same_line();
             let icon = r.effect_icons.get(i).copied();
             if let Some(icons) = &self.icons {
@@ -2111,6 +2434,14 @@ impl Menu {
             if ui.is_item_clicked() && *value != i {
                 *value = i;
                 changed = true;
+            }
+            if focused {
+                // El cursor de teclado y mando: el mismo borde que en las listas, alrededor del
+                // efecto entero.
+                let max = ui.item_rect_max();
+                let right = ui.window_pos()[0] + ui.window_content_region_max()[0];
+                glow_frame(ui, [row_min[0] - 4.0, row_min[1] - 2.0], [right, max[1] + 2.0]);
+                self.hover(&format!("radio_{id}{i}"));
             }
             // Con la versión nueva del tipo de la receptora también vale (se convierte al forjar).
             let pool = pool.map(|p| relic_rules::newer_twin(&self.data, p).unwrap_or(p));
@@ -2267,25 +2598,39 @@ impl ImguiRenderLoop for Menu {
                 self.reset_selection();
             }
             crate::input_block::set_menu_open(false);
+            pad::set_offered(false);
             return;
         }
+        self.read_input(ui);
         // La forja solo se ofrece en la pantalla principal de Relic Rites (cursor en los slots):
         // no mientras se elige o se mira una reliquia en la grilla.
         let visible = self.visible.load(Ordering::Relaxed);
         let panel = crate::relic_menu::panel();
         let offered = !visible && panel == Some(crate::relic_menu::Panel::Slots);
+        // Mientras se ofrece, el juego no ve el botón del mando que la abre.
+        pad::set_offered(offered);
         let hint_clicked = offered
             && draw_hint(
                 ui,
                 self.prompt_font.or(self.title_font),
                 self.icons.as_ref(),
                 panel,
+                self.pad_mode,
             );
-        if (ui.is_key_pressed(TOGGLE_KEY) && (visible || offered)) || hint_clicked {
+        let by_pad = self.pad_pressed(CTRL_TOGGLE.pad);
+        let toggle = ui.is_key_pressed(CTRL_TOGGLE.key) || by_pad;
+        if (toggle && (visible || offered)) || hint_clicked {
             let now = !self.visible.load(Ordering::Relaxed);
             self.visible.store(now, Ordering::Relaxed);
             if now {
                 self.refresh();
+                // El cursor arranca en la lista de la derecha; se ve de entrada si se abrió con
+                // el mando.
+                *self.nav() = Nav {
+                    active: by_pad,
+                    panel: 1,
+                    ..Nav::default()
+                };
             }
         }
         if self.visible.load(Ordering::Relaxed) {
