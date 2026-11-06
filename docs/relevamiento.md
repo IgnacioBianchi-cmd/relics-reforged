@@ -334,6 +334,8 @@ Archivos: `data/ce/sesion1.scandata`, `data/ce/murk_comparado.PTR`.
    - `2200000`: 283 efectos sin maldición.
    - `2100000`: otro pool sin maldición (sin reliquias en tu save; probablemente del DLC).
    - Combinaciones de slots que existen: desde `2000000 ×3` (3 maldiciones posibles) hasta `2200000 ×3` (ninguna), con todas las mezclas intermedias.
+   - **Corrección (2026-11-06), contando solo efectos con peso** (`chanceWeight` o `chanceWeight_dlc` > 0): las tres tablas listan los mismos 472 efectos, pero el resto tiene peso 0 y el juego nunca los tira. Con peso: `2000000` = 49 potenciados (ataque +3/+4, neutralizaciones +1/+2, PV/PF/vigor máximos...), ninguno sale en reliquias normales; `2100000` = 277 sin maldición; `2200000` = esos 277 + 6 del DLC. 199 de los sin maldición también salen en las normales. El validador mira la tabla entera (también lo de peso 0), pero no abre ningún agujero: en las normales, lo de peso 0 de 110/210/310 y 5011xxxxx no sale con peso en ninguna otra tabla normal (nadie lo puede donar); en las Deep, la maldición decide el slot.
+   - **Tipos hermanos:** para cada color, tamaño e ícono (36 grupos, mismo nombre) hay un tipo por cada mezcla de slots: con 2 efectos, `2001xx1`/`2011xx1` (maldito ×2), `2000xx1` (maldito + `2100000`), `2010xx1` (maldito + `2200000`), `2003xx1` (`2100000` ×2), `2013xx1` (`2200000` ×2). El bloque `200xxxx` usa `2100000`; el `201xxxx`, `2200000`.
 
 ### Respuesta a "¿puede terminar con 3 negativos?"
 
@@ -344,7 +346,9 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 1. **Elegibles:** reliquias aleatorias (todas sus tablas de slot con más de un efecto). Nunca fijas ni `UniqueRelic`.
 2. Normal con normal, Deep con Deep.
 3. **El efecto viaja con su maldición** y pisa el efecto y la maldición del slot destino.
-4. **Legalidad:** después de la transferencia tiene que existir una asignación 1 a 1 de efectos a las tablas de slot de la receptora, y cada efecto de `2000000` tiene que llevar una maldición de `3000000`.
+4. **Legalidad:** después de la transferencia tiene que existir una asignación 1 a 1 de efectos a las tablas de slot de la receptora, y cada efecto de `2000000` tiene que llevar una maldición de `3000000`. Si con el tipo de la receptora no se puede pero sí con otro que se ve igual, la receptora cambia de tipo (`TypeChange`, se escribe con `write_item_id`):
+   - su versión nueva (`newer_twin`, normales viejas → tablas con los personajes del DLC);
+   - en una Deep, el tipo hermano con la mezcla de slots con y sin maldición que hace falta (`deep_siblings`: mismo color, tamaño, ícono y grupo; primero el mismo bloque de IDs). Así se puede poner un efecto sin maldición sobre uno maldito o al revés, siempre dando una reliquia que el juego genera. Un efecto potenciado nunca queda sin su maldición.
 5. **Exclusividad:** no puede haber dos efectos con el mismo `compatibilityId` (cubre duplicados de nivel, Attack Power, exclusivos de personaje, afinidad y skill).
 6. **Orden:** se reescriben los efectos ordenados por (`overrideEffectId`, ID), cada maldición en el índice de su efecto.
 7. Límite de slots forjados: 3 efectos → 2 · 2 efectos → 1 · 1 efecto → 1. Reforjar un slot ya forjado está permitido (se paga de nuevo). Como el orden cambia, el mod rastrea los efectos forjados por ID de efecto y no por posición.

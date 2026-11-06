@@ -73,9 +73,28 @@ pub struct TransferPlan {
     pub murk_cost: u32,
     /// Puntos que aportan los sacrificios (informativo, para la interfaz).
     pub sacrifice_points: u32,
-    /// Si la receptora pasa a la versión nueva de su tipo (ver [`newer_twin`]): el tipo que
-    /// tenía. El tipo nuevo es `new_target.item_id`.
-    pub upgraded_from: Option<ItemId>,
+    /// Si la receptora cambia de tipo interno (se ve igual): por qué y el tipo que tenía. El tipo
+    /// nuevo es `new_target.item_id`.
+    pub type_change: Option<TypeChange>,
+}
+
+/// Cambio del tipo interno de la receptora al forjar. El tipo nuevo tiene el mismo nombre, color,
+/// tamaño e ícono: en el juego se ve igual.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeChange {
+    /// Pasa a la versión nueva de su tipo (ver [`newer_twin`]).
+    NewerVersion { from: ItemId },
+    /// Deep: pasa al tipo con otra mezcla de espacios con y sin maldición (ver [`deep_siblings`]).
+    CurseSlots { from: ItemId },
+}
+
+impl TypeChange {
+    /// El tipo que tenía la receptora.
+    pub fn from(&self) -> ItemId {
+        match *self {
+            TypeChange::NewerVersion { from } | TypeChange::CurseSlots { from } => from,
+        }
+    }
 }
 
 /// Qué reliquia del pedido tiene el problema.
@@ -328,25 +347,28 @@ pub fn plan_transfer(
     }
 
     // Resultado: el efecto viaja con su maldición, se reordena y tiene que ser legal. Si no lo
-    // es con el tipo de la receptora pero sí con su versión nueva, la receptora pasa a esa versión
-    // (por ejemplo, un efecto de Scholar en una Grand Luminous Scene anterior a sus tablas nuevas).
+    // es con el tipo de la receptora, puede serlo con otro tipo que se ve igual:
+    // - su versión nueva (por ejemplo, un efecto de Scholar en una Grand Luminous Scene anterior
+    //   a sus tablas nuevas);
+    // - en una Deep, el tipo con otra mezcla de espacios con y sin maldición (un efecto sin
+    //   maldición sobre uno maldito, o al revés).
     let mut new_target = req.target.clone();
     new_target.slots[req.target_slot] = moved;
     normalize(data, &mut new_target);
-    let mut upgraded_from = None;
+    let mut type_change = None;
     if let Err(v) = validate(data, &new_target) {
-        let mut upgraded = new_target.clone();
-        match newer_twin(data, new_target.item_id) {
-            Some(twin) => {
-                upgraded.item_id = twin;
-                normalize(data, &mut upgraded);
-                if validate(data, &upgraded).is_err() {
-                    return Err(TransferError::ResultInvalid(v));
-                }
-                upgraded_from = Some(new_target.item_id);
-                new_target = upgraded;
-            }
-            None => return Err(TransferError::ResultInvalid(v)),
+        let from = new_target.item_id;
+        if let Some(r) = newer_twin(data, from).and_then(|id| retype(data, &new_target, id)) {
+            type_change = Some(TypeChange::NewerVersion { from });
+            new_target = r;
+        } else if let Some(r) = deep_siblings(data, from)
+            .into_iter()
+            .find_map(|id| retype(data, &new_target, id))
+        {
+            type_change = Some(TypeChange::CurseSlots { from });
+            new_target = r;
+        } else {
+            return Err(TransferError::ResultInvalid(v));
         }
     }
 
@@ -356,8 +378,46 @@ pub fn plan_transfer(
         new_target_forge_count: req.target_forge_count + 1,
         murk_cost,
         sacrifice_points: points,
-        upgraded_from,
+        type_change,
     })
+}
+
+/// La reliquia con otro tipo, si con ese tipo es legal.
+fn retype(data: &GameData, relic: &Relic, item_id: ItemId) -> Option<Relic> {
+    let mut r = relic.clone();
+    r.item_id = item_id;
+    normalize(data, &mut r);
+    validate(data, &r).is_ok().then_some(r)
+}
+
+/// Los tipos Deep que se ven igual que `item_id` (mismo color, tamaño, ícono y grupo de orden, y
+/// por eso mismo nombre) pero con otras tablas de slot: el juego tiene uno por cada mezcla de
+/// espacios con maldición (tabla `2000000` + `3000000`) y sin ella (`2100000` o `2200000`).
+/// Primero los del mismo bloque de IDs que `item_id` (`200xxxx` usa `2100000`; `201xxxx`, la
+/// `2200000`, que suma efectos del DLC), después el resto; dentro de cada grupo, por ID.
+pub fn deep_siblings(data: &GameData, item_id: ItemId) -> Vec<ItemId> {
+    let Some(cur) = data.relic_types.get(&item_id) else {
+        return Vec::new();
+    };
+    let RelicKind::Random { deep: true, size } = relic_kind(data, item_id) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<ItemId> = data
+        .relic_types
+        .values()
+        .filter(|t| {
+            t.id != item_id
+                && t.is_deep
+                && t.color == cur.color
+                && t.icon_id == cur.icon_id
+                && t.sort_group == cur.sort_group
+                && !t.is_unique()
+                && relic_kind(data, t.id) == RelicKind::Random { deep: true, size }
+        })
+        .map(|t| t.id)
+        .collect();
+    ids.sort_by_key(|&id| (id / 10_000 != item_id / 10_000, id));
+    ids
 }
 
 /// La versión nueva de un tipo de reliquia, si la hay: el tipo `item_id + 100`, aleatorio, con el
@@ -542,7 +602,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(plan.upgraded_from, Some(3));
+        assert_eq!(plan.type_change, Some(TypeChange::NewerVersion { from: 3 }));
         assert_eq!(plan.new_target.item_id, 103);
         assert_eq!(validate(&data, &plan.new_target), Ok(()));
     }
@@ -659,9 +719,22 @@ mod tests {
         assert_eq!(plan.new_target.slots[0], Slot::new(21, Some(31)));
         assert_eq!(plan.murk_cost, 8_000);
 
-        // Potenciado sobre el slot normal: quedarían 2 potenciados y el tipo tiene 1 solo.
+        assert_eq!(plan.type_change, None);
+
+        // Potenciado sobre el slot normal: quedan 2 potenciados y el tipo tiene 1 solo. La
+        // receptora pasa al tipo hermano con los 2 slots potenciados (el 4).
         let mut req = base.clone();
         req.target_slot = 1;
+        let plan = plan_transfer(&data, &Rules::default(), &req).unwrap();
+        assert_eq!(plan.type_change, Some(TypeChange::CurseSlots { from: 2 }));
+        assert_eq!(plan.new_target.item_id, 4);
+        assert_eq!(validate(&data, &plan.new_target), Ok(()));
+
+        // Sin maldición sobre el potenciado: harían falta 2 slots normales. El tipo 5 los tiene,
+        // pero es de otro color (se vería distinto): no se usa.
+        let mut req = base.clone();
+        req.donor_slot = 1; // 23, sin maldición
+        assert_eq!(deep_siblings(&data, 2), vec![4]);
         assert_eq!(
             plan_transfer(&data, &Rules::default(), &req).unwrap_err(),
             TransferError::ResultInvalid(Violation::NoValidAssignment)

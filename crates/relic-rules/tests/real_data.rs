@@ -276,6 +276,51 @@ fn deep_aleatorias_no_son_unicas() {
     assert!(data.relic_types[&1_005_011].is_unique());
 }
 
+/// Deep con otra mezcla de espacios con y sin maldición: el tipo hermano se ve igual y es del mismo
+/// bloque de IDs. Los casos de la prueba en el juego del 2026-11-06.
+#[test]
+fn deep_cambia_al_tipo_hermano() {
+    let Some((data, _)) = load() else { return };
+    // Physical Attack Up +3 y Fire Damage Negation +1 (potenciados, con maldición) y Poison
+    // Resistance +1 (sin maldición).
+    let (atk, fire, poison) = (6_001_400, 6_002_700, 6_003_000);
+    let (c1, c2) = (6_820_000, 6_820_100);
+    for (both_cursed, mixed, all_plain) in [
+        (2_001_001, 2_000_001, 2_003_001), // bloque 200 (tabla 2100000)
+        (2_011_001, 2_010_001, 2_013_001), // bloque 201 (tabla 2200000)
+    ] {
+        let siblings = deep_siblings(&data, both_cursed);
+        assert!(siblings.contains(&mixed) && siblings.contains(&all_plain));
+        let t = &data.relic_types;
+        for s in &siblings {
+            assert_eq!(
+                (&t[s].name, t[s].color, t[s].icon_id),
+                (&t[&both_cursed].name, t[&both_cursed].color, t[&both_cursed].icon_id)
+            );
+        }
+
+        // Maldito + maldito, y el segundo pasa a ser uno sin maldición: tipo mezclado.
+        let mut relic = Relic::new(
+            both_cursed,
+            [Slot::new(atk, Some(c1)), Slot::new(fire, Some(c2)), Slot::EMPTY],
+        );
+        normalize(&data, &mut relic);
+        assert_eq!(validate(&data, &relic), Ok(()));
+        let mut result = relic.clone();
+        let i = result.slots.iter().position(|s| s.effect == Some(fire)).unwrap();
+        result.slots[i] = Slot::new(poison, None);
+        normalize(&data, &mut result);
+        assert!(validate(&data, &result).is_err());
+        let found = siblings.iter().find(|&&id| {
+            let mut r = result.clone();
+            r.item_id = id;
+            normalize(&data, &mut r);
+            validate(&data, &r).is_ok()
+        });
+        assert_eq!(found, Some(&mixed), "desde {both_cursed}");
+    }
+}
+
 #[test]
 fn transferencias_entre_reliquias_reales() {
     let Some((data, relics)) = load() else { return };

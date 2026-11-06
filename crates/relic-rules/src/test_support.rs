@@ -2,6 +2,8 @@
 //!
 //! - Tipo 1: normal grande, 3 slots con la tabla 100.
 //! - Tipo 2: Deep mediana, slot 1 potenciado (tabla 200 + maldición 300), slot 2 normal (tabla 210).
+//! - Tipo 4: como el 2 (mismo color e ícono), pero los 2 slots potenciados: su tipo hermano.
+//! - Tipo 5: Deep mediana con los 2 slots normales, pero de otro color (no es hermano del 2).
 //! - Tipo 3: normal chica, 1 slot con la tabla 110.
 //! - Tipo 9: fija, 1 slot con la tabla 900, que tiene un solo efecto.
 //!
@@ -75,7 +77,15 @@ pub fn sample_data() -> GameData {
     ] {
         data.relic_types.insert(rt.id, rt);
     }
+    let mut both_cursed = relic(4, true, [200, 200, -1], [300, 300, -1]);
+    let mut other_color = relic(5, true, [210, 210, -1], [-1, -1, -1]);
+    other_color.color = 1;
     // Las Deep aleatorias del juego llevan todas el grupo 251.
+    for rt in [&mut both_cursed, &mut other_color] {
+        rt.sort_group = 251;
+    }
+    data.relic_types.insert(4, both_cursed);
+    data.relic_types.insert(5, other_color);
     data.relic_types.get_mut(&2).unwrap().sort_group = 251;
     // Como el 3, pero del Small Jar Bazaar (única).
     let mut unique = relic(1_005_000, false, [110, -1, -1], [-1, -1, -1]);

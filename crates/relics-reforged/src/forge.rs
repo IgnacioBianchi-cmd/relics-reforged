@@ -22,7 +22,9 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use relic_rules::lang::{self, tr, Lang};
-use relic_rules::{plan_transfer, EffectId, GameData, Relic, Rules, TransferRequest};
+use relic_rules::{
+    plan_transfer, EffectId, GameData, Relic, Rules, TransferRequest, TypeChange,
+};
 
 use crate::game::{Game, LiveRelic};
 use crate::mainthread;
@@ -293,15 +295,22 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     ))?;
     let (effects, curses) = plan.new_target.to_raw();
     let new_murk = murk - plan.murk_cost;
-    // Si la receptora pasa a la versión nueva de su tipo, se avisa y se escribe el tipo nuevo.
-    let upgrade = plan.upgraded_from.map(|_| plan.new_target.item_id);
-    let upgrade_note = match plan.upgraded_from {
-        Some(old) => format!(
-            "\n{} ({old} -> {})",
-            tr(
-                "La reliquia pasa a su versión nueva (las tablas actuales, con los efectos de los personajes nuevos).",
-                "The relic is updated to its newer version (the current tables, with the newer characters' effects).",
-            ),
+    // Si la receptora cambia de tipo interno (se ve igual), se avisa y se escribe el tipo nuevo.
+    let upgrade = plan.type_change.map(|_| plan.new_target.item_id);
+    let upgrade_note = match plan.type_change {
+        Some(change) => format!(
+            "\n{} ({} -> {})",
+            match change {
+                TypeChange::NewerVersion { .. } => tr(
+                    "La reliquia pasa a su versión nueva (las tablas actuales, con los efectos de los personajes nuevos).",
+                    "The relic is updated to its newer version (the current tables, with the newer characters' effects).",
+                ),
+                TypeChange::CurseSlots { .. } => tr(
+                    "La reliquia cambia de tipo interno para admitir esta mezcla de efectos con y sin maldición (se ve igual).",
+                    "The relic changes its internal type to allow this mix of cursed and uncursed effects (it looks the same).",
+                ),
+            },
+            change.from(),
             plan.new_target.item_id
         ),
         None => String::new(),
