@@ -12,10 +12,12 @@
 //! No pide un guardado: como todo cambia en un mismo frame, el próximo guardado del juego toma
 //! la forja completa o nada de ella.
 //!
-//! Las marcas de "forjada" se guardan en `relics_reforged_forjas.txt`, junto a la DLL, indexadas
-//! por el número de orden de la entrada de inventario (estable entre sesiones).
+//! Las marcas de "forjada" se guardan en `relics_reforged_forjas.txt`, junto a la DLL. Cada una
+//! lleva el número de orden de la entrada de inventario (estable entre sesiones) y la firma de
+//! cómo quedó la reliquia (tipo, efectos y maldiciones): así, con varios saves (el normal y el de
+//! Seamless, por ejemplo) cada uno ve solo las marcas de sus propias reliquias.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 
 use relic_rules::lang::{self, tr, Lang};
@@ -26,55 +28,116 @@ use crate::mainthread;
 
 pub const FORGED_FILE: &str = "relics_reforged_forjas.txt";
 
-/// Por número de orden de la reliquia: (efectos forjados, cantidad de forjas).
-pub struct ForgedRegistry(BTreeMap<u32, (Vec<EffectId>, usize)>);
+/// Firma de una reliquia tal como está: tipo, efectos y maldiciones (FNV-1a de 64 bits).
+pub fn signature(item_id: u32, effects: &[u32; 4], curses: &[u32; 4]) -> u64 {
+    std::iter::once(item_id)
+        .chain(effects.iter().copied())
+        .chain(curses.iter().copied())
+        .flat_map(u32::to_le_bytes)
+        .fold(0xCBF2_9CE4_8422_2325u64, |h, b| {
+            (h ^ b as u64).wrapping_mul(0x100_0000_01B3)
+        })
+}
+
+/// Una reliquia forjada.
+struct Entry {
+    /// Número de orden de su entrada de inventario.
+    order: u32,
+    /// Firma de cómo quedó después de la última forja. `None` en las líneas viejas (sin firma):
+    /// valen para cualquier save hasta que esa reliquia se vuelva a forjar.
+    sig: Option<u64>,
+    effects: Vec<EffectId>,
+    count: usize,
+}
+
+/// Las reliquias forjadas, de todos los saves.
+pub struct ForgedRegistry(Vec<Entry>);
 
 impl ForgedRegistry {
+    /// Formato de cada línea: `orden(hex) @firma(hex) efectos... #forjas`. Las líneas viejas no
+    /// tienen firma ni cantidad (se cuenta una forja por efecto).
     pub fn load(dir: &Path) -> ForgedRegistry {
-        let mut map = BTreeMap::new();
+        let mut entries = Vec::new();
         if let Ok(text) = std::fs::read_to_string(dir.join(FORGED_FILE)) {
             for line in text.lines() {
                 let mut parts = line.split_whitespace();
-                let Some(Ok(key)) = parts.next().map(|k| u32::from_str_radix(k, 16)) else {
+                let Some(Ok(order)) = parts.next().map(|k| u32::from_str_radix(k, 16)) else {
                     continue;
                 };
-                // "#N" = cantidad de forjas; las líneas viejas no la tienen y se cuentan por
-                // sus efectos.
-                let mut count = None;
+                let (mut sig, mut count) = (None, None);
                 let mut effects: Vec<EffectId> = Vec::new();
                 for part in parts {
-                    match part.strip_prefix('#') {
-                        Some(n) => count = n.parse().ok(),
-                        None => effects.extend(part.parse::<EffectId>().ok()),
+                    if let Some(s) = part.strip_prefix('@') {
+                        sig = u64::from_str_radix(s, 16).ok();
+                    } else if let Some(n) = part.strip_prefix('#') {
+                        count = n.parse().ok();
+                    } else {
+                        effects.extend(part.parse::<EffectId>().ok());
                     }
                 }
                 let count = count.unwrap_or(effects.len());
-                map.insert(key, (effects, count));
+                entries.push(Entry {
+                    order,
+                    sig,
+                    effects,
+                    count,
+                });
             }
         }
-        ForgedRegistry(map)
+        ForgedRegistry(entries)
     }
 
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
-        let mut text =
-            String::from("# orden_de_inventario(hex) efectos_forjados... #cantidad_de_forjas\n");
-        for (key, (effects, count)) in &self.0 {
-            if effects.is_empty() && *count == 0 {
-                continue;
-            }
-            let list: Vec<String> = effects.iter().map(|e| e.to_string()).collect();
-            text.push_str(&format!("{key:X} {} #{count}\n", list.join(" ")));
+        let mut text = String::from(
+            "# orden_de_inventario(hex) @firma(hex) efectos_forjados... #cantidad_de_forjas\n",
+        );
+        for e in &self.0 {
+            let list: Vec<String> = e.effects.iter().map(|x| x.to_string()).collect();
+            let sig = e.sig.map_or(String::new(), |s| format!(" @{s:X}"));
+            text.push_str(&format!(
+                "{:X}{sig} {} #{}\n",
+                e.order,
+                list.join(" "),
+                e.count
+            ));
         }
         std::fs::write(dir.join(FORGED_FILE), text)
     }
 
-    pub fn get(&self, key: u32) -> &[EffectId] {
-        self.0.get(&key).map_or(&[], |v| v.0.as_slice())
+    /// La marca de la reliquia con ese orden y esa firma (o una vieja sin firma).
+    fn find(&self, order: u32, sig: u64) -> Option<&Entry> {
+        let mine = self
+            .0
+            .iter()
+            .find(|e| e.order == order && e.sig == Some(sig));
+        mine.or_else(|| self.0.iter().find(|e| e.order == order && e.sig.is_none()))
+    }
+
+    /// Efectos forjados de la reliquia.
+    pub fn get(&self, order: u32, sig: u64) -> &[EffectId] {
+        self.find(order, sig).map_or(&[], |e| e.effects.as_slice())
     }
 
     /// Cuántas veces se forjó la reliquia.
-    pub fn count(&self, key: u32) -> usize {
-        self.0.get(&key).map_or(0, |v| v.1)
+    pub fn count(&self, order: u32, sig: u64) -> usize {
+        self.find(order, sig).map_or(0, |e| e.count)
+    }
+
+    /// Saca la marca de la reliquia con ese orden y esa firma (y la vieja sin firma, si hay).
+    fn forget(&mut self, order: u32, sig: u64) {
+        self.0
+            .retain(|e| !(e.order == order && (e.sig == Some(sig) || e.sig.is_none())));
+    }
+
+    /// Anota una forja: la reliquia pasó de la firma `old` a la `new`.
+    fn record(&mut self, order: u32, old: u64, new: u64, effects: Vec<EffectId>, count: usize) {
+        self.forget(order, old);
+        self.0.push(Entry {
+            order,
+            sig: Some(new),
+            effects,
+            count,
+        });
     }
 }
 
@@ -181,6 +244,8 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
         .ok_or(tr("no puedo leer el murk", "can't read the murk"))?;
     let mut registry = ForgedRegistry::load(dll_dir);
     let target_order = snaps[1].order;
+    let sig_of = |s: &Snapshot| signature(s.live.item_id, &s.live.effects, &s.live.curses);
+    let target_sig = sig_of(&snaps[1]);
 
     let sacrifice_refs: Vec<&Relic> = relics[2..].iter().collect();
     let plan = plan_transfer(
@@ -191,8 +256,8 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
             donor_slot: donor_slot - 1,
             target: &relics[1],
             target_slot: target_slot - 1,
-            target_forged: registry.get(target_order),
-            target_forge_count: registry.count(target_order),
+            target_forged: registry.get(target_order, target_sig),
+            target_forge_count: registry.count(target_order, target_sig),
             sacrifices: &sacrifice_refs,
             available_murk: murk,
         },
@@ -359,12 +424,16 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     )?;
     applied?;
 
-    registry.0.insert(
+    let new_sig = signature(plan.new_target.item_id, &effects, &curses);
+    registry.record(
         target_order,
-        (plan.new_target_forged.clone(), plan.new_target_forge_count),
+        target_sig,
+        new_sig,
+        plan.new_target_forged.clone(),
+        plan.new_target_forge_count,
     );
     for s in snaps.iter().filter(|s| s.handle != target) {
-        registry.0.remove(&s.order);
+        registry.forget(s.order, sig_of(s));
     }
     let registry_note = match registry.save(dll_dir) {
         Ok(()) => String::new(),
@@ -387,4 +456,54 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
              (cost {cost}). Forges: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}"
         ),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EMPTY: [u32; 4] = [u32::MAX; 4];
+
+    fn sig(effects: [u32; 4]) -> u64 {
+        signature(123, &effects, &EMPTY)
+    }
+
+    #[test]
+    fn cada_save_ve_sus_marcas() {
+        let mut reg = ForgedRegistry(Vec::new());
+        let original = sig([1, 2, 3, u32::MAX]);
+        // Save A: la reliquia del orden 7 se forja y queda con el efecto 9.
+        let a = sig([9, 2, 3, u32::MAX]);
+        reg.record(7, original, a, vec![9], 1);
+        // Save B (copia de antes de la forja): la misma reliquia sigue como era.
+        assert_eq!(reg.count(7, original), 0);
+        assert_eq!(reg.count(7, a), 1);
+        // En B se forja distinto: A conserva su marca.
+        let b = sig([1, 8, 3, u32::MAX]);
+        reg.record(7, original, b, vec![8], 1);
+        assert_eq!(reg.get(7, a), &[9]);
+        assert_eq!(reg.get(7, b), &[8]);
+        // Reforjar en A suma sobre la marca de A.
+        let a2 = sig([9, 5, 3, u32::MAX]);
+        reg.record(7, a, a2, vec![5, 9], 2);
+        assert_eq!(reg.count(7, a2), 2);
+        assert_eq!(reg.count(7, a), 0);
+        assert_eq!(reg.count(7, b), 1);
+    }
+
+    #[test]
+    fn lineas_viejas_sin_firma() {
+        let mut reg = ForgedRegistry(vec![Entry {
+            order: 3,
+            sig: None,
+            effects: vec![4],
+            count: 1,
+        }]);
+        // Valen para cualquier firma hasta que la reliquia se vuelve a forjar.
+        assert_eq!(reg.count(3, sig([4, 0, 0, 0])), 1);
+        let new = sig([4, 6, 0, 0]);
+        reg.record(3, sig([4, 0, 0, 0]), new, vec![4, 6], 2);
+        assert_eq!(reg.0.len(), 1);
+        assert_eq!(reg.count(3, new), 2);
+    }
 }

@@ -2329,8 +2329,12 @@ fn load(
                 .iter()
                 .filter_map(|s| Some(effect_text(data, s.effect?, s.curse)))
                 .collect();
-            let forged_ids = order.get(&r.handle).map_or(&[][..], |o| registry.get(*o));
-            let forge_count = order.get(&r.handle).map_or(0, |o| registry.count(*o));
+            // Las marcas de forja valen solo si la reliquia sigue como quedó (ver `forge`).
+            let sig = forge::signature(r.item_id, &r.effects, &r.curses);
+            let forged_ids = order
+                .get(&r.handle)
+                .map_or(&[][..], |o| registry.get(*o, sig));
+            let forge_count = order.get(&r.handle).map_or(0, |o| registry.count(*o, sig));
             let forged = relic
                 .slots
                 .iter()
