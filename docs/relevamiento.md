@@ -274,6 +274,14 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - Para no tocar ningún save real, la prueba usa una copia de Seamless (`herramientas/seamless-test`, fuera de git) con `save_file_extension = rrtest`. Seamless **no usa** el `savefile` de me3: guarda en `NR0000.<extensión>` (acá `NR0000.rrtest`, armado copiando el save de prueba). La copia de la carpeta del juego queda con `co2` para jugar normal con `nrsc_launcher.exe`.
 - Registro de forjas con varios saves: `relics_reforged_forjas.txt` está junto a la DLL (uno solo para todos los saves). Cada línea lleva el número de orden de inventario y la **firma** de cómo quedó la reliquia (tipo, efectos y maldiciones; `@hex`): una marca solo vale si la reliquia de ese save coincide, así el save normal y el de Seamless no se mezclan. Las líneas viejas, sin firma, valen solo para la reliquia que todavía tiene todos sus efectos forjados (antes valían para cualquier save, y una reliquia forjada en Seamless aparecía "forjada" en el save normal sin ningún efecto forjado); se reemplazan por una con firma cuando esa reliquia se vuelve a forjar.
 
+### Con More Map Variations ✔ (2026-11-09)
+
+- Probado More Map Variations 2.1.8-hotfix3 (con su `regulation.bin` y `custom_drop_fxrs.dll`, sin su Server Redirector ni conexión) + la DLL en un solo perfil de me3 (`target/mmv-test`, fuera de git), save aparte `NR_RelicsReforged_MMV.sl2`.
+- **me3 también redirige las lecturas del mod:** el `std::fs::read` del `regulation.bin` junto a `nightreign.exe` devuelve el del paquete de MMV. Así que `GameData` ya sale de las reglas que cargó el juego (2180 efectos, 1418 tipos de reliquia, 1153 tablas, contra 2079 / 1397 / 1079 del original) sin hacer nada aparte.
+- Se probó copiar los PARAM de reliquias de la memoria del juego (buscando el nombre del tipo y la cabecera que apunta a él): dan lo mismo que el archivo, pero recorrer ~9 GB de memoria tardaba ~22 s. Se descartó.
+- MMV agrega 101 efectos, 21 tipos de reliquia (136 y Deep fijas) y 74 tablas; a los pools aleatorios normales (110/210/310) les suma el `7370901` ("Changes compatible armament's incantation to Lightning Stake at start of expedition"). Se forjó ese efecto de una reliquia a otra: la vista previa lo aceptó, el inventario quedó con 0 ilegales.
+- Para jugar los dos juntos: agregar la DLL como `[[natives]]` al perfil de MMV (me3 corre un perfil por vez).
+
 ### Sonidos de menú del juego ✔ (2026-11-05)
 
 - Audio con **Wwise** (clases `MoWwiseManImp`, `CSSoundImp`, `CSFD4SystemSoundIns`; vtable de esta última en `nr+2CB61E8`, constructor `nr+EE7A90`).
