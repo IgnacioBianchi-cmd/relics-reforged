@@ -38,6 +38,16 @@ SAVES
   game and copy it back to %APPDATA%\Nightreign\<your Steam ID>\ with the original name.
 - me3 keeps the game offline. Do not use this mod online.
 
+OTHER MODS (MORE MAP VARIATIONS AND SIMILAR)
+The forge uses the relic rules the game loaded, so mods that change relics through their own
+regulation.bin work: the effects they add to the random pools can be forged too. me3 runs one
+profile at a time, so to play both, copy relics_reforged.dll next to the other mod's .me3 file
+and add these lines at the end of that .me3:
+    [[natives]]
+    path = 'relics_reforged.dll'
+The mod then works on whatever save that profile uses. Tested offline with "More Map Variations
+and Weapons Mod Merge" 2.1.8.3; it hasn't been tested on that mod's own online server.
+
 FILES
 - %APPDATA%\RelicsReforged\relics_reforged_forjas.txt: which relics were forged (each relic has
   a forge limit). It stays there when you update or delete the mod.
@@ -91,6 +101,16 @@ SAVES
   a %APPDATA%\RelicsReforged\backups (guarda las últimas 10). Para restaurar una, cerrá el juego
   y copiala a %APPDATA%\Nightreign\<tu ID de Steam>\ con el nombre original.
 - me3 mantiene el juego sin conexión. No uses este mod online.
+
+OTROS MODS (MORE MAP VARIATIONS Y PARECIDOS)
+La forja usa las reglas de reliquias que cargó el juego, así que funciona con mods que cambian
+las reliquias con su propio regulation.bin: los efectos que agregan a los pools aleatorios
+también se pueden forjar. me3 corre un perfil por vez; para jugar con los dos, copiá
+relics_reforged.dll junto al .me3 del otro mod y agregá al final de ese .me3:
+    [[natives]]
+    path = 'relics_reforged.dll'
+El mod trabaja entonces sobre el save que use ese perfil. Probado sin conexión con "More Map
+Variations and Weapons Mod Merge" 2.1.8.3; no se probó en el servidor online propio de ese mod.
 
 ARCHIVOS
 - %APPDATA%\RelicsReforged\relics_reforged_forjas.txt: qué reliquias se forjaron (cada reliquia

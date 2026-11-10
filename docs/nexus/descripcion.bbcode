@@ -57,6 +57,12 @@ Only players who want to forge need the mod.
 [*]me3 keeps the game offline. [b]Do not use this mod online.[/b]
 [/list]
 
+[size=4][b]Other mods (More Map Variations and similar)[/b][/size]
+The forge uses the relic rules the game loaded, so mods that change relics through their own regulation.bin work: the effects they add to the random pools can be forged too. me3 runs one profile at a time, so to play both, copy [b]relics_reforged.dll[/b] next to the other mod's .me3 file and add these lines at the end of that .me3:
+[code][[natives]]
+path = 'relics_reforged.dll'[/code]
+The mod then works on whatever save that profile uses. Tested offline with More Map Variations and Weapons Mod Merge 2.1.8.3; it hasn't been tested on that mod's own online server.
+
 [size=4][b]Languages[/b][/size]
 The forge follows the game's language: Spanish if the game is in Spanish, English otherwise. Relic and effect names always come from the game itself, in your language.
 
@@ -119,6 +125,12 @@ Elden Ring Nightreign 1.3.3 (en otra versión el mod se apaga y avisa), [url=htt
 
 [b]Saves[/b]
 Sin conexión, el mod usa una copia de tu save (NR0000_RelicsReforged.sl2); con Seamless, el save de Seamless. Tu save normal no se toca. Antes de la primera forja de cada sesión se guarda una copia en %APPDATA%\RelicsReforged\backups. No uses este mod online.
+
+[b]Otros mods (More Map Variations y parecidos)[/b]
+La forja usa las reglas de reliquias que cargó el juego, así que funciona con mods que cambian las reliquias con su propio regulation.bin. me3 corre un perfil por vez: para jugar con los dos, copiá [b]relics_reforged.dll[/b] junto al .me3 del otro mod y agregá al final de ese .me3:
+[code][[natives]]
+path = 'relics_reforged.dll'[/code]
+El mod trabaja entonces sobre el save que use ese perfil. Probado sin conexión con More Map Variations and Weapons Mod Merge 2.1.8.3; no se probó en el servidor online propio de ese mod.
 
 [b]Idioma[/b]
 El menú está en español si el juego está en español; si no, en inglés. Los nombres de reliquias y efectos salen del propio juego.
