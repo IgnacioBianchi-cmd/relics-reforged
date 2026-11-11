@@ -120,8 +120,6 @@ impl fmt::Display for Role {
 pub enum TransferError {
     /// La reliquia no es aleatoria (fija o desconocida).
     NotEligible(Role),
-    /// Reliquia única del Small Jar Bazaar (no se puede vender).
-    Unique(Role),
     Locked(Role),
     /// La misma reliquia aparece dos veces en el pedido.
     SameRelicTwice(Role, Role),
@@ -158,14 +156,6 @@ impl fmt::Display for TransferError {
                 write!(f, "{r} tiene efectos fijos y no se puede usar")
             }
             TransferError::NotEligible(r) => write!(f, "{r} has fixed effects and can't be used"),
-            TransferError::Unique(r) if es => write!(
-                f,
-                "{r} es única (del Small Jar Bazaar, no se puede vender) y no se puede usar"
-            ),
-            TransferError::Unique(r) => write!(
-                f,
-                "{r} is unique (from the Small Jar Bazaar, it can't be sold) and can't be used"
-            ),
             TransferError::Locked(r) if es => write!(f, "{r} es favorita o está equipada"),
             TransferError::Locked(r) => write!(f, "{r} is a favorite or is equipped"),
             TransferError::SameRelicTwice(a, b) if es => {
@@ -411,7 +401,6 @@ pub fn deep_siblings(data: &GameData, item_id: ItemId) -> Vec<ItemId> {
                 && t.color == cur.color
                 && t.icon_id == cur.icon_id
                 && t.sort_group == cur.sort_group
-                && !t.is_unique()
                 && relic_kind(data, t.id) == RelicKind::Random { deep: true, size }
         })
         .map(|t| t.id)
@@ -457,14 +446,6 @@ pub fn newer_twin(data: &GameData, item_id: ItemId) -> Option<ItemId> {
 
 fn random_kind(data: &GameData, relic: &Relic, role: Role) -> Result<(bool, usize), TransferError> {
     match relic_kind(data, relic.item_id) {
-        RelicKind::Random { .. }
-            if data
-                .relic_types
-                .get(&relic.item_id)
-                .is_some_and(|t| t.is_unique()) =>
-        {
-            Err(TransferError::Unique(role))
-        }
         RelicKind::Random { deep, size } => Ok((deep, size)),
         _ => Err(TransferError::NotEligible(role)),
     }
@@ -532,10 +513,12 @@ mod tests {
         assert_eq!(validate(&data, &plan.new_target), Ok(()));
     }
 
+    /// Los tipos del grupo 250 (`100xxxx`) salen de los drops de las expediciones y se venden
+    /// como cualquier otra (probado en el juego el 2026-11-11): la forja los usa.
     #[test]
-    fn reliquias_unicas_no_se_usan() {
+    fn reliquias_del_grupo_250_se_usan() {
         let data = sample_data();
-        let unique = Relic::new(1_005_000, [Slot::new(14, None), Slot::EMPTY, Slot::EMPTY]);
+        let expedition = Relic::new(1_005_000, [Slot::new(14, None), Slot::EMPTY, Slot::EMPTY]);
         let normal = Relic::new(3, [Slot::new(10, None), Slot::EMPTY, Slot::EMPTY]);
         let others = [small(11), small(12), small(14)];
         let refs: Vec<&Relic> = others.iter().collect();
@@ -558,20 +541,10 @@ mod tests {
         };
         // Común con común: anda.
         assert!(req(&others[2], &normal, &[&others[0], &others[1], &small(12)]).is_ok());
-        // Las Deep (grupo 251) no son únicas.
-        assert!(!data.relic_types[&2].is_unique());
-        assert_eq!(
-            req(&normal, &unique, &refs).unwrap_err(),
-            TransferError::Unique(Role::Target)
-        );
-        assert_eq!(
-            req(&unique, &normal, &refs).unwrap_err(),
-            TransferError::Unique(Role::Donor)
-        );
-        assert_eq!(
-            req(&others[2], &normal, &[&others[0], &unique, &others[1]]).unwrap_err(),
-            TransferError::Unique(Role::Sacrifice(1))
-        );
+        // Como receptora, donante y sacrificio.
+        assert!(req(&normal, &expedition, &refs).is_ok());
+        assert!(req(&expedition, &normal, &refs).is_ok());
+        assert!(req(&others[2], &normal, &[&others[0], &expedition, &others[1]]).is_ok());
     }
 
     #[test]

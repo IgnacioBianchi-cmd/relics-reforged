@@ -260,20 +260,21 @@ fn lista_de_sp_effects_coincide_con_el_juego() {
     }
 }
 
-/// Las Deep aleatorias se pueden forjar: ninguna cuenta como única del Bazaar (todas llevan el
-/// grupo 251, que no distingue nada). Las normales del grupo 250 sí son únicas.
+/// Los tipos normales del grupo 250 (`100xxxx`) son aleatorios y se forjan: salen de los drops de
+/// las expediciones (`ItemLotParam_map` y `_enemy`) y el juego los deja vender (probado el
+/// 2026-11-11). Antes se los tomaba por "únicos del Bazaar" y quedaban fuera de la forja.
 #[test]
-fn deep_aleatorias_no_son_unicas() {
+fn reliquias_del_grupo_250_son_aleatorias() {
     let Some((data, _)) = load() else { return };
-    let mut deep = 0;
-    for t in data.relic_types.values() {
-        if t.is_deep && relic_kind(&data, t.id).is_random() {
-            deep += 1;
-            assert!(!t.is_unique(), "{} ({}) figura como única", t.name, t.id);
-        }
+    let group_250: Vec<_> = data
+        .relic_types
+        .values()
+        .filter(|t| !t.is_deep && t.sort_group == 250 && (1_000_000..2_000_000).contains(&t.id))
+        .collect();
+    assert!(group_250.len() > 300, "tipos 100xxxx: {}", group_250.len());
+    for t in group_250 {
+        assert!(relic_kind(&data, t.id).is_random(), "{} ({}) no es aleatoria", t.name, t.id);
     }
-    assert!(deep > 200, "Deep aleatorias: {deep}");
-    assert!(data.relic_types[&1_005_011].is_unique());
 }
 
 /// Deep con otra mezcla de espacios con y sin maldición: el tipo hermano se ve igual y es del mismo
@@ -333,7 +334,6 @@ fn transferencias_entre_reliquias_reales() {
                     deep: false,
                     size: 3,
                 }
-                && !data.relic_types[&r.item_id].is_unique()
         })
         .collect();
     assert!(grands.len() >= 5, "hacen falta al menos 5 grandes normales");

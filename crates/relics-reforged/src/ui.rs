@@ -233,8 +233,6 @@ struct RelicView {
     forge_count: usize,
     /// Por qué no se puede donar ni sacrificar (favorita, equipada, preset, recipiente).
     locked: Option<String>,
-    /// Única del Small Jar Bazaar: no se vende, así que no se usa en la forja.
-    unique: bool,
     /// Orden en que se encontró (el del inventario del juego); `u32::MAX` si no se sabe.
     order: u32,
     favorite: bool,
@@ -1400,7 +1398,7 @@ impl Menu {
             let usable = |h: &u32| {
                 by_handle
                     .get(h)
-                    .is_some_and(|r| r.locked.is_none() && !r.unique)
+                    .is_some_and(|r| r.locked.is_none())
             };
             if self.target.is_some_and(|h| !by_handle.contains_key(&h)) {
                 self.reset_selection();
@@ -1742,10 +1740,10 @@ impl Menu {
             self.sort.sort(&mut list);
             if let Some(h) = self.relic_list(ui, "receptoras", &list, &HashSet::new(), true, false)
             {
-                // Una reliquia que ya llegó al límite de forjas, o única, no puede ser receptora.
+                // Una reliquia que ya llegó al límite de forjas no puede ser receptora.
                 if relics
                     .iter()
-                    .any(|r| r.handle == h && (r.at_forge_limit() || r.unique))
+                    .any(|r| r.handle == h && r.at_forge_limit())
                 {
                     crate::sound::error();
                 } else {
@@ -1771,7 +1769,6 @@ impl Menu {
                         && r.deep == t.deep
                         && r.handle != t.handle
                         && r.locked.is_none()
-                        && !r.unique
                         && self.matches_filter(r)
                 })
                 .collect();
@@ -1799,7 +1796,6 @@ impl Menu {
                     && r.handle != t.handle
                     && r.handle != donor
                     && r.locked.is_none()
-                    && !r.unique
                     && (chosen.contains(&r.handle) || self.matches_filter(r))
             })
             .collect();
@@ -2435,18 +2431,7 @@ impl Menu {
                     tag_x += ui.calc_text_size(&tag)[0] + 10.0;
                 }
                 if show_locks {
-                    // En la lista de receptoras: si es única o ya llegó al límite de forjas.
-                    if r.unique {
-                        let tag = format!(
-                            "[{}]",
-                            tr(
-                                "única: no se vende ni se forja",
-                                "unique: can't be sold or forged"
-                            )
-                        );
-                        draw.add_text([tag_x, y], RED, &tag);
-                        tag_x += ui.calc_text_size(&tag)[0] + 10.0;
-                    }
+                    // En la lista de receptoras: si ya llegó al límite de forjas.
                     if r.at_forge_limit() {
                         let tag = format!("[{}]", tr("límite de forjas", "forge limit reached"));
                         draw.add_text([tag_x, y], RED, &tag);
@@ -2888,7 +2873,6 @@ fn load(
                 effect_icons,
                 families,
                 locked: locks.get(&r.handle).map(|p| p.join(", ")),
-                unique: kind.is_some_and(|t| t.is_unique()),
                 order: order.get(&r.handle).copied().unwrap_or(u32::MAX),
                 favorite: favorites.contains(&r.handle),
             }

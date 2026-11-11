@@ -87,10 +87,10 @@ pub fn sample_data() -> GameData {
     data.relic_types.insert(4, both_cursed);
     data.relic_types.insert(5, other_color);
     data.relic_types.get_mut(&2).unwrap().sort_group = 251;
-    // Como el 3, pero del Small Jar Bazaar (única).
-    let mut unique = relic(1_005_000, false, [110, -1, -1], [-1, -1, -1]);
-    unique.sort_group = 250;
-    data.relic_types.insert(unique.id, unique);
+    // Como el 3, pero del grupo 250 (los tipos `100xxxx`, que salen en las expediciones).
+    let mut expedition = relic(1_005_000, false, [110, -1, -1], [-1, -1, -1]);
+    expedition.sort_group = 250;
+    data.relic_types.insert(expedition.id, expedition);
 
     data
 }

@@ -34,7 +34,7 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Teclado y mouse del juego bloqueados con la forja abierta (DirectInput) | ✔ probado en el juego |
 | Mouse del juego bloqueado (DirectInput del mouse y cursor por user32) | ✔ probado en el juego |
 | Forja con teclado y mando (cursor propio; mando por Steam Input, XInput, DirectInput o HID, bloqueado para el juego con la forja abierta) | ✔ probado con teclado y con un mando de PlayStation por Steam Input |
-| Reliquias únicas del Small Jar Bazaar fuera de la forja | ✔ probado en el juego |
+| Reliquias de expediciones (tipos `100xxxx`, grupo 250) dentro de la forja | ✔ se venden en el juego (2026-11-11); la forja las acepta (tests) |
 | Sonidos de menú del propio juego (cursor, confirmar, cancelar, abrir y cerrar) | ✔ probado en el juego |
 | Búsqueda, filtro como el del juego (color, tamaño, tipo, favoritas) y orden | ✔ probado, con filtro por efecto (hasta 3 condiciones, categorías del juego) |
 | Params desde `regulation.bin` y nombres desde los textos del juego (sin CSV) | ✔ probado en el juego |

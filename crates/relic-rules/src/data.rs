@@ -58,18 +58,6 @@ pub struct RelicType {
     pub icon_id: i32,
 }
 
-impl RelicType {
-    /// Reliquia única del Small Jar Bazaar: no se puede vender, así que tampoco se usa en la forja
-    /// (el juego nunca prevé que desaparezca o cambie).
-    ///
-    /// Solo el grupo 250 (normales). El 251 lo comparten las 216 Deep aleatorias del juego
-    /// (`200xxxx` y `201xxxx`), así que no distingue nada: tomarlo como "única" dejaba todas las
-    /// Deep fuera de la forja.
-    pub fn is_unique(&self) -> bool {
-        self.sort_group == 250
-    }
-}
-
 /// Una categoría del filtro por efecto (`AttachEffectFilterCategoryParam`): "General",
 /// "Character-specific", "Armament-specific"...
 #[derive(Debug, Clone, PartialEq, Eq)]

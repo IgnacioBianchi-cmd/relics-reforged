@@ -342,8 +342,8 @@ Archivos: `data/ce/sesion1.scandata`, `data/ce/murk_comparado.PTR`.
 3. **Normales aleatorias:** los 3 slots tienen **el mismo pool** (290 o 340 efectos según la variante: tablas 300/200/100, 310/210/110, 100x00x). Ninguna normal tiene tablas de maldición.
 4. **Fijas:** 49 de las tuyas son `Relic` pero fijas (Bazaar): una sola entrada por tabla y `isSalable = 0`. Además existen unas pocas Deep **vendibles pero fijas** (tablas 6040300, 707043600, etc.).
    → Criterio de elegibilidad: **todas las tablas de slot tienen más de un efecto** (no alcanza con `isSalable`).
-5. **Únicas del Small Jar Bazaar:** las normales aleatorias `100xxxx` tienen `sortGroupId` 250, como las fijas del Bazaar (`2xxxx`, `3xxxx`); las comunes (IDs chicos) tienen 255. El juego no deja venderlas aunque `isSalable = 1` (comprobado con una Polished Burning Scene `1005011`). La forja no las usa como receptora, donante ni sacrificio. En el save no hay ninguna marca por reliquia: los 24 bytes de +32 son iguales en las comunes y en las del Bazaar.
-   - **Trampa (corregida el 2026-11-06):** las Deep aleatorias (`200xxxx` y `201xxxx`, 216 tipos) llevan **todas** `sortGroupId` 251; no hay otro grupo de Deep aleatorias. Tomar el 251 como "única" dejó todas las Deep fuera de la forja. Ahora solo el 250 cuenta como única (test `deep_aleatorias_no_son_unicas`). El Bazaar vende Deep aleatorias, pero el juego deja vender todas las Deep, así que ninguna es única: no hace falta distinguirlas (y no se podría, porque usan los mismos tipos que las demás Deep).
+5. **Grupo 250 (`100xxxx`) — corregido el 2026-11-11:** las normales aleatorias `100xxxx` tienen `sortGroupId` 250, como las fijas del Bazaar (`2xxxx`); las comunes (IDs chicos) tienen 255. Se las tomó por "únicas del Small Jar Bazaar" porque una Polished Burning Scene `1005011` no se dejó vender (seguramente estaba equipada o era favorita). **Error:** salen de los drops de las expediciones (528 entradas en `ItemLotParam_map` y `_enemy`; ninguna en `ShopLineupParam`), lo que compra el Bazaar son tipos comunes, y el juego las vende (probado por un amigo en Seamless). Con la regla, a un jugador normal le quedaban casi todas sus reliquias fuera de la forja. Ahora no hay ninguna regla de "única": las fijas del Bazaar ya quedan afuera por ser fijas (test `reliquias_del_grupo_250_son_aleatorias`).
+   - Antes (2026-11-06) ya se había corregido lo mismo para las Deep: las 216 Deep aleatorias llevan todas `sortGroupId` 251.
 5. **Deep, tres pools que no se pisan:**
    - `2000000`: 49 efectos potenciados, **siempre** con una maldición de `3000000` (24 maldiciones, no hay opción "sin maldición").
    - `2200000`: 283 efectos sin maldición.
@@ -358,7 +358,7 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 
 ## Reglas de la transferencia (versión actual)
 
-1. **Elegibles:** reliquias aleatorias (todas sus tablas de slot con más de un efecto). Nunca fijas ni `UniqueRelic`.
+1. **Elegibles:** reliquias aleatorias (todas sus tablas de slot con más de un efecto). Nunca fijas.
 2. Normal con normal, Deep con Deep.
 3. **El efecto viaja con su maldición** y pisa el efecto y la maldición del slot destino.
 4. **Legalidad:** después de la transferencia tiene que existir una asignación 1 a 1 de efectos a las tablas de slot de la receptora, y cada efecto de `2000000` tiene que llevar una maldición de `3000000`. Si con el tipo de la receptora no se puede pero sí con otro que se ve igual, la receptora cambia de tipo (`TypeChange`, se escribe con `write_item_id`):
