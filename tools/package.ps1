@@ -62,7 +62,19 @@ Copy-Item (Join-Path $root 'LICENSE') $folder
 
 $zip = Join-Path $dist "RelicsReforged-v$version.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
-Compress-Archive -Path $folder -DestinationPath $zip
+# Compress-Archive de PowerShell 5 guarda las rutas con '\', y otros descompresores (y
+# gestores de mods) no las toman como carpetas: se arma a mano con '/'.
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::Open($zip, 'Create')
+try {
+    foreach ($file in Get-ChildItem $folder -File -Recurse) {
+        $entry = 'RelicsReforged/' + $file.FullName.Substring($folder.Length + 1).Replace('\', '/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            $archive, $file.FullName, $entry, 'Optimal') | Out-Null
+    }
+} finally {
+    $archive.Dispose()
+}
 
 Write-Host ''
 Write-Host "Listo: $zip"
