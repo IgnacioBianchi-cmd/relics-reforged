@@ -1,7 +1,8 @@
 //! La forja completa: validar con el motor de reglas y aplicar en el hilo principal.
 //!
-//! `forge <donante> <slot> <receptora> <slot> <sacrificio1> <sacrificio2> <sacrificio3>`
-//! (slots del 1 al 3, en el orden en que los muestra el juego).
+//! `forge <donante> <slot> <receptora> <slot> <sacrificios...>`
+//! (slots del 1 al 3, en el orden en que los muestra el juego; tantos sacrificios como pida la
+//! configuración).
 //!
 //! Orden de lo que se hace en el hilo principal, todo en un mismo frame:
 //! 1. Volver a leer todas las reliquias y el murk, y abortar si algo cambió desde la validación.
@@ -23,7 +24,7 @@ use std::path::Path;
 
 use relic_rules::lang::{self, tr, Lang};
 use relic_rules::{
-    plan_transfer, EffectId, GameData, Relic, Rules, TransferRequest, TypeChange,
+    plan_transfer, EffectId, GameData, Relic, TransferRequest, TypeChange,
 };
 
 use crate::game::{Game, LiveRelic};
@@ -212,7 +213,8 @@ pub struct Order {
     pub donor_slot: usize,
     pub target: u32,
     pub target_slot: usize,
-    pub sacrifices: [u32; 3],
+    /// Tantos como pida la configuración (`sacrifices`).
+    pub sacrifices: Vec<u32>,
     /// Solo validar y mostrar el resultado, sin tocar nada.
     pub dry_run: bool,
 }
@@ -226,7 +228,7 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
         sacrifices,
         dry_run,
     } = order;
-    let handles = [donor, target, sacrifices[0], sacrifices[1], sacrifices[2]];
+    let handles: Vec<u32> = [donor, target].into_iter().chain(sacrifices.iter().copied()).collect();
     if handles.iter().collect::<HashSet<_>>().len() != handles.len() {
         return Err(tr(
             "hay una reliquia repetida en el pedido",
@@ -276,7 +278,7 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     let sacrifice_refs: Vec<&Relic> = relics[2..].iter().collect();
     let plan = plan_transfer(
         data,
-        &Rules::default(),
+        &crate::config::get().rules,
         &TransferRequest {
             donor: &relics[0],
             donor_slot: donor_slot - 1,
@@ -332,8 +334,10 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
             t.name.clone()
         });
     let forged_note = |count: usize| {
-        let limit = Rules::default().forge_limit[relics[1].effect_count().clamp(1, 3) - 1];
-        format!("{count}/{limit}")
+        match crate::config::get().rules.forge_limit_for(relics[1].effect_count()) {
+            Some(limit) => format!("{count}/{limit}"),
+            None => count.to_string(),
+        }
     };
     if dry_run {
         let (names, cost, points, note) = (

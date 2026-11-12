@@ -25,8 +25,20 @@ pub struct Rules {
     /// Multiplicador de murk si la receptora es Deep.
     pub deep_murk_multiplier: u32,
     /// Máximo de forjas por reliquia según el tamaño de la receptora (1, 2, 3 efectos). Cuenta
-    /// cada forja, también la que pisa un efecto ya forjado.
+    /// cada forja, también la que pisa un efecto ya forjado. 0 = sin límite.
     pub forge_limit: [usize; 3],
+}
+
+impl Rules {
+    /// Máximo de forjas de una receptora de `size` efectos; `None` si no hay límite.
+    pub fn forge_limit_for(&self, size: usize) -> Option<usize> {
+        Some(self.forge_limit[size.clamp(1, 3) - 1]).filter(|&l| l > 0)
+    }
+
+    /// Puntos de sacrificio que pide una receptora de `size` efectos.
+    pub fn min_points_for(&self, size: usize) -> u32 {
+        self.min_points[size.clamp(1, 3) - 1]
+    }
 }
 
 impl Default for Rules {
@@ -298,7 +310,7 @@ pub fn plan_transfer(
         }
         points += s_size as u32;
     }
-    let needed = rules.min_points[size - 1];
+    let needed = rules.min_points_for(size);
     if points < needed {
         return Err(TransferError::NotEnoughPoints {
             needed,
@@ -307,9 +319,10 @@ pub fn plan_transfer(
     }
 
     // Límite de forja: cuántas veces se forjó la reliquia, pise o no un efecto ya forjado.
-    let limit = rules.forge_limit[size - 1];
-    if req.target_forge_count >= limit {
-        return Err(TransferError::ForgeLimitReached { limit });
+    if let Some(limit) = rules.forge_limit_for(size) {
+        if req.target_forge_count >= limit {
+            return Err(TransferError::ForgeLimitReached { limit });
+        }
     }
     // Efectos forjados (para marcarlos): los que siguen en la reliquia, menos el pisado, más el
     // nuevo.
@@ -606,6 +619,14 @@ mod tests {
         req.target_slot = 1;
         let err = plan_transfer(&data, &Rules::default(), &req).unwrap_err();
         assert_eq!(err, TransferError::ForgeLimitReached { limit: 2 });
+
+        // Sin límite (0), la tercera forja pasa.
+        let unlimited = Rules {
+            forge_limit: [0, 0, 0],
+            ..Rules::default()
+        };
+        let plan = plan_transfer(&data, &unlimited, &request(&f, &sacs, &[11, 12])).unwrap();
+        assert_eq!(plan.new_target_forge_count, 3);
 
         // Con 1 forja (el 12), reforjar ese mismo slot cuenta como la segunda.
         let mut req = request(&f, &sacs, &[12]);

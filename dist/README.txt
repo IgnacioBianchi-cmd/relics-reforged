@@ -24,10 +24,22 @@ INSTALL
 HOW TO USE
 At the Roundtable Hold, open Relic Rites. With the cursor on the equipped relic slots, press F7
 (keyboard) or R2/RT (controller), or click "F7: Forge relics". Pick the relic to improve and the
-effect to replace, the donor and its effect, and 3 sacrifices; check the preview and forge.
+effect to replace, the donor and its effect, and 3 sacrifices (all of this can be changed, see
+SETTINGS); check the preview and forge.
 Works with mouse, keyboard (arrows + Enter) and controller.
 After a forge, leaving the forge closes Relic Rites: the game only updates its relic list when
 the menu is opened again.
+
+SETTINGS
+The first time the game starts with the mod, it creates relics_reforged.ini in the mod folder.
+Edit it with any text editor and restart the game to change:
+- the key (F1-F12, Insert, Delete, Home, End, PageUp, PageDown) and controller button (R2 or L2)
+  that open the forge;
+- the number of sacrifices (0-9), the minimum sacrifice points, the murk cost, the Deep murk
+  multiplier and the forge limit per relic (0 = no limit);
+- the menu language (auto, en, es) and how many save backups to keep (0 = none).
+Updating the mod doesn't overwrite it. Delete it to get the defaults back. If a value is wrong,
+the default is used and relics_reforged.log says so.
 
 SAVES
 - RelicsReforged.me3 works on a copy of your save (NR0000_RelicsReforged.sl2). Your normal save
@@ -88,10 +100,22 @@ INSTALACIÓN
 CÓMO SE USA
 En la Mesa Redonda, abrí Ritos de reliquias. Con el cursor en los espacios de reliquias
 equipadas, apretá F7 (teclado) o R2/RT (mando), o hacé clic en "F7: Forjar reliquias". Elegí la
-reliquia a mejorar y el efecto a reemplazar, la donante y su efecto, y 3 sacrificios; revisá la
-vista previa y forjá. Funciona con mouse, teclado (flechas + Enter) y mando.
+reliquia a mejorar y el efecto a reemplazar, la donante y su efecto, y 3 sacrificios (todo
+esto se puede cambiar, ver CONFIGURACIÓN); revisá la vista previa y forjá. Funciona con
+mouse, teclado (flechas + Enter) y mando.
 Después de una forja, al salir de la forja se cierra Ritos de reliquias: el juego solo
 actualiza su lista de reliquias al volver a abrir el menú.
+
+CONFIGURACIÓN
+La primera vez que arranca el juego con el mod, se crea relics_reforged.ini en la carpeta del
+mod. Editalo con cualquier editor de texto y reiniciá el juego para cambiar:
+- la tecla (F1-F12, Insert, Delete, Home, End, PageUp, PageDown) y el botón del mando (R2 o L2)
+  que abren la forja;
+- la cantidad de sacrificios (0-9), los puntos mínimos de sacrificio, el costo en murk, el
+  multiplicador de murk de las Deep y el límite de forjas por reliquia (0 = sin límite);
+- el idioma del menú (auto, en, es) y cuántas copias del save se guardan (0 = ninguna).
+Actualizar el mod no lo pisa. Borralo para volver a los valores por defecto. Si un valor está
+mal, se usa el de por defecto y relics_reforged.log lo avisa.
 
 SAVES
 - RelicsReforged.me3 trabaja sobre una copia de tu save (NR0000_RelicsReforged.sl2). Tu save

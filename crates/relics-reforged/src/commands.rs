@@ -14,7 +14,7 @@
 //! | `inv <handle>` | muestra la entrada del inventario de ese handle |
 //! | `remove <handle>` | quita la reliquia con `RemoveItem` del juego, como la venta (no da murk) |
 //! | `hook` | instala el gancho del hilo principal (hace falta para `murk`, `set`, `remove` y `forge`) |
-//! | `forge <donante> <slot> <receptora> <slot> <s1> <s2> <s3>` | la transferencia completa (ver [`crate::forge`]) |
+//! | `forge <donante> <slot> <receptora> <slot> <sacrificios...>` | la transferencia completa (ver [`crate::forge`]) |
 //! | `forge? ...` | igual, pero solo valida y muestra el resultado |
 //! | `snap <nombre>` | foto de PlayerGameData e inventario; lista los cambios respecto de la foto anterior |
 //! | `locks` | reliquias que no se pueden donar ni sacrificar, y por qué |
@@ -147,7 +147,7 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
             };
             Ok(crate::search::mem(addr, len))
         }
-        [cmd @ ("forge" | "forge?"), d, ds, t, ts, s1, s2, s3] => {
+        [cmd @ ("forge" | "forge?"), d, ds, t, ts, sacrifices @ ..] => {
             not_while_watching()?;
             let data = ctx.data.ok_or("sin params no puedo validar")?;
             let order = crate::forge::Order {
@@ -155,7 +155,10 @@ fn run(ctx: &mut Context, line: &str) -> Result<String, String> {
                 donor_slot: parse_u32(ds)? as usize,
                 target: parse_handle(t)?,
                 target_slot: parse_u32(ts)? as usize,
-                sacrifices: [parse_handle(s1)?, parse_handle(s2)?, parse_handle(s3)?],
+                sacrifices: sacrifices
+                    .iter()
+                    .map(|s| parse_handle(s))
+                    .collect::<Result<_, _>>()?,
                 dry_run: *cmd == "forge?",
             };
             crate::forge::forge(*ctx.game, data, &crate::userdata::dir(), order)

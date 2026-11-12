@@ -14,6 +14,7 @@
 
 #[cfg(feature = "dev")]
 mod commands;
+mod config;
 mod forge;
 mod game;
 /// Mandos por HID: sin confirmar que el juego los lea así; solo se instala en desarrollo (sin el
@@ -133,6 +134,11 @@ fn run(module: usize) {
     #[cfg(not(feature = "dev"))]
     log.line(&format!("Relics Reforged v{}", env!("CARGO_PKG_VERSION")));
     log.line(&format!("DLL: {}", dll_path.display()));
+    if let Some(dir) = dll_path.parent() {
+        for line in config::load(dir) {
+            log.line(&line);
+        }
+    }
 
     let base = win::main_module_base();
     // Desarrollo: con `probar_aviso_version.txt` junto a la DLL, se actúa como con una versión
@@ -280,18 +286,19 @@ fn run(module: usize) {
                     .effects
                     .get(&7_000_302)
                     .map_or("", |e| e.name.as_str());
-                let lang = if strength.starts_with("Fuerza") {
+                let game_lang = if strength.starts_with("Fuerza") {
                     relic_rules::lang::Lang::Es
                 } else {
                     relic_rules::lang::Lang::En
                 };
+                let lang = config::get().language.unwrap_or(game_lang);
                 relic_rules::lang::set(lang);
                 log.line(&format!(
-                    "Idioma del menú: {lang:?} (7000302 = \"{strength}\")"
+                    "Idioma del menú: {lang:?} (juego: {game_lang:?}, 7000302 = \"{strength}\")"
                 ));
                 let named = Arc::new(named);
                 ui::start(module, game, named.clone(), userdata::dir());
-                log.line(&format!("Menú: se abre con {}", ui::TOGGLE_KEY_NAME));
+                log.line(&format!("Menú: se abre con {}", ui::toggle_key_name()));
                 #[cfg(feature = "dev")]
                 input_diag::run();
                 match steam_input::install() {

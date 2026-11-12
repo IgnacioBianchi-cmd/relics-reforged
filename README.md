@@ -42,6 +42,7 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Seamless Co-op (perfil `me3/relics-reforged-seamless.me3`, con `load_early`) | ✔ probado: forja guardada en el save de Seamless |
 | Datos del mod en `%APPDATA%\RelicsReforged`: registro de forjas (se mueve solo desde la carpeta de la DLL) y copia del save antes de la primera forja de cada sesión (últimas 10) | ✔ probado: registro movido, una copia por sesión |
 | Aviso en pantalla (inglés y español) si la versión del juego no es compatible; en desarrollo se fuerza con `probar_aviso_version.txt` junto a la DLL | ✔ probado (forzado) |
+| Configuración del jugador en `relics_reforged.ini` junto a la DLL (se crea con los valores por defecto si falta; el zip no lo trae, así una actualización no lo pisa): tecla y botón de apertura, reglas de balance, idioma y copias del save (`crates/relics-reforged/src/config.rs`) | Tests del archivo; falta probarlo en el juego |
 | Publicación (`tools/package.ps1`): DLL pública y perfiles de `dist/` | ✔ probados los dos perfiles del zip: sin conexión (me3 crea la copia del save) y con Seamless (forja y respaldo sobre el save de Seamless, los demás saves intactos). Sin la carpeta `SeamlessCoop`, me3 solo avisa en su log y arranca el juego sin Seamless: por eso el perfil también lleva `savefile` (Seamless lo ignora) |
 
 ## Estructura
@@ -106,11 +107,11 @@ Con teclado o mando, un cursor recorre botones y filas: arriba/abajo dentro de u
 
 ## Reglas de balance (por defecto)
 
-Están en `Rules` (`crates/relic-rules/src/transfer.rs`) y se pueden ajustar.
+Están en `Rules` (`crates/relic-rules/src/transfer.rs`). El jugador las cambia en `relics_reforged.ini` (sección `[Rules]`; ver `crates/relics-reforged/src/config.rs`, que también tiene el archivo por defecto).
 
 | Regla | Valor |
 |---|---|
 | Sacrificios por transferencia | 3 (chica = 1 punto, mediana = 2, grande = 3) |
 | Puntos mínimos (receptora de 1 / 2 / 3 efectos) | 3 / 5 / 7 |
 | Murk (receptora de 1 / 2 / 3 efectos) | 2.000 / 4.000 / 7.000, ×2 si es Deep |
-| Forjas por reliquia (1 / 2 / 3 efectos); cuenta también reforjar un efecto ya forjado | 1 / 1 / 2 |
+| Forjas por reliquia (1 / 2 / 3 efectos); cuenta también reforjar un efecto ya forjado. 0 = sin límite | 1 / 1 / 2 |

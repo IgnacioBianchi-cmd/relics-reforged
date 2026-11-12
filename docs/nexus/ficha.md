@@ -48,6 +48,7 @@ modo BBCode).
 - In-game menu in the style of the game, with search, filter, sorting, icons and sounds from the game.
 - Mouse, keyboard and controller (Steam Input) support; the game doesn't receive inputs while the forge is open.
 - English and Spanish.
+- Settings file (relics_reforged.ini): open key and button, sacrifices, points, murk, forge limit, language and save backups.
 - Offline and Seamless Co-op profiles for me3.
 
 ## Imágenes

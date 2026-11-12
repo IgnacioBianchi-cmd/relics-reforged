@@ -1,6 +1,6 @@
 //! Menú dentro del juego (Dear ImGui sobre DirectX 12, con hudhook).
 //!
-//! Se abre y se cierra con F7 (R3 en el mando). Mientras está abierto, el teclado, el mouse y el
+//! Se abre y se cierra con F7 (R2 en el mando), o lo que diga la [configuración](crate::config). Mientras está abierto, el teclado, el mouse y el
 //! mando no le llegan al juego; se maneja con el mouse o con un cursor de teclado y mando ([`Nav`]).
 //! El menú corre en el hilo de render: todo lo que lee o escribe datos del juego se hace en hilos
 //! aparte (la forja, a su vez, en el hilo principal), para no trabar el frame.
@@ -22,7 +22,21 @@ use nr_assets::IconAtlas;
 use crate::forge::{self, Order};
 use crate::game::{is_favorite, Game};
 
-pub const TOGGLE_KEY_NAME: &str = "F7 (R2 en el mando)";
+/// La tecla y el botón que abren la forja, para el log.
+pub fn toggle_key_name() -> String {
+    let c = ctrl_toggle();
+    format!(
+        "{} ({} / {} en el mando)",
+        c.key_name,
+        pad::glyph(c.pad, pad::Kind::PlayStation).1,
+        pad::glyph(c.pad, pad::Kind::Xbox).1
+    )
+}
+
+/// Cuántos sacrificios pide cada forja.
+fn sacrifice_count() -> usize {
+    crate::config::get().rules.sacrifice_count
+}
 
 const RED: [f32; 4] = [1.0, 0.45, 0.4, 1.0];
 const GREEN: [f32; 4] = [0.5, 0.9, 0.5, 1.0];
@@ -77,9 +91,17 @@ const fn control(glyph: &'static str, key_name: &'static str, key: Key, pad: u16
 use crate::pad;
 
 // Botones del mando como en Relic Rites: confirmar con A/cruz, volver con B/círculo, filtro con
-// L3. La forja se abre con R2/RT, que Relic Rites no usa (R3 guarda un preset).
-/// Abre la forja desde Relic Rites (y la cierra).
-const CTRL_TOGGLE: Control = control("KG_Key_F7", "F7", Key::F7, pad::OPEN_BUTTON);
+// L3. La forja se abre con R2/RT (o L2/LT, según la configuración), que Relic Rites no usa (R3
+// guarda un preset).
+/// Abre la forja desde Relic Rites (y la cierra). Sale de la configuración.
+fn ctrl_toggle() -> &'static Control {
+    static CTRL: std::sync::OnceLock<Control> = std::sync::OnceLock::new();
+    CTRL.get_or_init(|| {
+        let c = crate::config::get();
+        let (name, key, glyph) = c.open_key;
+        control(glyph, name, key, c.open_button)
+    })
+}
 const CTRL_BACK: Control = control("KG_Key_Q", "Q", Key::Q, pad::B);
 const CTRL_REFRESH: Control = control("KG_Key_R", "R", Key::R, pad::START);
 const CTRL_CLEAR: Control = control("KG_Key_C", "C", Key::C, pad::Y);
@@ -90,8 +112,8 @@ const CTRL_RESET: Control = control("KG_Key_1", "1", Key::Alpha1, pad::X);
 const CTRL_REMOVE: Control = control("KG_Key_2", "2", Key::Alpha2, pad::Y);
 /// Fuera del filtro, el 2 (o X/cuadrado) borra el texto buscado.
 const CTRL_CLEAR_SEARCH: Control = control("KG_Key_2", "2", Key::Alpha2, pad::X);
-const CONTROLS: [&Control; 9] = [
-    &CTRL_TOGGLE,
+/// Los controles fijos (el de abrir la forja sale de la configuración: [`ctrl_toggle`]).
+const CONTROLS: [&Control; 8] = [
     &CTRL_BACK,
     &CTRL_REFRESH,
     &CTRL_CLEAR,
@@ -133,6 +155,8 @@ fn load_icons(data: &GameData, out: Arc<Mutex<Option<IconAtlas>>>) {
         .chain(
             CONTROLS
                 .iter()
+                .copied()
+                .chain([ctrl_toggle()])
                 .flat_map(|c| {
                     [
                         c.glyph,
@@ -251,7 +275,10 @@ impl RelicView {
     /// Ya no se puede forjar como receptora (sí sirve como donante o sacrificio).
     fn at_forge_limit(&self) -> bool {
         self.size.is_some_and(|n| {
-            self.forge_count >= relic_rules::Rules::default().forge_limit[n.clamp(1, 3) - 1]
+            crate::config::get()
+                .rules
+                .forge_limit_for(n)
+                .is_some_and(|limit| self.forge_count >= limit)
         })
     }
 }
@@ -375,7 +402,7 @@ fn draw_hint(
             clicked = control_prompt(
                 ui,
                 icons,
-                &CTRL_TOGGLE,
+                ctrl_toggle(),
                 pad_mode,
                 tr("Forjar reliquias", "Forge relics"),
                 s,
@@ -488,7 +515,7 @@ struct TitleFont(imgui::FontId);
 unsafe impl Send for TitleFont {}
 unsafe impl Sync for TitleFont {}
 
-type SelectionKey = (u32, usize, u32, usize, [u32; 3]);
+type SelectionKey = (u32, usize, u32, usize, Vec<u32>);
 
 /// Filtro de la lista, como el de Relic Rites: se marca lo que se quiere ver. En cada grupo, sin
 /// nada marcado no se filtra; con algo marcado, solo pasa lo marcado.
@@ -985,8 +1012,16 @@ impl Menu {
 
     fn selection_key(&self) -> Option<SelectionKey> {
         let (target, donor) = (self.target?, self.donor?);
-        let s: [u32; 3] = self.sacrifices.clone().try_into().ok()?;
-        Some((donor, self.donor_slot, target, self.target_slot, s))
+        if self.sacrifices.len() != sacrifice_count() {
+            return None;
+        }
+        Some((
+            donor,
+            self.donor_slot,
+            target,
+            self.target_slot,
+            self.sacrifices.clone(),
+        ))
     }
 
     fn order(key: SelectionKey, dry_run: bool) -> Order {
@@ -1020,7 +1055,7 @@ impl Menu {
             self.shared.clone(),
         );
         std::thread::spawn(move || {
-            let result = forge::forge(game, &data, &dir, Menu::order(key, true));
+            let result = forge::forge(game, &data, &dir, Menu::order(key.clone(), true));
             let mut s = shared.lock().unwrap_or_else(|e| e.into_inner());
             s.preview = Some((key, result));
             s.preview_busy = false;
@@ -1572,25 +1607,28 @@ impl Menu {
             .target
             .and_then(|h| by_handle.get(&h))
             .and_then(|t| t.size)
-            .map(|n| relic_rules::Rules::default().min_points[n.clamp(1, 3) - 1]);
+            .map(|n| crate::config::get().rules.min_points_for(n));
+        let count = sacrifice_count();
         self.section(
             ui,
             &match needed {
                 Some(needed) => format!(
-                    "{} ({}/3, {points}/{needed} {})",
+                    "{} ({}/{count}, {points}/{needed} {})",
                     tr("Sacrificios", "Sacrifices"),
                     self.sacrifices.len(),
                     tr("puntos", "points")
                 ),
                 None => format!(
-                    "{} ({}/3, {points} {})",
+                    "{} ({}/{count}, {points} {})",
                     tr("Sacrificios", "Sacrifices"),
                     self.sacrifices.len(),
                     tr("puntos", "points")
                 ),
             },
         );
-        if self.donor.is_none() {
+        if count == 0 {
+            hint(ui, tr("No hacen falta.", "None needed."));
+        } else if self.donor.is_none() {
             hint(ui, tr("Después de la donante.", "After the donor."));
         } else if self.sacrifices.is_empty() {
             let needed = needed.unwrap_or(0);
@@ -1598,11 +1636,11 @@ impl Menu {
                 ui,
                 &match relic_rules::lang::get() == relic_rules::lang::Lang::Es {
                     true => format!(
-                        "Elige 3 en la lista de la derecha que sumen al menos {needed} puntos \
+                        "Elige {count} en la lista de la derecha que sumen al menos {needed} puntos \
                          (delicada 1, bruñida 2, grandiosa 3)."
                     ),
                     false => format!(
-                        "Choose 3 from the list on the right adding up to at least {needed} \
+                        "Choose {count} from the list on the right adding up to at least {needed} \
                          points (delicate 1, polished 2, grand 3)."
                     ),
                 },
@@ -1697,10 +1735,24 @@ impl Menu {
                     colored_wrapped(
                         ui,
                         RED,
-                        tr(
-                            "La donante y los 3 sacrificios se destruyen. No se puede deshacer.",
-                            "The donor and the 3 sacrifices are destroyed. This can't be undone.",
-                        ),
+                        &match (relic_rules::lang::get(), sacrifice_count()) {
+                            (relic_rules::lang::Lang::Es, 0) => {
+                                "La donante se destruye. No se puede deshacer.".to_string()
+                            }
+                            (relic_rules::lang::Lang::Es, 1) => {
+                                "La donante y el sacrificio se destruyen. No se puede deshacer."
+                                    .to_string()
+                            }
+                            (relic_rules::lang::Lang::Es, n) => format!(
+                                "La donante y los {n} sacrificios se destruyen. No se puede deshacer."
+                            ),
+                            (_, 0) => "The donor is destroyed. This can't be undone.".to_string(),
+                            (_, 1) => "The donor and the sacrifice are destroyed. This can't be                                        undone."
+                                .to_string(),
+                            (_, n) => format!(
+                                "The donor and the {n} sacrifices are destroyed. This can't be undone."
+                            ),
+                        },
                     );
                     if self.text_button(
                         ui,
@@ -1781,12 +1833,26 @@ impl Menu {
             return;
         }
         let donor = self.donor.expect("donante elegida");
+        let count = sacrifice_count();
+        if count == 0 {
+            self.section(ui, tr("Sin sacrificios", "No sacrifices"));
+            hint(
+                ui,
+                tr(
+                    "Esta forja no pide sacrificios: revisa el resultado a la izquierda.",
+                    "This forge needs no sacrifices: check the result on the left.",
+                ),
+            );
+            return;
+        }
         self.section(
             ui,
-            tr(
-                "Elige 3 sacrificios (se destruyen)",
-                "Choose 3 sacrifices (they are destroyed)",
-            ),
+            &match relic_rules::lang::get() {
+                relic_rules::lang::Lang::Es => format!("Elige {count} sacrificio(s) (se destruyen)"),
+                relic_rules::lang::Lang::En => {
+                    format!("Choose {count} sacrifice(s) (they are destroyed)")
+                }
+            },
         );
         let list: Vec<&RelicView> = relics
             .iter()
@@ -1804,7 +1870,7 @@ impl Menu {
         if let Some(h) = self.relic_list(ui, "sacrificios", &list, &chosen, false, true) {
             if let Some(pos) = self.sacrifices.iter().position(|&x| x == h) {
                 self.sacrifices.remove(pos);
-            } else if self.sacrifices.len() < 3 {
+            } else if self.sacrifices.len() < count {
                 self.sacrifices.push(h);
             }
             self.confirm = false;
@@ -2684,8 +2750,8 @@ impl ImguiRenderLoop for Menu {
                 panel,
                 self.pad_mode,
             );
-        let by_pad = self.pad_pressed(CTRL_TOGGLE.pad);
-        let toggle = ui.is_key_pressed(CTRL_TOGGLE.key) || by_pad;
+        let by_pad = self.pad_pressed(ctrl_toggle().pad);
+        let toggle = ui.is_key_pressed(ctrl_toggle().key) || by_pad;
         if (toggle && (visible || offered)) || hint_clicked {
             let now = !self.visible.load(Ordering::Relaxed);
             self.visible.store(now, Ordering::Relaxed);

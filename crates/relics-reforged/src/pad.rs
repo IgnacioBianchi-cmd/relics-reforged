@@ -38,7 +38,8 @@ pub const B: u16 = 0x2000;
 pub const X: u16 = 0x4000;
 pub const Y: u16 = 0x8000;
 
-/// Botón que abre la forja desde Relic Rites: R2 (RT). Relic Rites no usa los gatillos.
+/// Botón que abre la forja desde Relic Rites por defecto: R2 (RT). Relic Rites no usa los
+/// gatillos. Se puede cambiar en la configuración.
 pub const OPEN_BUTTON: u16 = RIGHT_TRIGGER;
 
 /// Qué mando es, para mostrar sus botones.

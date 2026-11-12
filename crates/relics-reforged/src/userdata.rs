@@ -4,7 +4,7 @@
 //!   estaba junto a la DLL; al arrancar se mueve acá si hace falta. Así sobrevive a una
 //!   actualización del mod aunque se borre su carpeta.
 //! - `backups\`: copias del save, una antes de la primera forja de cada sesión de juego. Se
-//!   guardan las últimas [`KEEP_BACKUPS`].
+//!   guardan las últimas `save_backups` (de la [configuración](crate::config); 0 = ninguna).
 //!
 //! El save que se respalda es el último que escribió el juego en `%APPDATA%\Nightreign\<id>\`
 //! (el normal `NR0000.sl2`, la copia de me3 o el de Seamless `NR0000.co2`): los saves pesan
@@ -17,7 +17,6 @@ use std::time::SystemTime;
 
 use crate::forge::FORGED_FILE;
 
-const KEEP_BACKUPS: usize = 10;
 /// Los saves de Nightreign pesan ~20 MB: algo mucho más chico no es un save.
 const MIN_SAVE_SIZE: u64 = 1 << 20;
 
@@ -117,9 +116,10 @@ fn stamp() -> String {
 }
 
 /// Antes de la primera forja de la sesión: copia el save actual a `backups\`. `Ok(None)` si ya
-/// se hizo en esta sesión.
+/// se hizo en esta sesión o si la configuración pide no respaldar.
 pub fn backup_save_once() -> Result<Option<PathBuf>, String> {
-    if BACKED_UP.load(Ordering::SeqCst) {
+    let keep = crate::config::get().save_backups;
+    if keep == 0 || BACKED_UP.load(Ordering::SeqCst) {
         return Ok(None);
     }
     let save = current_save().ok_or("no encontré el save en %APPDATA%\\Nightreign")?;
@@ -131,7 +131,7 @@ pub fn backup_save_once() -> Result<Option<PathBuf>, String> {
     let dest = backups.join(format!("{}_{name}", stamp()));
     std::fs::copy(&save, &dest).map_err(|e| format!("{}: {e}", save.display()))?;
     BACKED_UP.store(true, Ordering::SeqCst);
-    // Solo los últimos KEEP_BACKUPS (el nombre empieza con la fecha: el orden alfabético sirve).
+    // Solo los últimos `keep` (el nombre empieza con la fecha: el orden alfabético sirve).
     // Solo se miran los respaldos propios: lo demás que haya en la carpeta no se toca.
     if let Ok(entries) = std::fs::read_dir(&backups) {
         let mut files: Vec<PathBuf> = entries
@@ -140,7 +140,7 @@ pub fn backup_save_once() -> Result<Option<PathBuf>, String> {
             .map(|e| e.path())
             .collect();
         files.sort();
-        let extra = files.len().saturating_sub(KEEP_BACKUPS);
+        let extra = files.len().saturating_sub(keep);
         for old in &files[..extra] {
             let _ = std::fs::remove_file(old);
         }
