@@ -15,11 +15,21 @@ REQUIREMENTS
 INSTALL
 1. Unzip the "RelicsReforged" folder anywhere (not inside the game folder).
 2. Without Seamless: double-click RelicsReforged.me3.
-   With Seamless: copy the "SeamlessCoop" folder from your game folder (Game\SeamlessCoop, the one
-   with nrsc.dll and nrsc_settings.ini) into the RelicsReforged folder, then double-click
-   RelicsReforged-Seamless.me3. Every player who wants to forge needs the mod; the others don't.
-   If the SeamlessCoop folder is missing, the game starts without Seamless (on the mod's save
-   copy, never on your normal save).
+   With Seamless: copy the whole "SeamlessCoop" folder from your game folder (Game\SeamlessCoop,
+   the one with nrsc.dll and nrsc_settings.ini) into the RelicsReforged folder, then double-click
+   RelicsReforged-Seamless.me3. Copy the folder itself, not the files inside it: it has to end up
+   like this:
+       RelicsReforged\
+           RelicsReforged-Seamless.me3
+           relics_reforged.dll
+           SeamlessCoop\
+               nrsc.dll
+               nrsc_settings.ini
+               ...
+   Every player who wants to forge needs the mod; the others don't.
+   If the SeamlessCoop folder is missing (or nrsc.dll is loose next to the .me3), the game starts
+   without Seamless: it says you're offline and there's no Seamless on the title screen. It runs
+   on the mod's save copy, never on your normal save.
 
 HOW TO USE
 At the Roundtable Hold, open Relic Rites. With the cursor on the equipped relic slots, press F7
@@ -112,11 +122,21 @@ REQUISITOS
 INSTALACIÓN
 1. Descomprimí la carpeta "RelicsReforged" donde quieras (no dentro de la carpeta del juego).
 2. Sin Seamless: doble clic en RelicsReforged.me3.
-   Con Seamless: copiá la carpeta "SeamlessCoop" de la carpeta del juego (Game\SeamlessCoop, la
-   que tiene nrsc.dll y nrsc_settings.ini) dentro de la carpeta RelicsReforged y hacé doble clic
-   en RelicsReforged-Seamless.me3. Cada jugador que quiera forjar necesita el mod; los demás no.
-   Si falta la carpeta SeamlessCoop, el juego arranca sin Seamless (con la copia del save del
-   mod, nunca con tu save normal).
+   Con Seamless: copiá la carpeta "SeamlessCoop" entera de la carpeta del juego
+   (Game\SeamlessCoop, la que tiene nrsc.dll y nrsc_settings.ini) dentro de la carpeta
+   RelicsReforged y hacé doble clic en RelicsReforged-Seamless.me3. Copiá la carpeta, no los
+   archivos que tiene adentro: tiene que quedar así:
+       RelicsReforged\
+           RelicsReforged-Seamless.me3
+           relics_reforged.dll
+           SeamlessCoop\
+               nrsc.dll
+               nrsc_settings.ini
+               ...
+   Cada jugador que quiera forjar necesita el mod; los demás no.
+   Si falta la carpeta SeamlessCoop (o nrsc.dll quedó suelto junto al .me3), el juego arranca
+   sin Seamless: dice que estás sin conexión y la pantalla de título no muestra Seamless. Usa la
+   copia del save del mod, nunca tu save normal.
 
 CÓMO SE USA
 En la Mesa Redonda, abrí Ritos de reliquias. Con el cursor en los espacios de reliquias
