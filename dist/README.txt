@@ -68,9 +68,30 @@ FILES
 - If the game updates and the mod doesn't support the new version yet, a notice shows up for the
   first minute and the mod stays off; the game runs normally.
 
+KEEPING YOUR FORGED RELICS (GAME UPDATES AND UNINSTALLING)
+Forged relics are stored in the save like any other relic: they don't need the mod to exist.
+What matters is which save they are in.
+- Game update not supported yet: keep playing with the same .me3 file. The mod stays off (you
+  can't forge), but the game loads the same save with all your forged relics.
+- Seamless: your forged relics are in the Seamless save (NR0000.co2). Play Seamless without the
+  mod (its own launcher) and they are still there.
+- Offline (RelicsReforged.me3): your forged relics are only in NR0000_RelicsReforged.sl2. Since
+  me3 made that copy, it and your normal save (NR0000.sl2) have moved on separately. To keep
+  playing without the mod with everything you did on the copy:
+    1. Close the game and open %APPDATA%\Nightreign\<your Steam ID>\.
+    2. Back up NR0000.sl2 (copy it somewhere else).
+    3. Copy NR0000_RelicsReforged.sl2 and rename the copy to NR0000.sl2, replacing the old one.
+  This brings over all the progress of the copy, not only the relics; whatever you did only on
+  your normal save is replaced (that's why step 2).
+  To avoid two saves from the start, delete the savefile line in RelicsReforged.me3: the mod then
+  works on your normal save.
+- Online: your normal save goes online. The relics are combinations the game itself can roll,
+  but we can't promise the anti-cheat or the servers won't flag anything. If you take a save
+  used with the mod online, it's at your own risk.
+
 UNINSTALL
 Delete the RelicsReforged folder (and %APPDATA%\RelicsReforged if you don't want the forge
-record and the save backups).
+record and the save backups). If you played offline, first read KEEPING YOUR FORGED RELICS.
 
 Source code (MIT license): https://github.com/IgnacioBianchi-cmd/relics-reforged
 
@@ -144,8 +165,30 @@ ARCHIVOS
 - Si el juego se actualiza y el mod todavía no es compatible con la versión nueva, aparece un
   aviso durante el primer minuto y el mod queda apagado; el juego funciona normal.
 
+CONSERVAR LAS RELIQUIAS FORJADAS (ACTUALIZACIONES Y DESINSTALAR)
+Las reliquias forjadas quedan en el save como cualquier otra reliquia: no necesitan el mod para
+existir. Lo que importa es en qué save están.
+- El juego se actualizó y el mod todavía no es compatible: seguí jugando con el mismo .me3. El
+  mod queda apagado (no se puede forjar), pero el juego carga el mismo save con todas tus
+  reliquias forjadas.
+- Seamless: tus reliquias forjadas están en el save de Seamless (NR0000.co2). Jugá Seamless sin
+  el mod (con su propio lanzador) y siguen ahí.
+- Sin conexión (RelicsReforged.me3): tus reliquias forjadas están solo en
+  NR0000_RelicsReforged.sl2. Desde que me3 hizo esa copia, ella y tu save normal (NR0000.sl2)
+  avanzan por separado. Para seguir jugando sin el mod con todo lo que hiciste en la copia:
+    1. Cerrá el juego y abrí %APPDATA%\Nightreign\<tu ID de Steam>\.
+    2. Respaldá NR0000.sl2 (copialo a otro lado).
+    3. Copiá NR0000_RelicsReforged.sl2 y renombrá la copia a NR0000.sl2, reemplazando el viejo.
+  Así pasa todo el progreso de la copia, no solo las reliquias; lo que hayas hecho solo en tu
+  save normal se reemplaza (por eso el paso 2).
+  Para no tener dos saves desde el principio, borrá la línea savefile de RelicsReforged.me3: el
+  mod trabaja entonces sobre tu save normal.
+- Online: tu save normal es el que va online. Las reliquias son combinaciones que el juego
+  puede generar, pero no podemos asegurar que el anticheat o los servidores no detecten nada.
+  Llevar online un save usado con el mod corre por tu cuenta.
+
 DESINSTALAR
 Borrá la carpeta RelicsReforged (y %APPDATA%\RelicsReforged si no querés el registro de forjas
-ni las copias del save).
+ni las copias del save). Si jugaste sin conexión, leé antes CONSERVAR LAS RELIQUIAS FORJADAS.
 
 Código fuente (licencia MIT): https://github.com/IgnacioBianchi-cmd/relics-reforged
