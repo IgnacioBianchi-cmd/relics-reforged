@@ -268,10 +268,8 @@ pub fn plan_transfer(
         }
     }
 
-    // Bloqueadas: la donante y los sacrificios se destruyen.
-    if req.donor.locked {
-        return Err(TransferError::Locked(Role::Donor));
-    }
+    // Bloqueados: los sacrificios no pueden ser favoritos ni estar en uso. La donante sí (el
+    // jugador la elige por su efecto y quien aplica la forja la saca de donde esté en uso).
     for (i, s) in req.sacrifices.iter().enumerate() {
         if s.locked {
             return Err(TransferError::Locked(Role::Sacrifice(i)));
@@ -666,11 +664,15 @@ mod tests {
             }
         );
 
+        // Una donante favorita o en uso se puede donar; un sacrificio, no.
         f.donor.locked = true;
+        let sacs: Vec<&Relic> = f.sacrifices.iter().collect();
+        assert!(plan_transfer(&data, &Rules::default(), &request(&f, &sacs, &[])).is_ok());
+        f.sacrifices[1].locked = true;
         let sacs: Vec<&Relic> = f.sacrifices.iter().collect();
         assert_eq!(
             plan_transfer(&data, &Rules::default(), &request(&f, &sacs, &[])).unwrap_err(),
-            TransferError::Locked(Role::Donor)
+            TransferError::Locked(Role::Sacrifice(1))
         );
     }
 

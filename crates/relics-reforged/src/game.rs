@@ -45,12 +45,21 @@ const INV_ENTRY_SIZE: usize = 20;
 /// PlayerGameData: más adelante (+0x8FC..) hay una lista con todas las reliquias, que no
 /// significa que estén en uso.
 const EQUIPPED_SLOTS: usize = 0x2F4;
-const EQUIPPED_SLOTS_LEN: usize = 6 * 4;
+/// Tipo de reliquia de cada slot equipado (-1 = vacío).
+const EQUIPPED_TYPES: usize = 0x374;
 /// Puntero al contenedor de recipientes y presets: {asignador, cabeza del `std::map` de
 /// recipientes, cantidad} y {asignador, ?, cantidad de presets}, seguidos de los presets.
 const RELIC_SETS_PTR: usize = 0x6F8;
 const ALLOCATOR_VTABLE_RVA: usize = 0x39B_8008;
+/// Presets: cantidad en `sets+0x28`, registros de 0x50 bytes desde `sets+0x30`. Cada uno: marcas
+/// (+0x00), nombre en UTF-16 (+0x04, hasta 20 caracteres), recipiente (+0x2C, -1 = preset vacío),
+/// 6 handles (+0x30, 0 = slot vacío) y FILETIME (+0x48). Relevado el 2026-11-14.
+const PRESET_COUNT: usize = 0x28;
+const PRESETS: usize = 0x30;
 const PRESET_SIZE: usize = 0x50;
+const PRESET_NAME: usize = 0x04;
+const PRESET_NAME_LEN: usize = 20;
+const PRESET_HANDLES: usize = 0x30;
 
 /// `RemoveItem(EquipGameData*, índice, delta, flag)`, la que usa la venta (ver `docs/relevamiento.md`).
 const REMOVE_ITEM_RVA: usize = 0x1F_06B0;
@@ -64,6 +73,48 @@ const MAX_ITEMS: usize = 0x2000;
 /// bajo de las marcas; los bytes altos traen otro dato que cambia entre sesiones.
 pub fn is_favorite(entry: &[u32; 5]) -> bool {
     entry[4] & 0xFF != 0
+}
+
+/// Un lugar de los datos del jugador que menciona una reliquia.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RefPlace {
+    /// Slot (0..6) del recipiente equipado ahora.
+    Equipped(usize),
+    /// Preset guardado: índice (0..) y nombre.
+    Preset(usize, String),
+    /// Lo que recuerda un recipiente, por su ID interno.
+    Vessel(u32),
+}
+
+impl RefPlace {
+    /// Para el jugador: sin IDs internos.
+    pub fn label(&self) -> String {
+        match self {
+            RefPlace::Equipped(_) => tr("equipada", "equipped").into(),
+            RefPlace::Preset(i, name) if name.trim().is_empty() => format!("preset {}", i + 1),
+            RefPlace::Preset(_, name) => format!("preset \"{name}\""),
+            RefPlace::Vessel(_) => tr("recipiente", "vessel").into(),
+        }
+    }
+
+    /// Con los IDs internos, para el log y los comandos.
+    pub fn detail(&self) -> String {
+        match self {
+            RefPlace::Equipped(slot) => {
+                format!("{} (slot {})", tr("equipada", "equipped"), slot + 1)
+            }
+            RefPlace::Preset(i, name) => format!("preset {} \"{name}\"", i + 1),
+            RefPlace::Vessel(id) => format!("{} {id:#X}", tr("recipiente", "vessel")),
+        }
+    }
+}
+
+/// Una mención de una reliquia: qué handle, dónde y la dirección donde está escrito.
+#[derive(Debug, Clone)]
+pub struct RelicRef {
+    pub handle: u32,
+    pub place: RefPlace,
+    pub addr: usize,
 }
 
 /// Una reliquia leída de la memoria del juego.
@@ -256,11 +307,11 @@ impl Game {
     }
 
     /// Dónde aparece mencionado cada handle de reliquia (`0xC080xxxx`) en los datos del jugador:
-    /// PlayerGameData (slots equipados en +0x2F4), los presets y el árbol de
-    /// recipientes (`std::map`), estos dos en el contenedor de `[pgd+0x6F8]`. Devuelve (handle, lugar) para cada
-    /// aparición, o `Err` si las estructuras no están donde se esperan (en ese caso no se puede
+    /// PlayerGameData (slots equipados en +0x2F4), los presets y el árbol de recipientes
+    /// (`std::map`), estos dos en el contenedor de `[pgd+0x6F8]`. Devuelve cada aparición con su
+    /// dirección, o `Err` si las estructuras no están donde se esperan (en ese caso no se puede
     /// garantizar nada y no hay que forjar).
-    pub fn relic_references(&self) -> Result<Vec<(u32, String)>, String> {
+    pub fn relic_reference_list(&self) -> Result<Vec<RelicRef>, String> {
         let pgd = self
             .player_game_data()
             .ok_or("no encuentro PlayerGameData")?;
@@ -276,33 +327,34 @@ impl Game {
             ));
         }
         let mut out = Vec::new();
-        let mut scan =
-            |base: usize, len: usize, label: &dyn Fn(usize) -> String, skip: &[(usize, usize)]| {
-                let (bytes, _) = crate::win::read_bytes(base, len);
-                for off in (0..len).step_by(4) {
-                    let v = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
-                    if v >> 16 == 0xC080 && !skip.iter().any(|&(a, b)| off >= a && off < b) {
-                        out.push((v, label(off)));
-                    }
+        // Los 6 handles que empiezan en `base`.
+        let mut scan = |base: usize, place: &dyn Fn(usize) -> RefPlace| -> Result<(), String> {
+            let handles: [u32; 6] =
+                read(base).ok_or_else(|| format!("no puedo leer {base:#X}"))?;
+            for (slot, h) in handles.into_iter().enumerate() {
+                if h >> 16 == 0xC080 {
+                    out.push(RelicRef {
+                        handle: h,
+                        place: place(slot),
+                        addr: base + slot * 4,
+                    });
                 }
-            };
-        scan(
-            pgd + EQUIPPED_SLOTS,
-            EQUIPPED_SLOTS_LEN,
-            &|off| format!("{} (slot {})", tr("equipada", "equipped"), off / 4 + 1),
-            &[],
-        );
-        // Presets: cantidad en +0x28, registros de 0x50 bytes desde +0x30.
-        let presets: usize = read(sets + 0x28).ok_or("no puedo leer los presets")?;
+            }
+            Ok(())
+        };
+        scan(pgd + EQUIPPED_SLOTS, &RefPlace::Equipped)?;
+        let presets: usize = read(sets + PRESET_COUNT).ok_or("no puedo leer los presets")?;
         if presets > 0x100 {
             return Err(format!("cantidad de presets inválida ({presets})"));
         }
-        scan(
-            sets + 0x30,
-            presets * PRESET_SIZE,
-            &|off| format!("preset {}", off / PRESET_SIZE + 1),
-            &[],
-        );
+        for i in 0..presets {
+            let preset = sets + PRESETS + i * PRESET_SIZE;
+            let name: [u16; PRESET_NAME_LEN] =
+                read(preset + PRESET_NAME).ok_or("no puedo leer los presets")?;
+            let len = name.iter().position(|&c| c == 0).unwrap_or(PRESET_NAME_LEN);
+            let name = String::from_utf16_lossy(&name[..len]);
+            scan(preset + PRESET_HANDLES, &|_| RefPlace::Preset(i, name.clone()))?;
+        }
         // Árbol rojo-negro de MSVC: nodo = izquierda, padre, derecha, color, esNulo (+0x19),
         // clave = ID del recipiente (+0x1C), 6 handles desde +0x24.
         let head: usize = read(sets + 8).ok_or("no puedo leer el árbol")?;
@@ -325,10 +377,7 @@ impl Game {
                 return Err("el árbol de recipientes tiene más nodos de los que dice".into());
             }
             let vessel: u32 = read(node + 0x1C).ok_or("nodo ilegible")?;
-            let handles: [u32; 6] = read(node + 0x24).ok_or("nodo ilegible")?;
-            for h in handles.into_iter().filter(|h| h >> 16 == 0xC080) {
-                out.push((h, format!("{} {vessel:#X}", tr("recipiente", "vessel"))));
-            }
+            scan(node + 0x24, &|_| RefPlace::Vessel(vessel))?;
             stack.push(read(node).ok_or("nodo ilegible")?);
             stack.push(read(node + 0x10).ok_or("nodo ilegible")?);
         }
@@ -340,39 +389,84 @@ impl Game {
         Ok(out)
     }
 
-    /// Si la reliquia no se puede donar ni sacrificar: favorita, equipada, recordada por un
-    /// recipiente o guardada en un preset. Devuelve el motivo. Si no se puede verificar, también
-    /// la da por bloqueada.
+    /// Como [`relic_reference_list`](Self::relic_reference_list), con el lugar en texto (con
+    /// los IDs internos, para el log).
+    pub fn relic_references(&self) -> Result<Vec<(u32, String)>, String> {
+        Ok(self
+            .relic_reference_list()?
+            .into_iter()
+            .map(|r| (r.handle, r.place.detail()))
+            .collect())
+    }
+
+    /// Dónde está en uso la reliquia (sin repetir lugares, como los ve el jugador).
+    pub fn places_in_use(&self, handle: u32) -> Result<Vec<String>, String> {
+        let mut places: Vec<String> = Vec::new();
+        for r in self.relic_reference_list()? {
+            let label = r.place.label();
+            if r.handle == handle && !places.contains(&label) {
+                places.push(label);
+            }
+        }
+        Ok(places)
+    }
+
+    /// Si la reliquia no se puede sacrificar: favorita, equipada, recordada por un recipiente o
+    /// guardada en un preset. Devuelve el motivo. Si no se puede verificar, también la da por
+    /// bloqueada.
     pub fn lock_reason(&self, handle: u32) -> Option<String> {
         if let Some((_, entry)) = self.inventory_entry(handle) {
             if is_favorite(&entry) {
                 return Some(tr("es favorita", "is a favorite").into());
             }
         }
-        let refs = match self.relic_references() {
-            Ok(r) => r,
-            Err(e) => {
-                return Some(format!(
-                    "{}: {e}",
-                    tr(
-                        "no se pudo verificar si está en uso",
-                        "couldn't check whether it is in use"
-                    )
-                ))
-            }
-        };
-        // "vessel 0x7D0" -> "vessel": el ID interno no le dice nada al jugador.
-        let mut places: Vec<String> = Vec::new();
-        for (_, p) in refs.into_iter().filter(|(h, _)| *h == handle) {
-            let p = p
-                .split_once(" 0x")
-                .map_or(p.clone(), |(kind, _)| kind.to_string());
-            if !places.contains(&p) {
-                places.push(p);
-            }
+        match self.places_in_use(handle) {
+            Err(e) => Some(format!(
+                "{}: {e}",
+                tr(
+                    "no se pudo verificar si está en uso",
+                    "couldn't check whether it is in use"
+                )
+            )),
+            Ok(places) if places.is_empty() => None,
+            Ok(places) => Some(format!(
+                "{}: {}",
+                tr("está en uso", "is in use"),
+                places.join(", ")
+            )),
         }
-        (!places.is_empty())
-            .then(|| format!("{}: {}", tr("está en uso", "is in use"), places.join(", ")))
+    }
+
+    /// Saca la reliquia de todos los lugares donde está mencionada (slots equipados, presets y
+    /// recipientes) y deja esos slots vacíos como los deja el juego: handle 0 y, en los
+    /// equipados, el tipo de reliquia en -1. Se usa con la donante después de borrarla, para que
+    /// ningún preset ni recipiente apunte a un handle que el juego puede volver a usar.
+    /// Devuelve los lugares de donde se sacó.
+    pub fn clear_references(&self, handle: u32) -> Result<Vec<RefPlace>, String> {
+        let pgd = self
+            .player_game_data()
+            .ok_or("no encuentro PlayerGameData")?;
+        let mut cleared = Vec::new();
+        for r in self.relic_reference_list()? {
+            if r.handle != handle {
+                continue;
+            }
+            let ok = read::<u32>(r.addr) == Some(handle)
+                && write(r.addr, 0u32)
+                && match r.place {
+                    RefPlace::Equipped(slot) => write(pgd + EQUIPPED_TYPES + slot * 4, EMPTY),
+                    _ => true,
+                };
+            if !ok {
+                return Err(format!(
+                    "{} {}",
+                    tr("no pude sacar la reliquia de", "couldn't remove the relic from"),
+                    r.place.detail()
+                ));
+            }
+            cleared.push(r.place);
+        }
+        Ok(cleared)
     }
 
     /// Busca la entrada de inventario de un handle: (índice, [handle, item, cantidad, x, y]).

@@ -28,7 +28,8 @@ impl Slot {
 pub struct Relic {
     pub item_id: ItemId,
     pub slots: [Slot; 3],
-    /// Favorita o equipada en un preset: no se puede donar ni sacrificar.
+    /// Favorita, equipada o guardada en un preset o recipiente: no se puede sacrificar. Sí se
+    /// puede donar (quien aplica la forja la saca de esos lugares).
     pub locked: bool,
 }
 

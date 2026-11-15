@@ -196,12 +196,14 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 | Equipada ahora | `pgd+0x2F4`: 6 handles del recipiente equipado (`+0x374`: sus tipos de reliquia) |
 | Contenedor de recipientes y presets | `[pgd+0x6F8]` → `+0x00` asignador (`nr+39B8008`), `+0x08` cabeza de un `std::map`, `+0x10` cantidad de recipientes; `+0x18` asignador, `+0x28` cantidad de presets, `+0x30…` presets de 0x50 bytes |
 | Nodo del `std::map` (0x40) | izquierda, padre, derecha, color, esNulo (`+0x19`), ID del recipiente (`+0x1C`), 6 handles desde `+0x24` |
-| Preset (0x50) | recipiente, 6 handles, FILETIME, marcas y nombre en UTF-16 |
+| Preset (0x50) | `+0x00` marcas, `+0x04` nombre en UTF-16 (hasta 20 caracteres), `+0x2C` recipiente (-1 = preset vacío), `+0x30` 6 handles, `+0x48` FILETIME (relevado el 2026-11-14 leyendo la memoria: presets "Evergaol", "Default" y "Meta") |
+| Slot vacío | handle `0` en los equipados, los recipientes y los presets; en los equipados, además, el tipo de `+0x374` en `FFFFFFFF` |
 
 - **Trampa:** en dos sesiones el contenedor quedó en memoria justo después de PlayerGameData (`pgd+0x168E0`) y parecía parte de él. No lo es: siempre se llega por `[pgd+0x6F8]`.
 - **Trampa:** desde `pgd+0x8FC` hay una lista con **todas** las reliquias (registros de 20 bytes; ¿orden de adquisición o "nueva"?). No indica uso: no se mira.
 - **ASLR:** la base de `nightreign.exe` cambió por primera vez (de `0x7FF618470000` a `0x7FF6E63A0000`). Todo se calcula relativo a la base, así que no afecta, pero las búsquedas manuales tienen que usar la base del log.
-- Regla de `forge`: la donante y los sacrificios no pueden ser favoritos ni aparecer en esos lugares; la receptora sí. Si el contenedor no tiene la forma esperada o el árbol no tiene la cantidad de nodos que dice, la reliquia se da por bloqueada.
+- Regla de `forge`: los sacrificios no pueden ser favoritos ni aparecer en esos lugares; la receptora sí. Si el contenedor no tiene la forma esperada o el árbol no tiene la cantidad de nodos que dice, la reliquia se da por bloqueada.
+- **Donante favorita o en uso** (2026-11-14): se permite, con aviso en el menú. Después de `RemoveItem` (que desequipa), `Game::clear_references` deja vacíos los slots equipados, presets y recipientes que todavía tengan su handle: si no, apuntarían a un handle que el juego puede darle a otra reliquia. Si no se puede leer dónde está en uso, la donante tampoco se puede usar. **Falta probarlo en el juego** (forjar con una donante equipada y en un preset, volver al título y recargar).
 - Probado el 2026-11-04: 66 de 141 reliquias bloqueadas; rechazos por favorita, por preset + recipiente y por recipiente solo.
 - En el save, recipientes y presets están en USERDATA_00 con otro formato (recipiente: ID + 6 handles, 0x1C bytes; desde ~`0x1c090`).
 
@@ -372,7 +374,7 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
    - Puntos por sacrificio: chica 1, mediana 2, grande 3. Mínimo según destino: 1 ef → 3, 2 ef → 5, 3 ef → 7.
    - Si el destino es Deep, los sacrificios son Deep.
    - Murk: 2.000 / 4.000 / 7.000 según el tamaño del destino, ×2 si es Deep (ajustado el 2026-11-06; antes 2.500 / 5.000 / 10.000, caro para quien no tiene mucho murk juntado). Referencias: vender una reliquia da 150 / 350 / 550 (el doble si es Deep; coincide con lo visto en Cheat Engine: +350 y +700), una Scenic Flatstone del Bazaar (reliquia al azar) cuesta 600 y una expedición deja unos 2.500-3.000 (una sola fuente). Una forja grande cuesta ~2,5 expediciones o ~12 Flatstones, más la donante y los sacrificios (~1.200-1.700 de venta perdida).
-10. No se pueden usar favoritas ni reliquias equipadas en un preset.
+10. No se pueden sacrificar favoritas ni reliquias en uso (equipadas, en un preset o en un recipiente). Como donantes sí, con aviso: la forja las saca de esos lugares.
 11. Solo en la Roundtable. La marca de "forjada" se guarda en un archivo propio del mod, indexado por el `sort_key` de la reliquia (el ID `0xC08000NN` no sirve porque cambia entre sesiones).
 
 ## Pendientes
@@ -386,7 +388,8 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [x] **Hilo del juego**: gancho en `nr+DCB37F`; murk, set, remove y forge corren entre frames.
 - [x] ~~Pedir un guardado~~: no hace falta (la forja es atómica respecto de los guardados). `nr+6AF930` no sirve: restaura una foto.
 - [x] Comando `forge` (y `forge?` en seco) con `plan_transfer`, probado y guardado en el save.
-- [x] **Favoritas, equipadas, presets y recipientes**: bloqueadas en `forge` (ver arriba).
+- [x] **Favoritas, equipadas, presets y recipientes**: bloqueadas en `forge` como sacrificios (ver arriba).
+- [ ] **Donante en uso**: probar en el juego que el recipiente y el preset quedan con el slot vacío después de forjar y de recargar.
 - [x] Interfaz dentro del juego: menú F7 (`ui.rs`, Dear ImGui con hudhook 0.9.3 sobre DirectX 12). La fuente de ImGui cubre Latin-1: nada de "→" ni otros símbolos fuera de ese rango.
 - [x] **Solo en la Roundtable** (regla 11): la forja exige Relic Rites abierto.
 - [x] **Params y nombres sin CSV** (ver arriba): params desde `regulation.bin`, nombres desde los FMG cargados.

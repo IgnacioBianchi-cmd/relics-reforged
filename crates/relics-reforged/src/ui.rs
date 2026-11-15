@@ -255,11 +255,25 @@ struct RelicView {
     forged: Vec<bool>,
     /// Cuántas veces se forjó la reliquia.
     forge_count: usize,
-    /// Por qué no se puede donar ni sacrificar (favorita, equipada, preset, recipiente).
+    /// Por qué no se puede sacrificar (favorita, equipada, preset, recipiente). Como donante sí
+    /// sirve, con un aviso: la forja la saca de esos lugares.
     locked: Option<String>,
+    /// No se pudo leer dónde está en uso: tampoco sirve como donante (no se la podría sacar).
+    unverified: bool,
     /// Orden en que se encontró (el del inventario del juego); `u32::MAX` si no se sabe.
     order: u32,
     favorite: bool,
+}
+
+/// Qué lista muestra `relic_list`: cambia las etiquetas de cada reliquia.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListKind {
+    /// Límite de forjas y dónde está en uso.
+    Targets,
+    /// Dónde está en uso (forjar la saca de ahí).
+    Donors,
+    /// Puntos que aporta.
+    Sacrifices,
 }
 
 impl RelicView {
@@ -1438,7 +1452,9 @@ impl Menu {
             if self.target.is_some_and(|h| !by_handle.contains_key(&h)) {
                 self.reset_selection();
             }
-            if self.donor.is_some_and(|h| !usable(&h)) {
+            // La donante puede estar en uso (se avisa al confirmar), pero no sin verificar.
+            let donor_usable = |h: &u32| by_handle.get(h).is_some_and(|r| !r.unverified);
+            if self.donor.is_some_and(|h| !donor_usable(&h)) {
                 self.donor = None;
                 self.sacrifices.clear();
                 self.confirm = false;
@@ -1577,6 +1593,20 @@ impl Menu {
             (Some(t), Some(d)) => {
                 let target_item = by_handle.get(&t).map(|t| t.item_id);
                 relic_title(ui, self.icons.as_ref(), d);
+                if let Some(why) = &d.locked {
+                    colored_wrapped(
+                        ui,
+                        GOLD,
+                        &match relic_rules::lang::get() {
+                            relic_rules::lang::Lang::Es => format!(
+                                "En uso: {why}. Si forjas, se destruye y se saca de ahí."
+                            ),
+                            relic_rules::lang::Lang::En => format!(
+                                "In use: {why}. Forging destroys it and removes it from there."
+                            ),
+                        },
+                    );
+                }
                 if self.text_button(ui, "donante", tr("Cambiar", "Change"), true) {
                     self.donor = None;
                     self.sacrifices.clear();
@@ -1732,6 +1762,27 @@ impl Menu {
                         self.request_focus("btn_cancelar");
                     }
                 } else {
+                    // Donante favorita o en uso: se avisa dónde está, antes de lo demás.
+                    if let Some(why) = self
+                        .donor
+                        .and_then(|h| by_handle.get(&h))
+                        .and_then(|d| d.locked.as_ref())
+                    {
+                        colored_wrapped(
+                            ui,
+                            RED,
+                            &match relic_rules::lang::get() {
+                                relic_rules::lang::Lang::Es => format!(
+                                    "¿Seguro que quieres donarla? La donante está en uso ({why}): \
+                                     se destruye igual y esos lugares quedan vacíos."
+                                ),
+                                relic_rules::lang::Lang::En => format!(
+                                    "Are you sure you want to donate it? The donor is in use \
+                                     ({why}): it is destroyed anyway and those places are left empty."
+                                ),
+                            },
+                        );
+                    }
                     colored_wrapped(
                         ui,
                         RED,
@@ -1747,7 +1798,7 @@ impl Menu {
                                 "La donante y los {n} sacrificios se destruyen. No se puede deshacer."
                             ),
                             (_, 0) => "The donor is destroyed. This can't be undone.".to_string(),
-                            (_, 1) => "The donor and the sacrifice are destroyed. This can't be                                        undone."
+                            (_, 1) => "The donor and the sacrifice are destroyed. This can't be undone."
                                 .to_string(),
                             (_, n) => format!(
                                 "The donor and the {n} sacrifices are destroyed. This can't be undone."
@@ -1790,7 +1841,8 @@ impl Menu {
                 .collect();
             let mut list = list;
             self.sort.sort(&mut list);
-            if let Some(h) = self.relic_list(ui, "receptoras", &list, &HashSet::new(), true, false)
+            if let Some(h) =
+                self.relic_list(ui, "receptoras", &list, &HashSet::new(), ListKind::Targets)
             {
                 // Una reliquia que ya llegó al límite de forjas no puede ser receptora.
                 if relics
@@ -1820,13 +1872,15 @@ impl Menu {
                     r.size.is_some()
                         && r.deep == t.deep
                         && r.handle != t.handle
-                        && r.locked.is_none()
+                        && !r.unverified
                         && self.matches_filter(r)
                 })
                 .collect();
             let mut list = list;
             self.sort.sort(&mut list);
-            if let Some(h) = self.relic_list(ui, "donantes", &list, &HashSet::new(), false, false) {
+            if let Some(h) =
+                self.relic_list(ui, "donantes", &list, &HashSet::new(), ListKind::Donors)
+            {
                 self.donor = Some(h);
                 self.donor_slot = 0;
             }
@@ -1867,7 +1921,7 @@ impl Menu {
             .collect();
         let mut list = list;
         self.sort.sort(&mut list);
-        if let Some(h) = self.relic_list(ui, "sacrificios", &list, &chosen, false, true) {
+        if let Some(h) = self.relic_list(ui, "sacrificios", &list, &chosen, ListKind::Sacrifices) {
             if let Some(pos) = self.sacrifices.iter().position(|&x| x == h) {
                 self.sacrifices.remove(pos);
             } else if self.sacrifices.len() < count {
@@ -2374,8 +2428,7 @@ impl Menu {
         id: &str,
         list: &[&RelicView],
         selected: &HashSet<u32>,
-        show_locks: bool,
-        show_points: bool,
+        kind: ListKind,
     ) -> Option<u32> {
         let mut clicked = None;
         ui.child_window(id).size([0.0, 0.0]).build(|| {
@@ -2486,7 +2539,7 @@ impl Menu {
                 let draw = ui.get_window_draw_list();
                 draw.add_text([name_x, y], text, &r.name);
                 let mut tag_x = name_x + ui.calc_text_size(&r.name)[0] + 14.0;
-                if show_points {
+                if kind == ListKind::Sacrifices {
                     let tag = format!("[{}]", points_text(r));
                     draw.add_text([tag_x, y], POINTS, &tag);
                     tag_x += ui.calc_text_size(&tag)[0] + 10.0;
@@ -2496,13 +2549,15 @@ impl Menu {
                     draw.add_text([tag_x, y], GOLD, &tag);
                     tag_x += ui.calc_text_size(&tag)[0] + 10.0;
                 }
-                if show_locks {
-                    // En la lista de receptoras: si ya llegó al límite de forjas.
-                    if r.at_forge_limit() {
-                        let tag = format!("[{}]", tr("límite de forjas", "forge limit reached"));
-                        draw.add_text([tag_x, y], RED, &tag);
-                        tag_x += ui.calc_text_size(&tag)[0] + 10.0;
-                    }
+                // En la lista de receptoras: si ya llegó al límite de forjas.
+                if kind == ListKind::Targets && r.at_forge_limit() {
+                    let tag = format!("[{}]", tr("límite de forjas", "forge limit reached"));
+                    draw.add_text([tag_x, y], RED, &tag);
+                    tag_x += ui.calc_text_size(&tag)[0] + 10.0;
+                }
+                // Dónde está en uso: informativo en las receptoras; en las donantes avisa que
+                // forjar la saca de ahí.
+                if kind != ListKind::Sacrifices {
                     if let Some(why) = &r.locked {
                         let tag = format!("[{}: {why}]", tr("en uso", "in use"));
                         draw.add_text([tag_x, y], RED, &tag);
@@ -2848,27 +2903,26 @@ fn load(
         .into());
     }
     let mut locks: HashMap<u32, Vec<String>> = HashMap::new();
-    match game.relic_references() {
+    let unverified = match game.relic_reference_list() {
         Ok(refs) => {
-            for (h, place) in refs {
-                // "vessel 0xBB9" -> "vessel": el ID interno no le dice nada al jugador.
-                let place = match place.split_once(" 0x") {
-                    Some((kind, _)) => kind.to_string(),
-                    None => place,
-                };
-                let places = locks.entry(h).or_default();
+            for r in refs {
+                // Sin el ID interno: "vessel", no "vessel 0xBB9".
+                let place = r.place.label();
+                let places = locks.entry(r.handle).or_default();
                 if !places.contains(&place) {
                     places.push(place);
                 }
             }
+            false
         }
         // Si no se puede verificar, todas cuentan como en uso.
         Err(e) => {
             for r in &live {
                 locks.entry(r.handle).or_default().push(e.clone());
             }
+            true
         }
-    }
+    };
     let registry = forge::ForgedRegistry::load(dir);
     let mut order: HashMap<u32, u32> = HashMap::new();
     let mut favorites = HashSet::new();
@@ -2939,6 +2993,7 @@ fn load(
                 effect_icons,
                 families,
                 locked: locks.get(&r.handle).map(|p| p.join(", ")),
+                unverified,
                 order: order.get(&r.handle).copied().unwrap_or(u32::MAX),
                 favorite: favorites.contains(&r.handle),
             }

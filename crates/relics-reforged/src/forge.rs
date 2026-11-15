@@ -7,8 +7,10 @@
 //! Orden de lo que se hace en el hilo principal, todo en un mismo frame:
 //! 1. Volver a leer todas las reliquias y el murk, y abortar si algo cambió desde la validación.
 //! 2. Borrar donante y sacrificios con `RemoveItem` del juego.
-//! 3. Reescribir la receptora (efectos, maldiciones y SpEffects).
-//! 4. Descontar el murk.
+//! 3. Sacar la donante de los slots equipados, presets y recipientes donde estaba (la donante
+//!    puede ser favorita o estar en uso; los sacrificios no).
+//! 4. Reescribir la receptora (efectos, maldiciones y SpEffects).
+//! 5. Descontar el murk.
 //!
 //! No pide un guardado: como todo cambia en un mismo frame, el próximo guardado del juego toma
 //! la forja completa o nada de ella.
@@ -27,7 +29,7 @@ use relic_rules::{
     plan_transfer, EffectId, GameData, Relic, TransferRequest, TypeChange,
 };
 
-use crate::game::{Game, LiveRelic};
+use crate::game::{Game, LiveRelic, RefPlace};
 use crate::mainthread;
 
 pub const FORGED_FILE: &str = "relics_reforged_forjas.txt";
@@ -245,12 +247,27 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
         .iter()
         .map(|&h| snapshot(&game, h))
         .collect::<Result<_, _>>()?;
-    // La donante y los sacrificios se destruyen: no pueden ser favoritas ni estar en uso.
+    // Los sacrificios se destruyen: no pueden ser favoritos ni estar en uso. La donante sí puede
+    // (el menú avisa antes de forjar): al destruirla se la saca de los slots equipados, presets y
+    // recipientes. Pero si no se puede leer dónde está en uso, tampoco se la puede sacar.
     for (i, s) in snaps.iter().enumerate() {
         if i == 1 {
             continue; // la receptora sí puede (es justamente la que el jugador quiere mejorar)
         }
-        if let Some(reason) = game.lock_reason(s.handle) {
+        let reason = if i == 0 {
+            game.places_in_use(s.handle).err().map(|e| {
+                format!(
+                    "{}: {e}",
+                    tr(
+                        "no se pudo verificar si está en uso",
+                        "couldn't check whether it is in use"
+                    )
+                )
+            })
+        } else {
+            game.lock_reason(s.handle)
+        };
+        if let Some(reason) = reason {
             let role = if i == 0 {
                 tr("la donante", "the donor").to_string()
             } else {
@@ -374,7 +391,7 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     let to_remove: Vec<u32> = [donor].into_iter().chain(sacrifices).collect();
 
     let applied = mainthread::run(
-        move || -> Result<(), String> {
+        move || -> Result<Result<Vec<RefPlace>, String>, String> {
             for (h, live) in &expected {
                 match game.relic_by_handle(*h) {
                     Some((_, now)) if now == *live => {}
@@ -405,13 +422,23 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
                 )
                 .into());
             }
-            for &h in &to_remove {
+            for &h in &to_remove[1..] {
                 if let Some(reason) = game.lock_reason(h) {
                     return Err(format!(
                         "{h:08X} {reason}; {}",
                         tr("no se hizo nada", "nothing was done")
                     ));
                 }
+            }
+            if let Err(e) = game.relic_reference_list() {
+                return Err(format!(
+                    "{}: {e}; {}",
+                    tr(
+                        "no se pudo verificar si la donante está en uso",
+                        "couldn't check whether the donor is in use"
+                    ),
+                    tr("no se hizo nada", "nothing was done")
+                ));
             }
             // A partir de acá se modifica el juego.
             for &h in &to_remove {
@@ -427,6 +454,11 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
                     ));
                 }
             }
+            // La donante pudo estar equipada o guardada en presets y recipientes: el borrado del
+            // juego la desequipa, pero esos lugares quedarían apuntando a un handle que el juego
+            // puede darle a otra reliquia. Se dejan vacíos. Si falla, la forja sigue (cortarla acá
+            // la dejaría a medias) y se avisa.
+            let cleared = game.clear_references(donor);
             if !game.write_slots(target, effects, curses, &sp) {
                 return Err(tr(
                     "ATENCIÓN: no se pudo reescribir la receptora; la forja quedó a medias",
@@ -456,11 +488,37 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
             }
             // Sin pedido de guardado: todo cambió en un mismo frame, así que el próximo guardado
             // del juego toma la forja entera o nada de ella.
-            Ok(())
+            Ok(cleared)
         },
         std::time::Duration::from_secs(5),
     )?;
-    applied?;
+    // Lugares de los que se sacó la donante, sin repetir.
+    let cleared_note = match applied? {
+        Ok(cleared) => {
+            let mut places: Vec<String> = Vec::new();
+            for p in cleared.iter().map(RefPlace::label) {
+                if !places.contains(&p) {
+                    places.push(p);
+                }
+            }
+            if places.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "\n{}: {}.",
+                    tr("La donante se sacó de", "The donor was removed from"),
+                    places.join(", ")
+                )
+            }
+        }
+        Err(e) => format!(
+            "\n{}: {e}",
+            tr(
+                "ATENCIÓN: la donante se destruyó, pero puede seguir figurando en un recipiente o preset",
+                "WARNING: the donor was destroyed, but it may still be listed in a vessel or preset"
+            )
+        ),
+    };
 
     let new_sig = signature(plan.new_target.item_id, &effects, &curses);
     registry.record(
@@ -488,11 +546,11 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     Ok(match lang::get() {
         Lang::Es => format!(
             "Forja hecha: {relic_name} ahora tiene:{names}\nMurk {murk} -> {new_murk} \
-             (costo {cost}). Forjas: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}"
+             (costo {cost}). Forjas: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}{cleared_note}"
         ),
         Lang::En => format!(
             "Forge done: {relic_name} now has:{names}\nMurk {murk} -> {new_murk} \
-             (cost {cost}). Forges: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}"
+             (cost {cost}). Forges: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}{cleared_note}"
         ),
     })
 }

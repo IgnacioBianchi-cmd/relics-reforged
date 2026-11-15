@@ -27,7 +27,8 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Motor de reglas (`crates/relic-rules`) | ✔ con tests contra un save real |
 | DLL in-game (`crates/relics-reforged`, me3) | Lee y valida el inventario. Gancho en el hilo principal del juego |
 | Forja completa (`forge` desde el archivo de comandos) | ✔ probada en el juego y guardada en el save |
-| Bloqueo de favoritas, equipadas, presets y recipientes | ✔ probado en el juego |
+| Bloqueo de favoritas, equipadas, presets y recipientes como sacrificios | ✔ probado en el juego |
+| Donante favorita o en uso: aviso al elegirla y al confirmar; al forjar se la saca de los slots equipados, presets y recipientes (quedan vacíos) | Formato de presets y slots vacíos relevado en memoria (2026-11-14); falta probar la forja en el juego |
 | Menú dentro del juego (F7 en Relic Rites, ImGui con hudhook, a pantalla completa y con el estilo del juego) | ✔ probado: forja desde el menú guardada en el save |
 | Íconos del juego (reliquias, efectos y teclas), leídos de los `data*.bdt` instalados | ✔ probado en el juego |
 | Botón "F7 :Forge relics" en la barra de controles de Relic Rites | ✔ probado en inglés; posición en español medida con capturas, falta verla en el juego |
