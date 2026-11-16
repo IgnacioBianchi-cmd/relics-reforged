@@ -203,7 +203,9 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - **Trampa:** desde `pgd+0x8FC` hay una lista con **todas** las reliquias (registros de 20 bytes; ¿orden de adquisición o "nueva"?). No indica uso: no se mira.
 - **ASLR:** la base de `nightreign.exe` cambió por primera vez (de `0x7FF618470000` a `0x7FF6E63A0000`). Todo se calcula relativo a la base, así que no afecta, pero las búsquedas manuales tienen que usar la base del log.
 - Regla de `forge`: los sacrificios no pueden ser favoritos ni aparecer en esos lugares; la receptora sí. Si el contenedor no tiene la forma esperada o el árbol no tiene la cantidad de nodos que dice, la reliquia se da por bloqueada.
-- **Donante favorita o en uso** (2026-11-14): se permite, con aviso en el menú. Después de `RemoveItem` (que desequipa), `Game::clear_references` deja vacíos los slots equipados, presets y recipientes que todavía tengan su handle: si no, apuntarían a un handle que el juego puede darle a otra reliquia. Si no se puede leer dónde está en uso, la donante tampoco se puede usar. **Falta probarlo en el juego** (forjar con una donante equipada y en un preset, volver al título y recargar).
+- **Donante favorita o en uso** (2026-11-14): se permite, con aviso en el menú. Después de `RemoveItem` (que desequipa), `Game::clear_references` deja vacíos los slots equipados, presets y recipientes que todavía tengan su handle: si no, apuntarían a un handle que el juego puede darle a otra reliquia. Si no se puede leer dónde está en uso, la donante tampoco se puede usar.
+  - Probado el 2026-11-16 con una donante guardada en un recipiente (`C0800098`, slot 3 del recipiente `0x1F41`): forja hecha ("The donor was removed from: vessel"). En el save que el juego escribió 16 s después (184 reliquias, 4 menos), el registro del recipiente quedó `1F41 C08000BC C08000A5 00000000 0 0 C08000C2`. La copia vieja del bloque (desplazada `+0xB7060`, que el juego ignora) conserva el handle, igual que con los sacrificios, que no estaban en uso.
+  - Falta: una donante equipada y en un preset, y recargar la partida.
 - Probado el 2026-11-04: 66 de 141 reliquias bloqueadas; rechazos por favorita, por preset + recipiente y por recipiente solo.
 - En el save, recipientes y presets están en USERDATA_00 con otro formato (recipiente: ID + 6 handles, 0x1C bytes; desde ~`0x1c090`).
 
@@ -389,7 +391,7 @@ Solo si el **tipo** de reliquia ya trae 3 slots potenciados (`2000000 ×3`), es 
 - [x] ~~Pedir un guardado~~: no hace falta (la forja es atómica respecto de los guardados). `nr+6AF930` no sirve: restaura una foto.
 - [x] Comando `forge` (y `forge?` en seco) con `plan_transfer`, probado y guardado en el save.
 - [x] **Favoritas, equipadas, presets y recipientes**: bloqueadas en `forge` como sacrificios (ver arriba).
-- [ ] **Donante en uso**: probar en el juego que el recipiente y el preset quedan con el slot vacío después de forjar y de recargar.
+- [ ] **Donante en uso**: recipiente ✔ en el save (2026-11-16); faltan equipada y preset, y recargar la partida.
 - [x] Interfaz dentro del juego: menú F7 (`ui.rs`, Dear ImGui con hudhook 0.9.3 sobre DirectX 12). La fuente de ImGui cubre Latin-1: nada de "→" ni otros símbolos fuera de ese rango.
 - [x] **Solo en la Roundtable** (regla 11): la forja exige Relic Rites abierto.
 - [x] **Params y nombres sin CSV** (ver arriba): params desde `regulation.bin`, nombres desde los FMG cargados.
