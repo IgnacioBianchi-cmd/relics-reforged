@@ -36,6 +36,8 @@ At the Roundtable Hold, open Relic Rites. With the cursor on the equipped relic 
 (keyboard) or R2/RT (controller), or click "F7: Forge relics". Pick the relic to improve and the
 effect to replace, the donor and its effect, and 3 sacrifices (all of this can be changed, see
 SETTINGS); check the preview and forge.
+The donor can be a favorite or a relic in use (equipped, in a vessel or in a preset): the forge
+warns you before confirming and leaves that slot empty. Sacrifices can't be favorites or in use.
 Works with mouse, keyboard (arrows + Enter) and controller.
 After a forge, leaving the forge closes Relic Rites: the game only updates its relic list when
 the menu is opened again.
@@ -144,6 +146,9 @@ equipadas, apretá F7 (teclado) o R2/RT (mando), o hacé clic en "F7: Forjar rel
 reliquia a mejorar y el efecto a reemplazar, la donante y su efecto, y 3 sacrificios (todo
 esto se puede cambiar, ver CONFIGURACIÓN); revisá la vista previa y forjá. Funciona con
 mouse, teclado (flechas + Enter) y mando.
+La donante puede ser favorita o estar en uso (equipada, en un recipiente o en un preajuste): la
+forja avisa antes de confirmar y deja ese espacio vacío. Los sacrificios no pueden ser favoritos
+ni estar en uso.
 Después de una forja, al salir de la forja se cierra Ritos de reliquias: el juego solo
 actualiza su lista de reliquias al volver a abrir el menú.
 
