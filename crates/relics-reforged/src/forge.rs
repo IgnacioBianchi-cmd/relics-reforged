@@ -533,24 +533,32 @@ pub fn forge(game: Game, data: &GameData, dll_dir: &Path, order: Order) -> Resul
     }
     let registry_note = match registry.save(dll_dir) {
         Ok(()) => String::new(),
-        Err(e) => format!(" (no pude guardar {FORGED_FILE}: {e})"),
+        Err(e) => format!(
+            " ({} {FORGED_FILE}: {e})",
+            tr("no pude guardar", "couldn't save")
+        ),
     };
 
-    let (names, cost, note, ids) = (
+    // El handle de la receptora y los efectos forjados sirven para revisar reportes, no al
+    // jugador: van al log y no al mensaje.
+    crate::log_event(&format!(
+        "Forja: receptora {target:08X}, efectos forjados {:?}",
+        plan.new_target_forged
+    ));
+    let (names, cost, note) = (
         names(&plan.new_target),
         lang::number(plan.murk_cost),
         forged_note(plan.new_target_forge_count),
-        &plan.new_target_forged,
     );
     let (murk, new_murk) = (lang::number(murk), lang::number(new_murk));
     Ok(match lang::get() {
         Lang::Es => format!(
             "Forja hecha: {relic_name} ahora tiene:{names}\nMurk {murk} -> {new_murk} \
-             (costo {cost}). Forjas: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}{cleared_note}"
+             (costo {cost}). Forjas: {note}.{registry_note}{upgrade_note}{cleared_note}"
         ),
         Lang::En => format!(
             "Forge done: {relic_name} now has:{names}\nMurk {murk} -> {new_murk} \
-             (cost {cost}). Forges: {note}. [{target:08X}, {ids:?}]{registry_note}{upgrade_note}{cleared_note}"
+             (cost {cost}). Forges: {note}.{registry_note}{upgrade_note}{cleared_note}"
         ),
     })
 }
