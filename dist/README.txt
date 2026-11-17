@@ -26,15 +26,21 @@ A. ME3 Manager (recommended): drag the downloaded zip into ME3 Manager, or insta
 B. Your own me3 profile: unzip RelicsReforged.dll and the RelicsReforged folder into your mods
    folder and add the DLL to your .me3 file. For the profile me3 creates
    (%LOCALAPPDATA%\garyttierney\me3\config\profiles\nightreign-default.me3), unzip into the
-   nightreign-mods folder next to it and add:
+   nightreign-mods folder next to it, open nightreign-default.me3 with a text editor and
+   replace the line natives = [] with these lines (if you keep natives = [], me3 refuses the
+   profile with "duplicate key"):
+       savefile = "NR0000_RelicsReforged.sl2"
+
        [[natives]]
        path = 'nightreign-mods/RelicsReforged.dll'
-   With Seamless Co-op in the same profile, also add (use your own game path):
+   The savefile line keeps the mod off your normal save (see SAVES). With Seamless Co-op you
+   can leave it out (Seamless uses its own save) and add one more block instead (use your own
+   game path):
        [[natives]]
        path = 'C:/Program Files (x86)/Steam/steamapps/common/ELDEN RING NIGHTREIGN/Game/SeamlessCoop/nrsc.dll'
        load_early = true
-   Without Seamless, read SAVES first: add a savefile line so the mod doesn't work on your
-   normal save.
+   Any other .me3: add a [[natives]] block like the one above, and delete its natives = []
+   line if it has one.
 
 C. No other mods: download the optional "Standalone" file, unzip its folder anywhere (not inside
    the game folder) and double-click RelicsReforged.me3. It plays offline on a copy of your save.
@@ -70,8 +76,8 @@ The mod works on whatever save the game loads:
   normal save is never touched.
 - With Seamless Co-op: the Seamless save (NR0000.co2 by default).
 - Your own me3 profile without Seamless: your normal save (NR0000.sl2), unless the profile has a
-  savefile line. To keep the modded game apart, add this near the top of your .me3 (me3 copies
-  your save to it the first time):
+  savefile line. To keep the modded game apart, add this to your .me3, above the first line
+  that starts with [ (me3 copies your save to it the first time):
       savefile = "NR0000_RelicsReforged.sl2"
 - Forging cannot be undone. Before the first forge of every game session, the mod copies your
   save to %APPDATA%\RelicsReforged\backups (the last 10 are kept). To restore one, close the
@@ -152,15 +158,21 @@ A. ME3 Manager (recomendado): arrastrá el zip descargado a ME3 Manager, o insta
 B. Tu propio perfil de me3: descomprimí RelicsReforged.dll y la carpeta RelicsReforged en tu
    carpeta de mods y agregá la DLL a tu .me3. Para el perfil que crea me3
    (%LOCALAPPDATA%\garyttierney\me3\config\profiles\nightreign-default.me3), descomprimí en la
-   carpeta nightreign-mods que está al lado y agregá:
+   carpeta nightreign-mods que está al lado, abrí nightreign-default.me3 con un editor de texto
+   y reemplazá la línea natives = [] por estas (si dejás natives = [], me3 rechaza el perfil
+   con "duplicate key"):
+       savefile = "NR0000_RelicsReforged.sl2"
+
        [[natives]]
        path = 'nightreign-mods/RelicsReforged.dll'
-   Con Seamless Co-op en el mismo perfil, agregá también (con la ruta de tu juego):
+   La línea savefile hace que el mod no trabaje sobre tu save normal (ver SAVES). Con Seamless
+   Co-op podés no ponerla (Seamless usa su propio save) y agregar otro bloque (con la ruta de tu
+   juego):
        [[natives]]
        path = 'C:/Program Files (x86)/Steam/steamapps/common/ELDEN RING NIGHTREIGN/Game/SeamlessCoop/nrsc.dll'
        load_early = true
-   Sin Seamless, leé antes SAVES: agregá una línea savefile para que el mod no trabaje sobre tu
-   save normal.
+   En cualquier otro .me3: agregá un bloque [[natives]] como el de arriba y borrá su línea
+   natives = [] si la tiene.
 
 C. Sin otros mods: descargá el archivo opcional "Standalone", descomprimí su carpeta donde
    quieras (no dentro de la carpeta del juego) y hacé doble clic en RelicsReforged.me3. Juega
@@ -198,8 +210,8 @@ El mod trabaja sobre el save que cargue el juego:
   save normal no se toca.
 - Con Seamless Co-op: el save de Seamless (NR0000.co2 por defecto).
 - Tu propio perfil de me3 sin Seamless: tu save normal (NR0000.sl2), salvo que el perfil tenga
-  una línea savefile. Para separar el juego con mods, agregá esto arriba de tu .me3 (la primera
-  vez, me3 copia tu save a ese archivo):
+  una línea savefile. Para separar el juego con mods, agregá esto a tu .me3, antes de la primera
+  línea que empieza con [ (la primera vez, me3 copia tu save a ese archivo):
       savefile = "NR0000_RelicsReforged.sl2"
 - La forja no se puede deshacer. Antes de la primera forja de cada sesión, el mod copia tu save
   a %APPDATA%\RelicsReforged\backups (guarda las últimas 10). Para restaurar una, cerrá el juego

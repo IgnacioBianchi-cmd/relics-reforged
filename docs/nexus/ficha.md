@@ -76,7 +76,7 @@ español para la sección en español.
 
 - [x] Link al código en la descripción: https://github.com/IgnacioBianchi-cmd/relics-reforged.
 - [x] Instalar el zip principal en ME3 Manager (arrastrándolo) con Seamless como mod externo con `load_early`, y forjar (ME3 Manager 1.5.2, Seamless 1.1.3, 2026-11-17).
-- [ ] Probar el zip principal en `nightreign-default.me3` (sin ME3 Manager) y el standalone.
+- [x] Probar el zip principal en `nightreign-default.me3` (sin ME3 Manager) y el standalone (2026-11-17).
 - [ ] Sesión de Seamless con un amigo, con y sin el mod del otro lado.
 - [ ] Probar en otra PC (otra ruta del juego, sin `data/export`).
 - [ ] Pasar la rama a `main` y etiquetar la versión (`v0.1.0`).
