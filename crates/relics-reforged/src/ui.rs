@@ -1319,10 +1319,10 @@ impl Menu {
         bg.add_rect_filled_multicolor(
             [0.0, top],
             [w, h],
-            [0.05, 0.06, 0.10, 0.86],
-            [0.05, 0.06, 0.10, 0.86],
-            [0.02, 0.03, 0.05, 0.90],
-            [0.02, 0.03, 0.05, 0.90],
+            [0.05, 0.06, 0.10, 0.94],
+            [0.05, 0.06, 0.10, 0.94],
+            [0.02, 0.03, 0.05, 0.96],
+            [0.02, 0.03, 0.05, 0.96],
         );
         // La barra de controles del juego (más larga en español) se transparentaba detrás de la
         // nuestra: abajo el fondo se oscurece casi del todo, con un degradé para no marcar un corte.
