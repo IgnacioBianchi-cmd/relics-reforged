@@ -46,7 +46,7 @@ C. No other mods: download the optional "Standalone" file, unzip its folder anyw
    the game folder) and double-click RelicsReforged.me3. It plays offline on a copy of your save.
 
 Every player who wants to forge needs the mod; the others don't.
-Other DLL loaders (like Elden Mod Loader) should work too, but haven't been tested.
+Other DLL loaders (like Elden Mod Loader) should work too, but I haven't tested them.
 
 HOW TO USE
 At the Roundtable Hold, open Relic Rites. With the cursor on the equipped relic slots, press F7
@@ -92,8 +92,8 @@ If a mod comes with its own .me3 file, add Relics Reforged to that file: copy Re
 and the RelicsReforged folder next to it and add these lines at the end:
     [[natives]]
     path = 'RelicsReforged.dll'
-Tested offline with "More Map Variations and Weapons Mod Merge" 2.1.8.3; it hasn't been tested
-on that mod's own online server.
+I tested it offline with "More Map Variations and Weapons Mod Merge" 2.1.8.3; I haven't tested
+it on that mod's own online server.
 
 FILES
 - RelicsReforged\relics_reforged.log (next to the DLL): written every time the game starts.
@@ -119,7 +119,7 @@ What matters is which save they are in (see SAVES).
   This brings over all the progress of the copy, not only the relics; whatever you did only on
   your normal save is replaced (that's why step 2).
 - Online: your normal save goes online. The relics are combinations the game itself can roll,
-  but we can't promise the anti-cheat or the servers won't flag anything. If you take a save
+  but I can't promise the anti-cheat or the servers won't flag anything. If you take a save
   used with the mod online, it's at your own risk.
 
 UNINSTALL

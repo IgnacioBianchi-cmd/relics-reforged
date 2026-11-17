@@ -8,10 +8,24 @@ Tired of the effect you wanted showing up on a relic with two useless ones? Of r
 
 Relics Reforged adds a forge to [b]Relic Rites[/b] at the Roundtable Hold: take that one good effect off the bad relic (the [b]donor[/b]) and move it onto a relic that will actually make use of it (the [b]target[/b]), in place of one of its effects. The bad relic was only worth that one effect anyway.
 
-[list]
-[*][b]Curses travel with their effect.[/b] Moving a Deep effect that comes with a curse moves the curse too. A cursed effect can replace an uncursed one and vice versa, as long as the game also rolls that relic with that mix of cursed and uncursed effects.
-[*][b]Your build is safe.[/b] Favorites, equipped relics and relics used in vessels or presets can't be sacrificed. They can be the donor, so you can keep relics with the effects you want as favorites: the forge warns you where it is in use before confirming, and those slots are left empty.
+[size=4][b]How to use[/b][/size]
+In Relic Rites, with the cursor on your equipped relic slots, press [b]F7[/b] (keyboard) or [b]R2 / RT[/b] (controller), or click "F7: Forge relics" at the bottom.
+[list=1]
+[*][b]Choose the target[/b] (the relic to improve) and the effect to replace.
+[*][b]Choose the donor[/b] and the effect to move. Normal relics forge with normal relics, Deep relics with Deep relics.
+[*][b]Choose 3 sacrifices[/b] of the same kind. Each one is worth 1, 2 or 3 points (Delicate, Polished, Grand), and the target needs at least 3 / 5 / 7 points if it has 1 / 2 / 3 effects.
+[*][b]Check the preview and forge.[/b] It costs 2,000 / 4,000 / 7,000 murk for a target with 1 / 2 / 3 effects, ×1.5 for Deep relics (3,000 / 6,000 / 10,500). Forging asks for confirmation twice.
 [/list]
+Good to know:
+[list]
+[*][b]Forge limit:[/b] each relic can be forged 1 / 1 / 2 times (1 / 2 / 3 effects). Forged effects are shown in gold.
+[*][b]Fixed relics[/b] (the ones that always come with the same effects) can't be forged.
+[*][b]Curses travel with their effect.[/b] Moving a Deep effect that comes with a curse moves the curse too. A cursed effect can replace an uncursed one and vice versa, as long as the game also rolls that relic with that mix of cursed and uncursed effects.
+[*][b]Your build is safe.[/b] Favorites, equipped relics and relics used in vessels or presets can't be sacrificed. They can be the donor, so you can keep relics with the effects you want as favorites: the forge warns you where the donor is in use before confirming, and those slots are left empty.
+[/list]
+These are the defaults: see [b]Settings[/b] to change them.
+
+The forge looks and sounds like the game's own menus: relic and effect icons, search, the same filter as Relic Rites (color, size, type, favorites and up to 3 effect conditions) and sorting. It works with [b]mouse, keyboard and controller[/b]; while it's open, the game doesn't receive your inputs.
 
 [size=4][b]Fair and balanced, not a relic editor[/b][/size]
 Nexus has plenty of relic editors and cheat tables that let you write whatever relic you want. Relics Reforged is built the other way around: it only lets you make better use of what you already rolled.
@@ -22,30 +36,6 @@ Nexus has plenty of relic editors and cheat tables that let you write whatever r
 [*][b]Limited forges.[/b] Each relic can only be forged once or twice, so a great relic still has to start from a good roll.
 [/list]
 You still play expeditions and roll relics as usual; the forge just keeps that one good effect from going to waste on the wrong relic. Costs and limits can be loosened in the settings, but no setting lets the forge make a relic the game couldn't roll.
-
-[size=4][b]Rules[/b][/size]
-[list]
-[*]Normal relics forge with normal relics, Deep relics with Deep relics.
-[*]Sacrifices: exactly 3. Each one is worth 1, 2 or 3 points (Delicate, Polished, Grand). The target needs at least 3 / 5 / 7 points (1 / 2 / 3 effects).
-[*]Murk: 2,000 / 4,000 / 7,000 for a target with 1 / 2 / 3 effects, ×1.5 for Deep relics (3,000 / 6,000 / 10,500).
-[*]Forge limit per relic: 1 / 1 / 2 forges (1 / 2 / 3 effects). Forged effects are shown in gold.
-[*]Fixed relics (the ones that always come with the same effects) can't be forged.
-[*]Only at the Roundtable Hold, with Relic Rites open.
-[/list]
-These are the defaults: see [b]Settings[/b] to change them.
-
-[size=4][b]Settings[/b][/size]
-The first time the game starts with the mod, it creates [b]RelicsReforged\relics_reforged.ini[/b] next to the DLL (updates don't overwrite it). Edit it and restart the game to change the key (F1-F12, Insert, Delete, Home, End, PageUp, PageDown) and controller button (R2 or L2) that open the forge, the number of sacrifices (0-9), the minimum points, the murk cost, the Deep multiplier, the forge limit (0 = no limit), the menu language and how many save backups to keep.
-
-[size=4][b]How to use[/b][/size]
-In Relic Rites, with the cursor on your equipped relic slots, press [b]F7[/b] (keyboard) or [b]R2 / RT[/b] (controller), or click "F7: Forge relics" at the bottom.
-[list=1]
-[*]Choose the relic to improve and the effect to replace.
-[*]Choose the donor and the effect to transfer.
-[*]Choose 3 sacrifices.
-[*]Check the preview (cost, points, forge count) and forge. Forging asks for confirmation twice.
-[/list]
-The forge looks and sounds like the game's own menus: relic and effect icons, search, the same filter as Relic Rites (color, size, type, favorites and up to 3 effect conditions) and sorting. It works with [b]mouse, keyboard and controller[/b]; while it's open, the game doesn't receive your inputs.
 
 [size=4][b]Requirements[/b][/size]
 [list]
@@ -66,7 +56,16 @@ path = 'nightreign-mods/RelicsReforged.dll'[/code]
 The savefile line keeps the mod off your normal save. With Seamless in the same profile you can leave it out (Seamless uses its own save) and add another [[natives]] block with its nrsc.dll (your own game path) and [b]load_early = true[/b]. In any other .me3, add the [[natives]] block and delete its natives = [] line if it has one.
 [*][b]No other mods:[/b] download the optional [b]Standalone[/b] file, unzip it anywhere (not inside the game folder) and double-click [b]RelicsReforged.me3[/b]. It plays offline on a copy of your save.
 [/list]
-Only players who want to forge need the mod (tested in Seamless Co-op with a player without it). Other DLL loaders (like Elden Mod Loader) should work too, but haven't been tested.
+Only players who want to forge need the mod: I tested it in Seamless Co-op with a player without it. Other DLL loaders (like Elden Mod Loader) should work too, but I haven't tested them.
+
+[size=4][b]Other mods (More Map Variations and similar)[/b][/size]
+Relics Reforged loads alongside other mods in the same me3 profile. The forge uses the relic rules the game loaded, so mods that change relics through their own regulation.bin work: the effects they add to the random pools can be forged too. If a mod comes with its own .me3 file, copy RelicsReforged.dll and the RelicsReforged folder next to it and add these lines at the end of that .me3:
+[code][[natives]]
+path = 'RelicsReforged.dll'[/code]
+I tested it offline with More Map Variations and Weapons Mod Merge 2.1.8.3; I haven't tested it on that mod's own online server.
+
+[size=4][b]Settings[/b][/size]
+The first time the game starts with the mod, it creates [b]RelicsReforged\relics_reforged.ini[/b] next to the DLL (updates don't overwrite it). Edit it and restart the game to change the key (F1-F12, Insert, Delete, Home, End, PageUp, PageDown) and controller button (R2 or L2) that open the forge, the number of sacrifices (0-9), the minimum points, the murk cost, the Deep multiplier, the forge limit (0 = no limit), the menu language and how many save backups to keep.
 
 [size=4][b]Saves and safety[/b][/size]
 The mod works on whatever save the game loads.
@@ -78,43 +77,37 @@ The mod works on whatever save the game loads.
 [*]me3 keeps the game offline. [b]Do not use this mod online.[/b]
 [/list]
 
-[size=4][b]Other mods (More Map Variations and similar)[/b][/size]
-Relics Reforged loads alongside other mods in the same me3 profile. The forge uses the relic rules the game loaded, so mods that change relics through their own regulation.bin work: the effects they add to the random pools can be forged too. If a mod comes with its own .me3 file, copy RelicsReforged.dll and the RelicsReforged folder next to it and add these lines at the end of that .me3:
-[code][[natives]]
-path = 'RelicsReforged.dll'[/code]
-Tested offline with More Map Variations and Weapons Mod Merge 2.1.8.3; it hasn't been tested on that mod's own online server.
-
-[size=4][b]Languages[/b][/size]
-The mod speaks [b]English and Spanish[/b] and follows the game's language: Spanish if the game is in Spanish, English otherwise (it can also be set in the settings). Relic and effect names always come from the game itself, in your language.
-
-[size=4][b]Known limitations[/b][/size]
-[list]
-[*]Tested at 1920x1080. The menu scales with the screen height; other resolutions and aspect ratios haven't been tested yet.
-[*]Controllers: tested with a PlayStation controller through Steam Input. Xbox controllers should work but haven't been tested.
-[/list]
-Found a bug? Please attach [b]RelicsReforged\relics_reforged.log[/b] (next to the DLL) to your report.
-
 [size=4][b]Keeping your forged relics[/b][/size]
 Forged relics are stored in the save like any other relic and don't need the mod to exist.
 [list]
 [*][b]Unsupported game update:[/b] keep playing the same way. The mod stays off, but the save and your forged relics load as usual.
 [*][b]Seamless:[/b] they are in the Seamless save (NR0000.co2); play Seamless without the mod and they are still there.
 [*][b]On a save copy[/b] (the standalone profile, or a savefile line in your own profile): they are only in NR0000_RelicsReforged.sl2, which moves on separately from your normal save. To keep them without the mod, close the game, back up NR0000.sl2 and replace it with a copy of NR0000_RelicsReforged.sl2 renamed to NR0000.sl2 (this brings over all the progress of the copy).
-[*]Taking a save used with the mod online is at your own risk: the relics are combinations the game can roll, but we can't promise nothing gets flagged.
+[*]Taking a save used with the mod online is at your own risk: the relics are combinations the game can roll, but I can't promise nothing gets flagged.
 [/list]
+
+[size=4][b]Languages[/b][/size]
+The mod speaks [b]English and Spanish[/b] and follows the game's language: Spanish if the game is in Spanish, English otherwise (it can also be set in the settings). Relic and effect names always come from the game itself, in your language.
+
+[size=4][b]Known limitations[/b][/size]
+[list]
+[*]I tested it at 1920x1080. The menu scales with the screen height, but I haven't tested other resolutions and aspect ratios yet.
+[*]I tested controllers with a PlayStation controller through Steam Input. Xbox controllers should work, but I haven't tested them.
+[/list]
+Found a bug? Please attach [b]RelicsReforged\relics_reforged.log[/b] (next to the DLL) to your report.
 
 [size=4][b]Uninstall[/b][/size]
 Remove the mod from ME3 Manager, or delete RelicsReforged.dll and the RelicsReforged folder (and the lines you added to your .me3), or the standalone folder. Delete %APPDATA%\RelicsReforged too if you don't want the forge record and the save backups. If you played on a save copy, read [b]Keeping your forged relics[/b] first.
 
 [size=4][b]How this was made[/b][/size]
-Relics Reforged was designed, balanced and tested by me. The code and this page were written with Claude, an AI assistant, working under my direction. In practice:
+I designed, balanced and tested Relics Reforged. The code and this page were written with Claude, an AI assistant, under my direction:
 [list]
-[*][b]The idea, the rules and the balance are mine.[/b] What can be forged, what it costs, the forge limits and the "only relics the game could roll" rule came from playing the game and testing it with a friend. The Deep murk cost, for example, was lowered after seeing how much murk real runs give.
-[*][b]The research is documented.[/b] How the save, the game's memory and the relic params work was worked out step by step and written down in the repository.
-[*][b]Everything was tested in the game:[/b] offline, with Seamless Co-op on two PCs (also with a player without the mod), with ME3 Manager and with a mod that changes relics, checking the saves after the forges.
+[*][b]The idea, the rules and the balance are mine:[/b] what can be forged, what it costs, the forge limits and the rule that the result must be a relic the game could roll.
+[*][b]The research is documented:[/b] how the save, the game's memory and the relic params work was worked out step by step and is written down in the repository.
+[*][b]I tested everything in the game:[/b] offline, with Seamless Co-op on two PCs (also with a player without the mod), with ME3 Manager and with a mod that changes relics, checking the saves after the forges.
 [*][b]The source code is open[/b] (MIT), so anyone can check what it does.
 [/list]
-That's why the mod is tagged as AI-generated content. It's not a quick AI project: it's a genuine attempt to add something to Nightreign that, as far as I could find, didn't exist yet.
+That's why the mod is tagged as AI-generated content. It's not a quick AI project: it's a genuine attempt to add to Nightreign something that improves the whole relic experience, that the game was missing and that I couldn't find anywhere else.
 
 [size=4][b]Credits[/b][/size]
 [list]
