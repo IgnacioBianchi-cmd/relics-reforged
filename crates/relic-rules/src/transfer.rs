@@ -22,8 +22,8 @@ pub struct Rules {
     pub min_points: [u32; 3],
     /// Murk según el tamaño de la receptora (1, 2, 3 efectos).
     pub murk_cost: [u32; 3],
-    /// Multiplicador de murk si la receptora es Deep.
-    pub deep_murk_multiplier: u32,
+    /// Multiplicador de murk si la receptora es Deep, en centésimos: 150 = ×1,5.
+    pub deep_murk_percent: u32,
     /// Máximo de forjas por reliquia según el tamaño de la receptora (1, 2, 3 efectos). Cuenta
     /// cada forja, también la que pisa un efecto ya forjado. 0 = sin límite.
     pub forge_limit: [usize; 3],
@@ -50,7 +50,9 @@ impl Default for Rules {
             // es Deep), una Scenic Flatstone (reliquia al azar) cuesta 600 y una expedición deja
             // unos 2.500-3.000.
             murk_cost: [2_000, 4_000, 7_000],
-            deep_murk_multiplier: 2,
+            // ×2 era mucho: una Deep grande costaba 14.000 y lo que interesa es forjar varias
+            // (una expedición deja ~2.100 si se llega al jefe final, ~3.000 si se le gana).
+            deep_murk_percent: 150,
             forge_limit: [1, 1, 2],
         }
     }
@@ -338,7 +340,8 @@ pub fn plan_transfer(
     // Murk.
     let mut murk_cost = rules.murk_cost[size - 1];
     if target_deep {
-        murk_cost = murk_cost.saturating_mul(rules.deep_murk_multiplier);
+        let deep = u64::from(murk_cost) * u64::from(rules.deep_murk_percent) / 100;
+        murk_cost = u32::try_from(deep).unwrap_or(u32::MAX);
     }
     if req.available_murk < murk_cost {
         return Err(TransferError::NotEnoughMurk {
@@ -710,10 +713,15 @@ mod tests {
             available_murk: 50_000,
         };
 
-        // Potenciado sobre potenciado: viaja con su maldición. Murk ×2 por ser Deep.
+        // Potenciado sobre potenciado: viaja con su maldición. Murk ×1,5 por ser Deep.
         let plan = plan_transfer(&data, &Rules::default(), &base).unwrap();
         assert_eq!(plan.new_target.slots[0], Slot::new(21, Some(31)));
-        assert_eq!(plan.murk_cost, 8_000);
+        assert_eq!(plan.murk_cost, 6_000);
+        let double = Rules {
+            deep_murk_percent: 200,
+            ..Rules::default()
+        };
+        assert_eq!(plan_transfer(&data, &double, &base).unwrap().murk_cost, 8_000);
 
         assert_eq!(plan.type_change, None);
 

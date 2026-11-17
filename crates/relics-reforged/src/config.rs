@@ -125,7 +125,7 @@ fn summary(c: &Config) -> String {
         r.sacrifice_count,
         r.min_points,
         r.murk_cost,
-        r.deep_murk_multiplier,
+        multiplier_text(r.deep_murk_percent),
         r.forge_limit,
         c.language,
         c.save_backups
@@ -193,7 +193,7 @@ fn apply(c: &mut Config, section: &str, key: &str, value: &str) -> Result<(), St
         }
         ("rules", "min_points") => c.rules.min_points = three(value)?,
         ("rules", "murk_cost") => c.rules.murk_cost = three(value)?,
-        ("rules", "deep_murk_multiplier") => c.rules.deep_murk_multiplier = number(value)?,
+        ("rules", "deep_murk_multiplier") => c.rules.deep_murk_percent = multiplier(value)?,
         ("rules", "forge_limit") => c.rules.forge_limit = three(value)?,
         ("general", "language") => {
             c.language = match value.to_ascii_lowercase().as_str() {
@@ -218,6 +218,27 @@ fn number<T: std::str::FromStr>(value: &str) -> Result<T, String> {
     clean
         .parse()
         .map_err(|_| format!("\"{value}\" no es un número válido"))
+}
+
+/// Un multiplicador con hasta 2 decimales (`1.5`, `1,75`, `2`), en centésimos: `1.5` → 150.
+fn multiplier(value: &str) -> Result<u32, String> {
+    let bad = || format!("\"{value}\" no es un multiplicador válido (por ejemplo 1.5)");
+    let (whole, frac) = value.split_once(['.', ',']).unwrap_or((value, ""));
+    if frac.len() > 2 || !frac.chars().all(|c| c.is_ascii_digit()) {
+        return Err(bad());
+    }
+    let whole: u32 = whole.trim().parse().map_err(|_| bad())?;
+    let frac: u32 = format!("{frac:0<2}").parse().map_err(|_| bad())?;
+    whole
+        .checked_mul(100)
+        .and_then(|w| w.checked_add(frac))
+        .ok_or_else(bad)
+}
+
+/// Un multiplicador en centésimos como se escribe en el `.ini`: 150 → `1.5`, 200 → `2`.
+fn multiplier_text(percent: u32) -> String {
+    let text = format!("{}.{:02}", percent / 100, percent % 100);
+    text.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 /// Tres números separados por comas (receptora de 1, 2 y 3 efectos).
@@ -276,8 +297,9 @@ sacrifices = 3
 min_points = 3, 5, 7
 ; Murk cost / Costo en murk
 murk_cost = 2000, 4000, 7000
-; Murk cost multiplier for Deep relics / Multiplicador del murk para reliquias Deep
-deep_murk_multiplier = 2
+; Murk cost multiplier for Deep relics, decimals allowed (1.75)
+; Multiplicador del murk para reliquias Deep, se aceptan decimales (1.75)
+deep_murk_multiplier = 1.5
 ; Times a relic can be forged (0 = no limit) / Veces que se puede forjar una reliquia (0 = sin límite)
 forge_limit = 1, 1, 2
 
@@ -323,6 +345,21 @@ mod tests {
         assert_eq!(c.rules.forge_limit, [0, 0, 0]);
         assert_eq!(c.language, Some(Lang::Es));
         assert_eq!(c.save_backups, 0);
+    }
+
+    #[test]
+    fn deep_multiplier_accepts_decimals() {
+        for (text, percent) in [("1.5", 150), ("1,75", 175), ("2", 200), ("0", 0), ("1.05", 105)] {
+            let (c, warnings) = parse(&format!("[Rules]\ndeep_murk_multiplier = {text}\n"));
+            assert!(warnings.is_empty(), "{text}: {warnings:?}");
+            assert_eq!(c.rules.deep_murk_percent, percent, "{text}");
+            assert_eq!(multiplier_text(percent), text.replace(',', "."));
+        }
+        for bad in ["1.555", "x", "-1", "1.5x", ""] {
+            let (c, warnings) = parse(&format!("[Rules]\ndeep_murk_multiplier = {bad}\n"));
+            assert_eq!(warnings.len(), 1, "{bad}: {warnings:?}");
+            assert_eq!(c.rules.deep_murk_percent, Rules::default().deep_murk_percent);
+        }
     }
 
     #[test]
