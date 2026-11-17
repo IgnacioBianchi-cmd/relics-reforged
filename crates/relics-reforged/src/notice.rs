@@ -59,7 +59,8 @@ impl ImguiRenderLoop for Notice {
             .focus_on_appearing(false)
             .always_auto_resize(true)
             .build(|| {
-                ui.set_window_font_scale(1.6 * s);
+                // La fuente ya está generada a la escala de la pantalla (ver `Menu::build_fonts`).
+                ui.set_window_font_scale(1.6);
                 for (i, line) in self.lines.iter().enumerate() {
                     let color = if i == 0 {
                         [0.95, 0.80, 0.45, alpha]
