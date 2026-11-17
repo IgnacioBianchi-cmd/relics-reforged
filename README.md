@@ -17,7 +17,7 @@ end-user readme is [`dist/README.txt`](dist/README.txt). Released under the
 [MIT license](LICENSE).
 
 The code comments and the research notes ([`docs/relevamiento.md`](docs/relevamiento.md)) are in
-Spanish. The code and the texts were written with Claude, an AI assistant, under the author's
+Spanish. The code and the texts were written with Claude under the author's
 direction; the design, balance and in-game testing are the author's.
 
 ## Status
