@@ -322,7 +322,7 @@ checksum = "e53debba6bda7a793e5f99b8dacf19e626084f525f7829104ba9898f367d85ff"
 
 [[package]]
 name = "nr-assets"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "aes",
  "num-bigint",
@@ -444,7 +444,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "re-tools"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "iced-x86",
 ]
@@ -477,7 +477,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "relic-rules"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "aes",
  "csv",
@@ -487,7 +487,7 @@ dependencies = [
 
 [[package]]
 name = "relics-reforged"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "hudhook",
  "nr-assets",

@@ -10,7 +10,7 @@ modo BBCode).
 |---|---|
 | Juego | Elden Ring Nightreign |
 | Nombre | Relics Reforged |
-| Versión | 0.1.0 |
+| Versión | 1.0.0 |
 | Autor | Ignacio |
 | Categoría | La que más se parezca a "Gameplay" en la lista del juego (no está verificada la lista de categorías de Nightreign) |
 | Idioma | English (con sección en español) |
@@ -42,14 +42,14 @@ instalarlo como mod DLL. Los dos salen de `powershell -File tools/package.ps1`.
 
 | Campo | Principal | Opcional |
 |---|---|---|
-| Archivo | `target/dist/RelicsReforged-v0.1.0.zip` | `target/dist/RelicsReforged-Standalone-v0.1.0.zip` |
+| Archivo | `target/dist/RelicsReforged-v1.0.0.zip` | `target/dist/RelicsReforged-Standalone-v1.0.0.zip` |
 | Contenido | `RelicsReforged.dll` + `RelicsReforged/` (README, licencia) en la raíz | Lo mismo + `RelicsReforged.me3`, dentro de `RelicsReforged-Standalone/` |
 | Nombre del archivo | Relics Reforged | Relics Reforged - Standalone (me3 profile) |
-| Versión | 0.1.0 | 0.1.0 |
+| Versión | 1.0.0 | 1.0.0 |
 | Categoría | Main Files | Optional Files |
 | Descripción | DLL mod. Install it with ME3 Manager, or add RelicsReforged.dll to your own me3 profile (with Seamless Co-op too). Requires me3 0.13+ and game version 1.3.3. | For players without other mods: unzip anywhere and double-click RelicsReforged.me3. Plays offline on a copy of your save. Requires me3 0.13+. |
 
-**Changelog 0.1.0**
+**Changelog 1.0.0**
 
 - First release: effect transfer between relics in Relic Rites, with preview, double confirmation, forge limits and save backups.
 - In-game menu in the style of the game, with search, filter, sorting, icons and sounds from the game.
@@ -80,5 +80,5 @@ español para la sección en español.
 - [x] Sesión de Seamless con un amigo, los dos con el mod (2026-11-17): sin errores, incluso con una versión distinta del mod en cada PC.
 - [x] Sesión de Seamless con un jugador sin el mod (2026-11-17): el que lo tenía forjó sin problemas.
 - [x] Probar en otra PC: la del amigo, en la misma sesión de Seamless (2026-11-17).
-- [ ] Pasar la rama a `main` y etiquetar la versión (`v0.1.0`).
+- [ ] Etiquetar la versión (`v1.0.0`) en `main`.
 - [ ] Sacar las capturas.
