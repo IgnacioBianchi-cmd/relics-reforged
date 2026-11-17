@@ -316,6 +316,49 @@ impl RelicView {
     }
 }
 
+/// Área 16:9 donde el juego dibuja su interfaz. Con otra proporción el juego agrega franjas
+/// negras (arriba y abajo en 16:10 o 5:4; a los costados en ultrawide) y escala su interfaz con
+/// esa área, no con la pantalla entera.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct View {
+    pub x0: f32,
+    pub y0: f32,
+    pub w: f32,
+    pub h: f32,
+    /// Escala respecto de 1920x1080.
+    pub s: f32,
+}
+
+impl View {
+    pub(crate) fn of(ui: &Ui) -> Self {
+        let [w, h] = ui.io().display_size;
+        let vw = w.min(h * 16.0 / 9.0);
+        let vh = h.min(w * 9.0 / 16.0);
+        View {
+            x0: (w - vw) * 0.5,
+            y0: (h - vh) * 0.5,
+            w: vw,
+            h: vh,
+            s: vh / 1080.0,
+        }
+    }
+
+    /// Una x medida en una captura a 1920x1080, en la pantalla actual.
+    pub(crate) fn x(&self, px: f32) -> f32 {
+        self.x0 + px * self.s
+    }
+
+    /// Una y medida en una captura a 1920x1080, en la pantalla actual.
+    pub(crate) fn y(&self, px: f32) -> f32 {
+        self.y0 + px * self.s
+    }
+
+    /// Borde de abajo del área del juego.
+    pub(crate) fn bottom(&self) -> f32 {
+        self.y0 + self.h
+    }
+}
+
 /// Un control al estilo del juego: la tecla (su glifo, si está en los íconos) y el texto al
 /// lado, en la posición del cursor. Usa la fuente actual. Devuelve `true` si se hizo clic.
 fn key_prompt(
@@ -330,7 +373,9 @@ fn key_prompt(
     let key_size = ui.calc_text_size(key);
     let label_size = ui.calc_text_size(&label);
     let glyph = icons.filter(|i| i.has(key_icon));
-    let box_h = label_size[1] + 6.0 * s;
+    // Medido a 1080p: el recuadro de la tecla del juego mide ~33 px y su texto queda un poco por
+    // debajo del centro (la línea base cae ~8 px sobre el borde de abajo).
+    let box_h = label_size[1] + 10.0 * s;
     let box_w = match glyph {
         Some(i) => box_h * i.aspect(key_icon),
         None => (key_size[0] + 12.0 * s).max(box_h),
@@ -348,7 +393,7 @@ fn key_prompt(
     };
     // Sombra difusa alrededor del texto (varias copias corridas), como los controles del juego.
     let shadow = [0.0, 0.0, 0.0, 0.16];
-    let label_at = [p[0] + box_w + gap, p[1] + (box_h - label_size[1]) * 0.5];
+    let label_at = [p[0] + box_w + gap, p[1] + (box_h - label_size[1]) * 0.5 + 3.0 * s];
     let mut texts = vec![(label_at, label.as_str())];
     if !glyph.is_some_and(|i| i.draw(ui, key_icon, p, [box_w, box_h])) {
         ui.get_window_draw_list()
@@ -396,12 +441,11 @@ fn draw_hint(
     pad_mode: Option<pad::Kind>,
 ) -> bool {
     use crate::relic_menu::Panel;
-    let [w, h] = ui.io().display_size;
-    // Las medidas salen de capturas a 1920x1080; la interfaz del juego escala con el alto y se
-    // centra en horizontal.
-    let s = h / 1080.0;
-    let x = |px: f32| w * 0.5 + (px - 960.0) * s;
-    let y = |px: f32| h * 0.5 + (px - 540.0) * s;
+    // Las medidas salen de capturas a 1920x1080 (ver `View`).
+    let v = View::of(ui);
+    let s = v.s;
+    let x = |px: f32| v.x(px);
+    let y = |px: f32| v.y(px);
     // Fin de la barra de abajo a la izquierda, medido en capturas a 1080p: con el cursor en los
     // slots termina en "M:All Presets" / "M:Todos los preajustes"; en la grilla, en
     // "1:Swap screen" / "1:Cambiar pantalla". Eligiendo la reliquia para un slot la barra es la
@@ -415,12 +459,16 @@ fn draw_hint(
         (relic_rules::lang::Lang::Es, Some(Panel::Right)) => Some(262.0),
         _ => None,
     };
+    // `y` es el centro del recuadro de la tecla (el del juego, a 1080p: 998-1030).
     let (pos, pivot) = match after_presets {
-        Some(px) => ([x(px), y(1015.0)], [0.0, 0.5]),
-        None => ([x(1790.0), y(972.0)], [1.0, 0.5]),
+        Some(px) => ([x(px), y(1014.0)], [0.0, 0.5]),
+        None => ([x(1790.0), y(970.0)], [1.0, 0.5]),
     };
     let mut clicked = false;
     let _pad = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0, 0.0]));
+    // Sin el mínimo de 32 px de ImGui: a resoluciones bajas el control mide menos, quedaba arriba
+    // dentro de una ventana más alta y el centrado lo subía.
+    let _min = ui.push_style_var(imgui::StyleVar::WindowMinSize([1.0, 1.0]));
     ui.window("##relics_reforged_hint")
         .position(pos, Condition::Always)
         .position_pivot(pivot)
@@ -1198,10 +1246,13 @@ impl Menu {
     /// más del mismo menú. Abajo lleva su propia barra de controles, como la del juego.
     fn draw(&mut self, ui: &Ui) {
         self.nav_begin(ui);
-        let [w, h] = ui.io().display_size;
-        let s = h / 1080.0;
+        // El fondo cubre todo el ancho; el menú va dentro del área 16:9 del juego (ver `View`).
+        let w = ui.io().display_size[0];
+        let v = View::of(ui);
+        let s = v.s;
+        let h = v.bottom();
         // Encabezado del juego ("Relic Rites", arriba a la izquierda): queda a la vista.
-        let top = (118.0 * s).round();
+        let top = v.y(118.0).round();
         let bg = ui.get_background_draw_list();
         bg.add_rect_filled_multicolor(
             [0.0, top],
@@ -1213,7 +1264,7 @@ impl Menu {
         );
         // La barra de controles del juego (más larga en español) se transparentaba detrás de la
         // nuestra: abajo el fondo se oscurece casi del todo, con un degradé para no marcar un corte.
-        let band = (995.0 * s).round();
+        let band = v.y(995.0).round();
         let fade = (45.0 * s).round();
         let clear = [0.02, 0.03, 0.05, 0.0];
         let dark = [0.02, 0.03, 0.05, 0.85];
@@ -1231,7 +1282,7 @@ impl Menu {
                 relic_rules::lang::Lang::Es => 365.0,
                 relic_rules::lang::Lang::En => 290.0,
             };
-            let at = [slash_x * s, 67.0 * s - ui.text_line_height() * 0.5];
+            let at = [v.x(slash_x), v.y(67.0) - ui.text_line_height() * 0.5];
             bg.add_text(at, [0.55, 0.54, 0.50, 1.0], "/");
             bg.add_text([at[0] + 22.0 * s, at[1]], GOLD, title);
         }
@@ -1240,8 +1291,8 @@ impl Menu {
         let mut close = false;
         let _pad = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0, 0.0]));
         ui.window("##relics_reforged")
-            .position([0.0, top], Condition::Always)
-            .size([w, h - top], Condition::Always)
+            .position([v.x0, top], Condition::Always)
+            .size([v.w, h - top], Condition::Always)
             .no_decoration()
             .draw_background(false)
             .movable(false)
@@ -1250,14 +1301,14 @@ impl Menu {
                 // Mismos márgenes que los paneles de Relic Rites.
                 let margin = 45.0 * s;
                 let bar = 80.0 * s;
-                ui.set_cursor_screen_pos([margin, top + 16.0 * s]);
+                ui.set_cursor_screen_pos([v.x0 + margin, top + 16.0 * s]);
                 ui.child_window("contenido")
-                    .size([w - margin * 2.0, h - top - 16.0 * s - bar])
+                    .size([v.w - margin * 2.0, h - top - 16.0 * s - bar])
                     .build(|| self.draw_contents(ui));
                 // Barra de controles, a la altura de la del juego.
                 let _f = self.prompt_font.map(|f| ui.push_font(f.0));
                 ui.set_window_font_scale(s);
-                ui.set_cursor_screen_pos([48.0 * s, h - 80.0 * s]);
+                ui.set_cursor_screen_pos([v.x(48.0), h - 80.0 * s]);
                 // Un solo "volver": F7 y Esc hacen lo mismo que Q, pero no se muestran. Con el filtro
                 // abierto, Q lo cierra y 1 lo limpia (como en Relic Rites).
                 let (mut back, mut refresh, mut clear, mut reset) = (false, false, false, false);
