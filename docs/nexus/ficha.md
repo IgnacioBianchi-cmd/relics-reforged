@@ -12,7 +12,7 @@ modo BBCode).
 | Nombre | Relics Reforged |
 | Versión | 1.0.0 |
 | Autor | Ignacio |
-| Categoría | La que más se parezca a "Gameplay" en la lista del juego (no está verificada la lista de categorías de Nightreign) |
+| Categoría | QoL. Las de Nightreign son Armour, Elden Right Nightreign, Gameplay, Miscellaneous, QoL y Skins. Gameplay agrupa mods que cambian las partidas (combate, escalado, movesets) y Miscellaneous es el cajón de sastre; este no toca las partidas, recorta el farmeo de reliquias con un costo, como Free Reign (volver a pelear jefes desde la Roundtable), que también está en QoL |
 | Idioma | English (con sección en español) |
 | Contenido para adultos | No |
 
