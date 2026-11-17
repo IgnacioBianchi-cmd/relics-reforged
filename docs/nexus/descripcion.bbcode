@@ -25,7 +25,7 @@ You finally rolled the effect you wanted... on a relic whose other two effects a
 These are the defaults: see [b]Settings[/b] to change them.
 
 [size=4][b]Settings[/b][/size]
-The first time the game starts with the mod, it creates [b]relics_reforged.ini[/b] in the mod folder (updates don't overwrite it). Edit it and restart the game to change the key (F1-F12, Insert, Delete, Home, End, PageUp, PageDown) and controller button (R2 or L2) that open the forge, the number of sacrifices (0-9), the minimum points, the murk cost, the Deep multiplier, the forge limit (0 = no limit), the menu language and how many save backups to keep.
+The first time the game starts with the mod, it creates [b]RelicsReforged\relics_reforged.ini[/b] next to the DLL (updates don't overwrite it). Edit it and restart the game to change the key (F1-F12, Insert, Delete, Home, End, PageUp, PageDown) and controller button (R2 or L2) that open the forge, the number of sacrifices (0-9), the minimum points, the murk cost, the Deep multiplier, the forge limit (0 = no limit), the menu language and how many save backups to keep.
 
 [size=4][b]How to use[/b][/size]
 In Relic Rites, with the cursor on your equipped relic slots, press [b]F7[/b] (keyboard) or [b]R2 / RT[/b] (controller), or click "F7: Forge relics" at the bottom.
@@ -40,32 +40,37 @@ The forge looks and sounds like the game's own menus: relic and effect icons, se
 [size=4][b]Requirements[/b][/size]
 [list]
 [*][b]Elden Ring Nightreign 1.3.3.[/b] On any other game version the mod stays off and shows a notice for the first minute; the game runs normally.
-[*][url=https://me3.help]me3[/url] 0.13 or newer.
-[*]Optional: Seamless Co-op for Nightreign, to play with friends.
+[*][url=https://me3.help]me3[/url] 0.13 or newer. [url=https://www.nexusmods.com/eldenringnightreign/mods/213]ME3 Manager[/url] is optional.
+[*]Optional: [url=https://www.nexusmods.com/eldenringnightreign/mods/3]Seamless Co-op[/url], to play with friends.
 [/list]
 
 [size=4][b]Installation[/b][/size]
-[list=1]
-[*]Install [url=https://me3.help]me3[/url] with its installer.
-[*]Unzip the [b]RelicsReforged[/b] folder anywhere (not inside the game folder).
-[*][b]Offline:[/b] double-click [b]RelicsReforged.me3[/b].
-[b]With Seamless Co-op:[/b] copy the [b]SeamlessCoop[/b] folder from your game folder (Game\SeamlessCoop, with nrsc.dll and nrsc_settings.ini) into the RelicsReforged folder, then double-click [b]RelicsReforged-Seamless.me3[/b]. Copy the folder itself, not the files inside it: nrsc.dll must end up in RelicsReforged\SeamlessCoop\nrsc.dll. If the game says you're offline and the title screen shows no Seamless, the folder isn't where it should be.
+Relics Reforged is a regular DLL mod: [b]RelicsReforged.dll[/b] and, next to it, the [b]RelicsReforged[/b] folder (the settings file and the log are created there). Install it like any other DLL mod:
+[list]
+[*][b]ME3 Manager (recommended):[/b] install it from Nexus inside ME3 Manager, or drag the downloaded zip into it, and launch from ME3 Manager. [b]With Seamless Co-op:[/b] keep Seamless in your game folder and add [b]Game\SeamlessCoop\nrsc.dll[/b] as an [b]external mod[/b] with [b]load_early[/b] on (advanced options), as ME3 Manager recommends.
+[*][b]Your own me3 profile:[/b] unzip into your mods folder and add the DLL to your .me3. For the profile me3 creates (nightreign-default.me3), unzip into its nightreign-mods folder and add:
+[code][[natives]]
+path = 'nightreign-mods/RelicsReforged.dll'[/code]
+With Seamless in the same profile, add its nrsc.dll too (your own game path), with [b]load_early = true[/b]. Without Seamless, see [b]Saves and safety[/b].
+[*][b]No other mods:[/b] download the optional [b]Standalone[/b] file, unzip it anywhere (not inside the game folder) and double-click [b]RelicsReforged.me3[/b]. It plays offline on a copy of your save.
 [/list]
-Only players who want to forge need the mod.
+Only players who want to forge need the mod. Other DLL loaders (like Elden Mod Loader) should work too, but haven't been tested.
 
 [size=4][b]Saves and safety[/b][/size]
+The mod works on whatever save the game loads.
 [list]
-[*][b]Offline profile:[/b] the mod works on a copy of your save (NR0000_RelicsReforged.sl2). Your normal save is never touched.
-[*][b]Seamless profile:[/b] the mod works on the Seamless save (NR0000.co2 by default). If the SeamlessCoop folder is missing, the game starts without Seamless on the mod's copy, never on your normal save.
+[*][b]Standalone profile:[/b] a copy of your save (NR0000_RelicsReforged.sl2). Your normal save is never touched.
+[*][b]Seamless Co-op:[/b] the Seamless save (NR0000.co2 by default).
+[*][b]Your own profile without Seamless:[/b] your normal save, unless you add [b]savefile = "NR0000_RelicsReforged.sl2"[/b] near the top of the .me3 (recommended: me3 copies your save to it the first time).
 [*][b]Automatic backup:[/b] before the first forge of every session, your save is copied to %APPDATA%\RelicsReforged\backups (the last 10 are kept).
 [*]me3 keeps the game offline. [b]Do not use this mod online.[/b]
 [/list]
 
 [size=4][b]Other mods (More Map Variations and similar)[/b][/size]
-The forge uses the relic rules the game loaded, so mods that change relics through their own regulation.bin work: the effects they add to the random pools can be forged too. me3 runs one profile at a time, so to play both, copy [b]relics_reforged.dll[/b] next to the other mod's .me3 file and add these lines at the end of that .me3:
+Relics Reforged loads alongside other mods in the same me3 profile. The forge uses the relic rules the game loaded, so mods that change relics through their own regulation.bin work: the effects they add to the random pools can be forged too. If a mod comes with its own .me3 file, copy RelicsReforged.dll and the RelicsReforged folder next to it and add these lines at the end of that .me3:
 [code][[natives]]
-path = 'relics_reforged.dll'[/code]
-The mod then works on whatever save that profile uses. Tested offline with More Map Variations and Weapons Mod Merge 2.1.8.3; it hasn't been tested on that mod's own online server.
+path = 'RelicsReforged.dll'[/code]
+Tested offline with More Map Variations and Weapons Mod Merge 2.1.8.3; it hasn't been tested on that mod's own online server.
 
 [size=4][b]Languages[/b][/size]
 The forge follows the game's language: Spanish if the game is in Spanish, English otherwise. Relic and effect names always come from the game itself, in your language.
@@ -76,19 +81,19 @@ The forge follows the game's language: Spanish if the game is in Spanish, Englis
 [*]Controllers: tested with a PlayStation controller through Steam Input. Xbox controllers should work but haven't been tested.
 [*]A full co-op session with players without the mod hasn't been tested yet.
 [/list]
-Found a bug? Please attach [b]relics_reforged.log[/b] (in the mod folder) to your report.
+Found a bug? Please attach [b]RelicsReforged\relics_reforged.log[/b] (next to the DLL) to your report.
 
 [size=4][b]Keeping your forged relics[/b][/size]
 Forged relics are stored in the save like any other relic and don't need the mod to exist.
 [list]
-[*][b]Unsupported game update:[/b] keep using the same .me3. The mod stays off, but the save and your forged relics load as usual.
+[*][b]Unsupported game update:[/b] keep playing the same way. The mod stays off, but the save and your forged relics load as usual.
 [*][b]Seamless:[/b] they are in the Seamless save (NR0000.co2); play Seamless without the mod and they are still there.
-[*][b]Offline:[/b] they are only in the mod's copy (NR0000_RelicsReforged.sl2), which moves on separately from your normal save. To keep them without the mod, close the game, back up NR0000.sl2 and replace it with a copy of NR0000_RelicsReforged.sl2 renamed to NR0000.sl2 (this brings over all the progress of the copy). To use a single save from the start, delete the savefile line in RelicsReforged.me3.
+[*][b]On a save copy[/b] (the standalone profile, or a savefile line in your own profile): they are only in NR0000_RelicsReforged.sl2, which moves on separately from your normal save. To keep them without the mod, close the game, back up NR0000.sl2 and replace it with a copy of NR0000_RelicsReforged.sl2 renamed to NR0000.sl2 (this brings over all the progress of the copy).
 [*]Taking a save used with the mod online is at your own risk: the relics are combinations the game can roll, but we can't promise nothing gets flagged.
 [/list]
 
 [size=4][b]Uninstall[/b][/size]
-Delete the RelicsReforged folder, and %APPDATA%\RelicsReforged if you don't want the forge record and the save backups. If you played offline, read [b]Keeping your forged relics[/b] first.
+Remove the mod from ME3 Manager, or delete RelicsReforged.dll and the RelicsReforged folder (and the lines you added to your .me3), or the standalone folder. Delete %APPDATA%\RelicsReforged too if you don't want the forge record and the save backups. If you played on a save copy, read [b]Keeping your forged relics[/b] first.
 
 [size=4][b]Credits[/b][/size]
 [list]
@@ -122,35 +127,40 @@ Pasá un efecto de una reliquia que no te sirve a otra que querés conservar. En
 [*]No se forjan las reliquias fijas (las que siempre traen los mismos efectos).
 [*]Solo en la Mesa Redonda, con Ritos de reliquias abierto.
 [/list]
-Son los valores por defecto: todo se puede cambiar en [b]relics_reforged.ini[/b], que se crea en la carpeta del mod la primera vez que arranca el juego (las actualizaciones no lo pisan): tecla y botón para abrir la forja, cantidad de sacrificios (0-9), puntos mínimos, murk, multiplicador de las profundidades, límite de forjas (0 = sin límite), idioma del menú y copias del save.
+Son los valores por defecto: todo se puede cambiar en [b]RelicsReforged\relics_reforged.ini[/b], que se crea junto a la DLL la primera vez que arranca el juego (las actualizaciones no lo pisan): tecla y botón para abrir la forja, cantidad de sacrificios (0-9), puntos mínimos, murk, multiplicador de las profundidades, límite de forjas (0 = sin límite), idioma del menú y copias del save.
 
 [b]Cómo se usa[/b]
 En Ritos de reliquias, con el cursor en los espacios de reliquias equipadas, apretá [b]F7[/b] (teclado) o [b]R2 / RT[/b] (mando), o hacé clic en "F7: Forjar reliquias". Elegí la reliquia a mejorar y el efecto a reemplazar, la donante y su efecto, y 3 sacrificios; revisá la vista previa y forjá (pide confirmación dos veces). Funciona con mouse, teclado y mando.
 
 [b]Requisitos[/b]
-Elden Ring Nightreign 1.3.3 (en otra versión el mod se apaga y avisa), [url=https://me3.help]me3[/url] 0.13 o más nuevo y, para jugar con amigos, Seamless Co-op.
+Elden Ring Nightreign 1.3.3 (en otra versión el mod se apaga y avisa), [url=https://me3.help]me3[/url] 0.13 o más nuevo (ME3 Manager es opcional) y, para jugar con amigos, Seamless Co-op.
 
 [b]Instalación[/b]
-[list=1]
-[*]Instalá [url=https://me3.help]me3[/url].
-[*]Descomprimí la carpeta [b]RelicsReforged[/b] donde quieras (no dentro de la carpeta del juego).
-[*][b]Sin conexión:[/b] doble clic en [b]RelicsReforged.me3[/b]. [b]Con Seamless:[/b] copiá la carpeta [b]SeamlessCoop[/b] del juego (Game\SeamlessCoop) dentro de la carpeta RelicsReforged (la carpeta entera, no los archivos de adentro: tiene que quedar RelicsReforged\SeamlessCoop\nrsc.dll) y hacé doble clic en [b]RelicsReforged-Seamless.me3[/b].
+Es un mod DLL común: [b]RelicsReforged.dll[/b] y, al lado, la carpeta [b]RelicsReforged[/b] (ahí se crean la configuración y el registro). Se instala como cualquier mod DLL:
+[list]
+[*][b]ME3 Manager (recomendado):[/b] instalalo desde Nexus dentro de ME3 Manager, o arrastrá el zip descargado, y arrancá desde ME3 Manager. [b]Con Seamless Co-op:[/b] dejá Seamless en la carpeta del juego y agregá [b]Game\SeamlessCoop\nrsc.dll[/b] como [b]mod externo[/b] con [b]load_early[/b] activado (opciones avanzadas), como recomienda ME3 Manager.
+[*][b]Tu propio perfil de me3:[/b] descomprimí en tu carpeta de mods y agregá la DLL a tu .me3. Para el perfil que crea me3 (nightreign-default.me3), descomprimí en su carpeta nightreign-mods y agregá:
+[code][[natives]]
+path = 'nightreign-mods/RelicsReforged.dll'[/code]
+Con Seamless en el mismo perfil, agregá también su nrsc.dll (con la ruta de tu juego) y [b]load_early = true[/b]. Sin Seamless, mirá [b]Saves[/b].
+[*][b]Sin otros mods:[/b] descargá el archivo opcional [b]Standalone[/b], descomprimilo donde quieras (no dentro de la carpeta del juego) y hacé doble clic en [b]RelicsReforged.me3[/b]. Juega sin conexión sobre una copia de tu save.
 [/list]
+Solo necesitan el mod los jugadores que quieran forjar. Otros loaders de DLLs (como Elden Mod Loader) deberían funcionar, pero no se probaron.
 
 [b]Saves[/b]
-Sin conexión, el mod usa una copia de tu save (NR0000_RelicsReforged.sl2); con Seamless, el save de Seamless. Tu save normal no se toca. Antes de la primera forja de cada sesión se guarda una copia en %APPDATA%\RelicsReforged\backups. No uses este mod online.
-Las reliquias forjadas quedan en el save y no necesitan el mod: si el juego se actualiza y el mod todavía no, seguí con el mismo .me3 (el mod se apaga, el save carga igual). Sin conexión están solo en la copia: para conservarlas sin el mod, con el juego cerrado respaldá NR0000.sl2 y reemplazalo por una copia de NR0000_RelicsReforged.sl2 renombrada a NR0000.sl2 (pasa todo el progreso de la copia). Para usar un solo save desde el principio, borrá la línea savefile del .me3. Llevar online un save usado con el mod corre por tu cuenta.
+El mod trabaja sobre el save que cargue el juego: con el perfil standalone, una copia de tu save (NR0000_RelicsReforged.sl2); con Seamless, el save de Seamless; con tu propio perfil sin Seamless, tu save normal, salvo que agregues [b]savefile = "NR0000_RelicsReforged.sl2"[/b] arriba del .me3 (recomendado). Antes de la primera forja de cada sesión se guarda una copia en %APPDATA%\RelicsReforged\backups. No uses este mod online.
+Las reliquias forjadas quedan en el save y no necesitan el mod: si el juego se actualiza y el mod todavía no, seguí jugando igual (el mod se apaga, el save carga igual). Si jugaste sobre una copia, están solo en NR0000_RelicsReforged.sl2: para conservarlas sin el mod, con el juego cerrado respaldá NR0000.sl2 y reemplazalo por una copia de NR0000_RelicsReforged.sl2 renombrada a NR0000.sl2 (pasa todo el progreso de la copia). Llevar online un save usado con el mod corre por tu cuenta.
 
 [b]Otros mods (More Map Variations y parecidos)[/b]
-La forja usa las reglas de reliquias que cargó el juego, así que funciona con mods que cambian las reliquias con su propio regulation.bin. me3 corre un perfil por vez: para jugar con los dos, copiá [b]relics_reforged.dll[/b] junto al .me3 del otro mod y agregá al final de ese .me3:
+Relics Reforged se carga junto con otros mods en el mismo perfil de me3. La forja usa las reglas de reliquias que cargó el juego, así que funciona con mods que cambian las reliquias con su propio regulation.bin. Si un mod trae su propio .me3, copiá RelicsReforged.dll y la carpeta RelicsReforged junto a él y agregá al final de ese .me3:
 [code][[natives]]
-path = 'relics_reforged.dll'[/code]
-El mod trabaja entonces sobre el save que use ese perfil. Probado sin conexión con More Map Variations and Weapons Mod Merge 2.1.8.3; no se probó en el servidor online propio de ese mod.
+path = 'RelicsReforged.dll'[/code]
+Probado sin conexión con More Map Variations and Weapons Mod Merge 2.1.8.3; no se probó en el servidor online propio de ese mod.
 
 [b]Idioma[/b]
 El menú está en español si el juego está en español; si no, en inglés. Los nombres de reliquias y efectos salen del propio juego.
 
-Si encontrás un error, adjuntá [b]relics_reforged.log[/b] (en la carpeta del mod).
+Si encontrás un error, adjuntá [b]RelicsReforged\relics_reforged.log[/b] (junto a la DLL).
 
 Código fuente (licencia MIT): [url=https://github.com/IgnacioBianchi-cmd/relics-reforged]github.com/IgnacioBianchi-cmd/relics-reforged[/url]
 [/spoiler]

@@ -2,8 +2,15 @@
 #
 # Compila la DLL sin la feature "dev" en target/public (así no pisa la de desarrollo de
 # target/release, que usa me3/relics-reforged-dev.me3) y deja en target/dist:
-#   RelicsReforged/            carpeta lista para probar (se le puede copiar SeamlessCoop adentro)
-#   RelicsReforged-v<ver>.zip  lo que se sube
+#   RelicsReforged-v<ver>.zip             archivo principal: RelicsReforged.dll y la carpeta
+#                                         RelicsReforged\ (README y licencia; ahí la DLL crea el
+#                                         .ini y el log), en la raíz del zip, como los demás mods
+#                                         DLL: se arrastra a ME3 Manager o se descomprime en la
+#                                         carpeta de mods de me3 o de Elden Mod Loader. Sin .me3:
+#                                         ME3 Manager importa como perfil cualquier zip que traiga uno.
+#   RelicsReforged-Standalone-v<ver>.zip  archivo opcional: lo mismo dentro de una carpeta, con el
+#                                         perfil RelicsReforged.me3 (sin conexión, save aparte)
+#   main\ y RelicsReforged-Standalone\    las mismas carpetas, sin comprimir, para probar
 #
 # Uso, desde la raíz del repositorio:  powershell -File tools/package.ps1
 
@@ -52,30 +59,47 @@ foreach ($leak in @($env:USERNAME, $env:USERPROFILE, $root, 'VCRUNTIME140')) {
 }
 
 $dist = Join-Path $root 'target/dist'
-$folder = Join-Path $dist 'RelicsReforged'
-if (Test-Path $folder) { Remove-Item -Recurse -Force $folder }
-New-Item -ItemType Directory -Force $folder | Out-Null
+if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
+New-Item -ItemType Directory -Force $dist | Out-Null
 
-Copy-Item $dll $folder
-Copy-Item (Join-Path $root 'dist/*') $folder
-Copy-Item (Join-Path $root 'LICENSE') $folder
-
-$zip = Join-Path $dist "RelicsReforged-v$version.zip"
-if (Test-Path $zip) { Remove-Item -Force $zip }
-# Compress-Archive de PowerShell 5 guarda las rutas con '\', y otros descompresores (y
-# gestores de mods) no las toman como carpetas: se arma a mano con '/'.
-Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
-$archive = [System.IO.Compression.ZipFile]::Open($zip, 'Create')
-try {
-    foreach ($file in Get-ChildItem $folder -File -Recurse) {
-        $entry = 'RelicsReforged/' + $file.FullName.Substring($folder.Length + 1).Replace('\', '/')
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-            $archive, $file.FullName, $entry, 'Optimal') | Out-Null
-    }
-} finally {
-    $archive.Dispose()
+# La DLL y su carpeta (README y licencia) en una carpeta: la del archivo principal o la del
+# standalone.
+function Add-ModFiles($dest) {
+    $files = Join-Path $dest 'RelicsReforged'
+    New-Item -ItemType Directory -Force $files | Out-Null
+    Copy-Item $dll (Join-Path $dest 'RelicsReforged.dll')
+    Copy-Item (Join-Path $root 'dist/README.txt') $files
+    Copy-Item (Join-Path $root 'LICENSE') $files
 }
 
+# Arma el zip a mano: Compress-Archive de PowerShell 5 guarda las rutas con '\', y otros
+# descompresores (y gestores de mods) no las toman como carpetas. $prefix va delante de cada
+# ruta ('' = el contenido de $folder en la raíz del zip).
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+function New-ModZip($folder, $zip, $prefix) {
+    $archive = [System.IO.Compression.ZipFile]::Open($zip, 'Create')
+    try {
+        foreach ($file in Get-ChildItem $folder -File -Recurse) {
+            $entry = $prefix + $file.FullName.Substring($folder.Length + 1).Replace('\', '/')
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $archive, $file.FullName, $entry, 'Optimal') | Out-Null
+        }
+    } finally {
+        $archive.Dispose()
+    }
+}
+
+$main = Join-Path $dist 'main'
+Add-ModFiles $main
+$mainZip = Join-Path $dist "RelicsReforged-v$version.zip"
+New-ModZip $main $mainZip ''
+
+$standalone = Join-Path $dist 'RelicsReforged-Standalone'
+Add-ModFiles $standalone
+Copy-Item (Join-Path $root 'dist/standalone/RelicsReforged.me3') $standalone
+$standaloneZip = Join-Path $dist "RelicsReforged-Standalone-v$version.zip"
+New-ModZip $standalone $standaloneZip 'RelicsReforged-Standalone/'
+
 Write-Host ''
-Write-Host "Listo: $zip"
-Get-ChildItem $folder | Format-Table Name, Length -AutoSize
+Write-Host "Listo: $mainZip"
+Write-Host "       $standaloneZip"

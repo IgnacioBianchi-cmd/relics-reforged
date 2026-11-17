@@ -286,6 +286,17 @@ Encontrado con `snap` (diferencias de memoria antes y después de cada acción e
 - El paquete probado es "More Map Variations and Weapons Mod Merge" (Nexus 578): MMV unido a MoreWeapons (Nexus 554, armas de SotE y DS3). Agrega 101 efectos (~33 de armas, sin tabla de reliquia; 21 también están en MoreWeapons), 21 tipos de reliquia (136 y 20 Deep fijas, con ~60 efectos propios) y 74 tablas. Tres efectos que el original ya lista con peso 0 en `2000000`/`2100000`/`2200000` sin definirlos (`6035101`, `6610701`, `6610702`) quedan definidos, pero solo los traen reliquias fijas, que no donan. A los pools aleatorios normales (110/210/310) les suma el `7370901` (viene de MoreWeapons) ("Changes compatible armament's incantation to Lightning Stake at start of expedition"). Se forjó ese efecto de una reliquia a otra: la vista previa lo aceptó, el inventario quedó con 0 ilegales.
 - Para jugar los dos juntos: agregar la DLL como `[[natives]]` al perfil de MMV (me3 corre un perfil por vez).
 
+### Cómo se publican los mods DLL de Nightreign (2026-11-17)
+
+Relevado en Nexus (Seamless Co-op, ME3 Manager, Storm Control, Boss Arena, FPS Unlocker, UnlockTheFps, NightreignGG Connector, Always Perfect Deflect), en la documentación de me3 y en el código de ME3 Manager (`mod_installer.py`):
+
+- **El loader es me3, casi siempre con ME3 Manager** (segundo mod más endorsado de Nightreign). Algunos mods viejos usan Elden Mod Loader (`dinput8.dll` y una carpeta `mods` en la del juego).
+- **Un mod DLL se publica como la DLL y una carpeta con su nombre, al mismo nivel** (`StormControl.dll` + `StormControl/config.ini`), en la raíz del zip. Así se descomprime en la carpeta de mods de me3 o de Elden Mod Loader, o se arrastra a ME3 Manager.
+- **ME3 Manager:** si el zip trae **cualquier `.me3`**, lo importa como perfil, no como mod DLL. Si no, instala la carpeta raíz del zip en `mods\<nombre>\`, registra como `[[natives]]` todas las DLLs que tenga y, al actualizar, conserva los archivos que no son binarios (`.ini`, etc.).
+- **Seamless se queda en `Game\SeamlessCoop`.** ME3 Manager recomienda agregarlo como mod externo con `load_early`. El autor de Seamless pide que no se lo empaquete.
+- **Solo traen su propio `.me3` los mods grandes** (Boss Arena, More Map Variations), que cambian assets o regulation y quieren un save aparte.
+- Por eso el zip principal es `RelicsReforged.dll` + `RelicsReforged\` (README y licencia; la DLL crea ahí el `.ini` y el log), sin `.me3`, y el perfil sin conexión va en un zip opcional (`tools/package.ps1`).
+
 ### Sonidos de menú del juego ✔ (2026-11-05)
 
 - Audio con **Wwise** (clases `MoWwiseManImp`, `CSSoundImp`, `CSFD4SystemSoundIns`; vtable de esta última en `nr+2CB61E8`, constructor `nr+EE7A90`).

@@ -1,4 +1,4 @@
-//! Configuración del jugador: `relics_reforged.ini`, junto a la DLL.
+//! Configuración del jugador: `relics_reforged.ini`, en la carpeta `RelicsReforged` junto a la DLL.
 //!
 //! Si no existe, se crea con los valores por defecto (así una actualización del mod, que pisa la
 //! carpeta, no se lleva la configuración: el zip no trae el `.ini`). Lo que falte o esté mal en
@@ -84,10 +84,10 @@ pub fn get() -> &'static Config {
     CONFIG.get_or_init(Config::default)
 }
 
-/// Lee el `.ini` de la carpeta de la DLL (lo crea si no existe) y deja la configuración para
+/// Lee el `.ini` de `dir` (lo crea si no existe) y deja la configuración para
 /// [`get`]. Devuelve las líneas para el log.
-pub fn load(dll_dir: &Path) -> Vec<String> {
-    let path = dll_dir.join(FILE_NAME);
+pub fn load(dir: &Path) -> Vec<String> {
+    let path = dir.join(FILE_NAME);
     let mut log = Vec::new();
     let config = match std::fs::read_to_string(&path) {
         Ok(text) => {

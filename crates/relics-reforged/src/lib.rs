@@ -1,7 +1,8 @@
 //! # Relics Reforged (DLL)
 //!
-//! Se carga con me3. Deja un registro en `relics_reforged.log`, junto a la DLL, y abre la forja
-//! dentro de Relic Rites (ver [`ui`]).
+//! Se carga con me3 (o cualquier loader de DLLs). Deja un registro en `relics_reforged.log`, en la
+//! carpeta `RelicsReforged` junto a la DLL (ver [`files_dir`]), y abre la forja dentro de Relic
+//! Rites (ver [`ui`]).
 //!
 //! Con la feature `dev` (versión de desarrollo) suma las herramientas usadas para el
 //! relevamiento: comandos en `relics_reforged_cmd.txt` (ver `commands`), que leen y escriben
@@ -45,9 +46,7 @@ mod win;
 use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Write as _;
-use std::path::Path;
-#[cfg(feature = "dev")]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -85,6 +84,29 @@ pub extern "system" fn DllMain(
     1
 }
 
+/// Carpeta de los archivos del jugador, junto a la DLL: configuración y log.
+pub(crate) const FILES_DIR_NAME: &str = "RelicsReforged";
+const LOG_FILE: &str = "relics_reforged.log";
+static FILES_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// `RelicsReforged\` junto a la DLL (la crea si falta; si no se puede, la carpeta de la DLL).
+/// Es la convención de los mods DLL, que esperan ME3 Manager y Elden Mod Loader: la DLL y una
+/// carpeta con su nombre al mismo nivel, así en una carpeta `mods` compartida con otros mods no
+/// quedan archivos sueltos.
+fn files_dir(module: usize) -> Option<PathBuf> {
+    if let Some(dir) = FILES_DIR.get() {
+        return Some(dir.clone());
+    }
+    let dll_dir = win::module_path(module)?.parent()?.to_path_buf();
+    let dir = dll_dir.join(FILES_DIR_NAME);
+    let dir = if std::fs::create_dir_all(&dir).is_ok() {
+        dir
+    } else {
+        dll_dir
+    };
+    Some(FILES_DIR.get_or_init(|| dir).clone())
+}
+
 pub(crate) struct Log {
     file: File,
 }
@@ -96,7 +118,7 @@ static MODULE: AtomicUsize = AtomicUsize::new(0);
 
 impl Log {
     fn open(module: usize) -> Option<Log> {
-        let path = win::module_path(module)?.with_file_name("relics_reforged.log");
+        let path = files_dir(module)?.join(LOG_FILE);
         let file = File::options().create(true).append(true).open(path).ok()?;
         Some(Log { file })
     }
@@ -120,7 +142,9 @@ fn run(module: usize) {
     START.get_or_init(Instant::now);
     let dll_path = win::module_path(module).unwrap_or_default();
     // Empezamos un log nuevo en cada arranque del juego.
-    let _ = File::create(dll_path.with_file_name("relics_reforged.log"));
+    if let Some(dir) = files_dir(module) {
+        let _ = File::create(dir.join(LOG_FILE));
+    }
     let Some(mut log) = Log::open(module) else {
         return;
     };
@@ -134,8 +158,8 @@ fn run(module: usize) {
     #[cfg(not(feature = "dev"))]
     log.line(&format!("Relics Reforged v{}", env!("CARGO_PKG_VERSION")));
     log.line(&format!("DLL: {}", dll_path.display()));
-    if let Some(dir) = dll_path.parent() {
-        for line in config::load(dir) {
+    if let Some(dir) = files_dir(module) {
+        for line in config::load(&dir) {
             log.line(&line);
         }
     }

@@ -18,11 +18,12 @@ modo BBCode).
 
 **Resumen** (Nexus lo limita a unos 350 caracteres; este tiene 265):
 
-> Transfer one effect from a relic you don't need onto one you want to keep, inside Relic Rites. The result is always a relic the game could have rolled. Costs murk and 3 sacrifices. Mouse, keyboard and controller. Works offline and with Seamless Co-op. Requires me3.
+> Transfer one effect from a relic you don't need onto one you want to keep, inside Relic Rites. The result is always a relic the game could have rolled. Costs murk and 3 sacrifices. Mouse, keyboard and controller. Works offline and with Seamless Co-op. Requires me3; ME3 Manager ready.
 
 **Requisitos** (sección "Requirements" de Nexus):
 
-- me3 (enlace a la página de me3 en Nexus si existe, o a https://me3.help).
+- me3 (https://me3.help; no tiene página en Nexus).
+- Opcional: Mod Engine 3 Manager (https://www.nexusmods.com/eldenringnightreign/mods/213).
 - Opcional: Seamless Co-op para Nightreign (enlace a su página en Nexus).
 
 **Permisos** (decisión tuya; lo habitual para un mod con código abierto):
@@ -32,15 +33,21 @@ modo BBCode).
 - Convertir a otros juegos: no aplica.
 - Uso en mods pagos o con donaciones: a elección.
 
-## Archivo
+## Archivos
 
-| Campo | Valor |
-|---|---|
-| Archivo | `target/dist/RelicsReforged-v0.1.0.zip` (`powershell -File tools/package.ps1`) |
-| Nombre del archivo | Relics Reforged |
-| Versión | 0.1.0 |
-| Categoría | Main Files |
-| Descripción | Unzip the RelicsReforged folder anywhere and double-click RelicsReforged.me3 (offline) or RelicsReforged-Seamless.me3 (copy your SeamlessCoop folder next to it first). Requires me3 0.13+ and game version 1.3.3. |
+Dos archivos, como los demás mods DLL: el principal es la DLL sola (para agregar al perfil que
+ya use cada uno) y el opcional trae un perfil de me3 para quien no tiene otros mods. El principal
+no lleva `.me3`: ME3 Manager importa como perfil cualquier zip que traiga uno, en vez de
+instalarlo como mod DLL. Los dos salen de `powershell -File tools/package.ps1`.
+
+| Campo | Principal | Opcional |
+|---|---|---|
+| Archivo | `target/dist/RelicsReforged-v0.1.0.zip` | `target/dist/RelicsReforged-Standalone-v0.1.0.zip` |
+| Contenido | `RelicsReforged.dll` + `RelicsReforged/` (README, licencia) en la raíz | Lo mismo + `RelicsReforged.me3`, dentro de `RelicsReforged-Standalone/` |
+| Nombre del archivo | Relics Reforged | Relics Reforged - Standalone (me3 profile) |
+| Versión | 0.1.0 | 0.1.0 |
+| Categoría | Main Files | Optional Files |
+| Descripción | DLL mod. Install it with ME3 Manager, or add RelicsReforged.dll to your own me3 profile (with Seamless Co-op too). Requires me3 0.13+ and game version 1.3.3. | For players without other mods: unzip anywhere and double-click RelicsReforged.me3. Plays offline on a copy of your save. Requires me3 0.13+. |
 
 **Changelog 0.1.0**
 
@@ -49,7 +56,7 @@ modo BBCode).
 - Mouse, keyboard and controller (Steam Input) support; the game doesn't receive inputs while the forge is open.
 - English and Spanish.
 - Settings file (relics_reforged.ini): open key and button, sacrifices, points, murk, forge limit, language and save backups.
-- Offline and Seamless Co-op profiles for me3.
+- Regular DLL mod layout (ME3 Manager, your own me3 profile, Seamless Co-op) and an optional standalone me3 profile.
 
 ## Imágenes
 
@@ -68,6 +75,8 @@ español para la sección en español.
 ## Antes de publicar
 
 - [x] Link al código en la descripción: https://github.com/IgnacioBianchi-cmd/relics-reforged.
+- [ ] Instalar el zip principal en ME3 Manager (arrastrándolo) con Seamless como mod externo con `load_early`, y forjar: la DLL tiene que crear `RelicsReforgedelics_reforged.ini` y el log.
+- [ ] Probar el zip principal en `nightreign-default.me3` (sin ME3 Manager) y el standalone.
 - [ ] Sesión de Seamless con un amigo, con y sin el mod del otro lado.
 - [ ] Probar en otra PC (otra ruta del juego, sin `data/export`).
 - [ ] Pasar la rama a `main` y etiquetar la versión (`v0.1.0`).

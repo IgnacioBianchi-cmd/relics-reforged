@@ -1,0 +1,24 @@
+profileVersion = "v1"
+
+# Relics Reforged - standalone profile, for players without other mods. Double-click this file
+# to play. If you already use ME3 Manager or your own me3 profile (for example with Seamless
+# Co-op), you don't need this file: add RelicsReforged.dll to that profile instead (see
+# RelicsReforged\README.txt).
+#
+# Relics Reforged - perfil independiente, para quien no usa otros mods. Doble clic en este
+# archivo para jugar. Si ya usás ME3 Manager o tu propio perfil de me3 (por ejemplo con Seamless
+# Co-op), no necesitás este archivo: agregá RelicsReforged.dll a ese perfil (ver
+# RelicsReforged\README.txt).
+#
+# The mod works on a copy of your save: the first time, me3 copies NR0000.sl2 to the file below.
+# Your normal save is never touched. To use the mod on your normal save, delete the savefile line.
+#
+# El mod trabaja sobre una copia de tu save: la primera vez, me3 copia NR0000.sl2 al archivo de
+# abajo. Tu save normal no se toca. Para usar el mod en tu save normal, borrá la línea savefile.
+savefile = "NR0000_RelicsReforged.sl2"
+
+[[supports]]
+game = "nightreign"
+
+[[natives]]
+path = 'RelicsReforged.dll'

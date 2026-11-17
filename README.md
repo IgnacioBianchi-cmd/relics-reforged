@@ -43,21 +43,21 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Seamless Co-op (perfil `me3/relics-reforged-seamless.me3`, con `load_early`) | ✔ probado: forja guardada en el save de Seamless |
 | Datos del mod en `%APPDATA%\RelicsReforged`: registro de forjas (se mueve solo desde la carpeta de la DLL) y copia del save antes de la primera forja de cada sesión (últimas 10) | ✔ probado: registro movido, una copia por sesión |
 | Aviso en pantalla (inglés y español) si la versión del juego no es compatible; en desarrollo se fuerza con `probar_aviso_version.txt` junto a la DLL | ✔ probado (forzado) |
-| Configuración del jugador en `relics_reforged.ini` junto a la DLL (se crea con los valores por defecto si falta; el zip no lo trae, así una actualización no lo pisa): tecla y botón de apertura, reglas de balance, idioma y copias del save (`crates/relics-reforged/src/config.rs`) | Tests del archivo; falta probarlo en el juego |
-| Publicación (`tools/package.ps1`): DLL pública y perfiles de `dist/` | ✔ probados los dos perfiles del zip: sin conexión (me3 crea la copia del save) y con Seamless (forja y respaldo sobre el save de Seamless, los demás saves intactos). Sin la carpeta `SeamlessCoop`, me3 solo avisa en su log y arranca el juego sin Seamless: por eso el perfil también lleva `savefile` (Seamless lo ignora) |
+| Configuración del jugador en `RelicsReforgedelics_reforged.ini` junto a la DLL (se crea con los valores por defecto si falta; el zip no lo trae, así una actualización no lo pisa): tecla y botón de apertura, reglas de balance, idioma y copias del save (`crates/relics-reforged/src/config.rs`) | Tests del archivo; falta probarlo en el juego |
+| Publicación (`tools/package.ps1`) como los demás mods DLL de Nightreign (relevado en Nexus, me3 y ME3 Manager el 2026-11-17): zip principal con `RelicsReforged.dll` + `RelicsReforged\` en la raíz y sin `.me3` (ME3 Manager importa como perfil cualquier zip con uno), para ME3 Manager o el perfil propio del jugador (Seamless queda en `Game\SeamlessCoop` como mod externo con `load_early`); zip opcional standalone con `RelicsReforged.me3` (sin conexión, copia del save) | Zips armados y la DLL crea `RelicsReforged\` con el `.ini` y el log (cargada fuera del juego). Falta probarlos en el juego: ME3 Manager con Seamless, `nightreign-default.me3` y el standalone. El perfil sin conexión anterior (mismo `.me3`) ya estaba probado |
 
 ## Estructura
 
 | Ruta | Contenido |
 |---|---|
 | `crates/relic-rules/` | Motor de reglas en Rust: legalidad de reliquias y transferencias. Sin acceso al juego |
-| `crates/relics-reforged/` | La DLL que carga me3. Escribe `relics_reforged.log` y acepta comandos de prueba en `relics_reforged_cmd.txt`, ambos junto a la DLL |
+| `crates/relics-reforged/` | La DLL que carga me3. Escribe `relics_reforged.log` y `relics_reforged.ini` en la carpeta `RelicsReforged\` junto a la DLL, y en desarrollo acepta comandos de prueba en `relics_reforged_cmd.txt`, junto a la DLL |
 | `crates/nr-assets/` | Lectura de archivos sueltos de los `data*.bhd/.bdt` del juego (RSA, AES, Oodle, TPF, BC7) para sacar los íconos del menú. `cargo run -p nr-assets --example icons` arma el atlas fuera del juego |
 | `crates/re-tools/` | `disasm`: desensamblador del volcado de `nightreign.exe` (comando `dumpimage` de la DLL) |
-| `me3/relics-reforged-dev.me3` | Perfil de me3 para probar, con un save aparte (`NR_RelicsReforged.sl2`) |
+| `me3/relics-reforged-dev.me3` | Perfil de me3 para probar, con un save aparte (`NR_RelicsReforged.sl2`). `relics-reforged-seamless.me3`: lo mismo con Seamless |
 | `docs/relevamiento.md` | Todo lo averiguado: formato del save, params, punteros, reglas |
 | `docs/nexus/` | Página de Nexus Mods: descripción en BBCode (`descripcion.bbcode`) y ficha con resumen, archivo, changelog, capturas y lo que falta antes de publicar (`ficha.md`) |
-| `dist/` | Lo que va en la publicación: perfiles de me3 (`RelicsReforged.me3`, sin conexión y con una copia del save; `RelicsReforged-Seamless.me3`, con la carpeta `SeamlessCoop` del usuario) y el `README.txt` para el usuario |
+| `dist/` | Lo que va en la publicación además de la DLL: el `README.txt` para el usuario y, en `standalone/`, el perfil `RelicsReforged.me3` del archivo opcional (sin conexión y con una copia del save) |
 | `tools/package.ps1` | Arma la publicación: compila la DLL pública en `target/public` y deja la carpeta y el zip en `target/dist` |
 | `tools/` | Scripts de análisis (Python/PowerShell) usados en el relevamiento |
 | `data/` | Datos locales, **no van a git**: CSV del juego, save del jugador, archivos de Cheat Engine |
@@ -90,7 +90,7 @@ Hay dos versiones de la DLL:
   cargo build --release -p relics-reforged --features dev
   ```
 
-Las dos quedan en `target/release/relics_reforged.dll` (la última que se compiló). Para publicar: `powershell -File tools/package.ps1` (compila la pública aparte, en `target/public`, y arma `target/dist/RelicsReforged-v<versión>.zip`). Para probar, doble clic en `me3/relics-reforged-dev.me3`. El log queda en `target/release/relics_reforged.log`.
+Las dos quedan en `target/release/relics_reforged.dll` (la última que se compiló). Para publicar: `powershell -File tools/package.ps1` (compila la pública aparte, en `target/public`, y arma en `target/dist` el zip principal `RelicsReforged-v<versión>.zip` y el opcional `RelicsReforged-Standalone-v<versión>.zip`; en la publicación la DLL se llama `RelicsReforged.dll`). Para probar, doble clic en `me3/relics-reforged-dev.me3`. El log queda en `target/release/RelicsReforged/relics_reforged.log`.
 
 El menú y sus mensajes salen en inglés o en español según el idioma del juego (por defecto, inglés; ver `relic_rules::lang`). En el juego, con **Relic Rites** abierto en la Roundtable, **F7** (o un clic en "F7 :Forge relics") abre el menú a pantalla completa: a la izquierda receptora y efecto a reemplazar, donante y efecto a transferir, 3 sacrificios, vista previa y forja (con doble confirmación); a la derecha, la lista de reliquias del paso actual, con la imagen de cada reliquia y el ícono de cada efecto. Q (o F7, o Esc) vuelve a Relic Rites; R refresca y C empieza de nuevo. Arriba de la lista: búsqueda, 4 abre el filtro (en el panel izquierdo, con hasta 3 condiciones de efecto) y 5 cambia el orden. Con la forja abierta, el juego no recibe teclado, mouse ni mando. En la versión de desarrollo, para pruebas sin menú está el archivo de comandos (`crates/relics-reforged/src/commands.rs`).
 
@@ -108,7 +108,7 @@ Con teclado o mando, un cursor recorre botones y filas: arriba/abajo dentro de u
 
 ## Reglas de balance (por defecto)
 
-Están en `Rules` (`crates/relic-rules/src/transfer.rs`). El jugador las cambia en `relics_reforged.ini` (sección `[Rules]`; ver `crates/relics-reforged/src/config.rs`, que también tiene el archivo por defecto).
+Están en `Rules` (`crates/relic-rules/src/transfer.rs`). El jugador las cambia en `RelicsReforgedelics_reforged.ini` (sección `[Rules]`; ver `crates/relics-reforged/src/config.rs`, que también tiene el archivo por defecto).
 
 | Regla | Valor |
 |---|---|
