@@ -45,20 +45,22 @@ impl ImguiRenderLoop for Notice {
         } else {
             1.0
         };
-        let [w, h] = ui.io().display_size;
-        let s = h / 1080.0;
+        let w = ui.io().display_size[0];
+        let v = crate::ui::View::of(ui);
+        let s = v.s;
         let _bg = ui.push_style_color(imgui::StyleColor::WindowBg, [0.04, 0.05, 0.08, 0.88 * alpha]);
         let _border = ui.push_style_color(imgui::StyleColor::Border, [0.85, 0.70, 0.40, 0.8 * alpha]);
         let _pad = ui.push_style_var(imgui::StyleVar::WindowPadding([18.0 * s, 14.0 * s]));
         ui.window("##relics_reforged_notice")
-            .position([w * 0.5, 40.0 * s], Condition::Always)
+            .position([w * 0.5, v.y(40.0)], Condition::Always)
             .position_pivot([0.5, 0.0])
             .no_decoration()
             .no_inputs()
             .focus_on_appearing(false)
             .always_auto_resize(true)
             .build(|| {
-                ui.set_window_font_scale(1.6 * s);
+                // La fuente ya está generada a la escala de la pantalla (ver `Menu::build_fonts`).
+                ui.set_window_font_scale(1.6);
                 for (i, line) in self.lines.iter().enumerate() {
                     let color = if i == 0 {
                         [0.95, 0.80, 0.45, alpha]

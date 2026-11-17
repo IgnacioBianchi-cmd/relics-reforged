@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use hudhook::hooks::dx12::ImguiDx12Hooks;
@@ -255,14 +255,33 @@ struct RelicView {
     forged: Vec<bool>,
     /// Cuántas veces se forjó la reliquia.
     forge_count: usize,
-    /// Por qué no se puede sacrificar (favorita, equipada, preset, recipiente). Como donante sí
-    /// sirve, con un aviso: la forja la saca de esos lugares.
-    locked: Option<String>,
+    /// Dónde está en uso (equipada, preset, recipiente), sin contar si es favorita. Como donante
+    /// sí sirve, con un aviso: la forja la saca de esos lugares.
+    in_use: Option<String>,
     /// No se pudo leer dónde está en uso: tampoco sirve como donante (no se la podría sacar).
     unverified: bool,
     /// Orden en que se encontró (el del inventario del juego); `u32::MAX` si no se sabe.
     order: u32,
     favorite: bool,
+}
+
+impl RelicView {
+    /// No se puede sacrificar: es favorita o está en uso.
+    fn locked(&self) -> bool {
+        self.favorite || self.in_use.is_some()
+    }
+
+    /// Etiqueta de la lista: favorita y en uso por separado (una favorita no está "en uso").
+    fn lock_tag(&self) -> Option<String> {
+        let fav = tr("favorita", "favorite");
+        let use_ = tr("en uso", "in use");
+        match (self.favorite, &self.in_use) {
+            (false, None) => None,
+            (true, None) => Some(format!("[{fav}]")),
+            (false, Some(p)) => Some(format!("[{use_}: {p}]")),
+            (true, Some(p)) => Some(format!("[{fav} · {use_}: {p}]")),
+        }
+    }
 }
 
 /// Qué lista muestra `relic_list`: cambia las etiquetas de cada reliquia.
@@ -297,6 +316,71 @@ impl RelicView {
     }
 }
 
+/// Área 16:9 donde el juego dibuja su interfaz. Con otra proporción el juego agrega franjas
+/// negras (arriba y abajo en 16:10 o 5:4; a los costados en ultrawide) y escala su interfaz con
+/// esa área, no con la pantalla entera.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct View {
+    pub x0: f32,
+    pub y0: f32,
+    pub w: f32,
+    pub h: f32,
+    /// Escala respecto de 1920x1080.
+    pub s: f32,
+}
+
+impl View {
+    pub(crate) fn of(ui: &Ui) -> Self {
+        let [w, h] = ui.io().display_size;
+        let vw = w.min(h * 16.0 / 9.0);
+        let vh = h.min(w * 9.0 / 16.0);
+        View {
+            x0: (w - vw) * 0.5,
+            y0: (h - vh) * 0.5,
+            w: vw,
+            h: vh,
+            s: vh / 1080.0,
+        }
+    }
+
+    /// Una x medida en una captura a 1920x1080, en la pantalla actual.
+    pub(crate) fn x(&self, px: f32) -> f32 {
+        self.x0 + px * self.s
+    }
+
+    /// Una y medida en una captura a 1920x1080, en la pantalla actual.
+    pub(crate) fn y(&self, px: f32) -> f32 {
+        self.y0 + px * self.s
+    }
+
+    /// Borde de abajo del área del juego.
+    pub(crate) fn bottom(&self) -> f32 {
+        self.y0 + self.h
+    }
+}
+
+/// Escala de la interfaz para una pantalla (la de `View`), con un mínimo para que el texto se lea.
+fn ui_scale(display: [f32; 2]) -> f32 {
+    let [w, h] = display;
+    (h.min(w * 9.0 / 16.0) / 1080.0).max(0.5)
+}
+
+/// Escala con la que se generaron las fuentes y el estilo (bits de un `f32`). La usan las medidas
+/// fijas del contenido de la forja (ver [`px`]).
+static UI_SCALE: AtomicU32 = AtomicU32::new(0x3F80_0000); // 1.0
+
+/// Una medida en píxeles a 1080p, en la resolución actual.
+fn px(v: f32) -> f32 {
+    v * f32::from_bits(UI_SCALE.load(Ordering::Relaxed))
+}
+
+/// Archivos de fuente cargados al iniciar (viven todo el proceso).
+#[derive(Default, Clone, Copy)]
+struct FontFiles {
+    regular: Option<&'static [u8]>,
+    bold: Option<&'static [u8]>,
+}
+
 /// Un control al estilo del juego: la tecla (su glifo, si está en los íconos) y el texto al
 /// lado, en la posición del cursor. Usa la fuente actual. Devuelve `true` si se hizo clic.
 fn key_prompt(
@@ -311,7 +395,9 @@ fn key_prompt(
     let key_size = ui.calc_text_size(key);
     let label_size = ui.calc_text_size(&label);
     let glyph = icons.filter(|i| i.has(key_icon));
-    let box_h = label_size[1] + 6.0 * s;
+    // Medido a 1080p: el recuadro de la tecla del juego mide ~33 px y su texto queda un poco por
+    // debajo del centro (la línea base cae ~8 px sobre el borde de abajo).
+    let box_h = label_size[1] + 10.0 * s;
     let box_w = match glyph {
         Some(i) => box_h * i.aspect(key_icon),
         None => (key_size[0] + 12.0 * s).max(box_h),
@@ -329,7 +415,7 @@ fn key_prompt(
     };
     // Sombra difusa alrededor del texto (varias copias corridas), como los controles del juego.
     let shadow = [0.0, 0.0, 0.0, 0.16];
-    let label_at = [p[0] + box_w + gap, p[1] + (box_h - label_size[1]) * 0.5];
+    let label_at = [p[0] + box_w + gap, p[1] + (box_h - label_size[1]) * 0.5 + 3.0 * s];
     let mut texts = vec![(label_at, label.as_str())];
     if !glyph.is_some_and(|i| i.draw(ui, key_icon, p, [box_w, box_h])) {
         ui.get_window_draw_list()
@@ -377,12 +463,11 @@ fn draw_hint(
     pad_mode: Option<pad::Kind>,
 ) -> bool {
     use crate::relic_menu::Panel;
-    let [w, h] = ui.io().display_size;
-    // Las medidas salen de capturas a 1920x1080; la interfaz del juego escala con el alto y se
-    // centra en horizontal.
-    let s = h / 1080.0;
-    let x = |px: f32| w * 0.5 + (px - 960.0) * s;
-    let y = |px: f32| h * 0.5 + (px - 540.0) * s;
+    // Las medidas salen de capturas a 1920x1080 (ver `View`).
+    let v = View::of(ui);
+    let s = v.s;
+    let x = |px: f32| v.x(px);
+    let y = |px: f32| v.y(px);
     // Fin de la barra de abajo a la izquierda, medido en capturas a 1080p: con el cursor en los
     // slots termina en "M:All Presets" / "M:Todos los preajustes"; en la grilla, en
     // "1:Swap screen" / "1:Cambiar pantalla". Eligiendo la reliquia para un slot la barra es la
@@ -396,12 +481,16 @@ fn draw_hint(
         (relic_rules::lang::Lang::Es, Some(Panel::Right)) => Some(262.0),
         _ => None,
     };
+    // `y` es el centro del recuadro de la tecla (el del juego, a 1080p: 998-1030).
     let (pos, pivot) = match after_presets {
-        Some(px) => ([x(px), y(1015.0)], [0.0, 0.5]),
-        None => ([x(1790.0), y(972.0)], [1.0, 0.5]),
+        Some(px) => ([x(px), y(1014.0)], [0.0, 0.5]),
+        None => ([x(1790.0), y(970.0)], [1.0, 0.5]),
     };
     let mut clicked = false;
     let _pad = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0, 0.0]));
+    // Sin el mínimo de 32 px de ImGui: a resoluciones bajas el control mide menos, quedaba arriba
+    // dentro de una ventana más alta y el centrado lo subía.
+    let _min = ui.push_style_var(imgui::StyleVar::WindowMinSize([1.0, 1.0]));
     ui.window("##relics_reforged_hint")
         .position(pos, Condition::Always)
         .position_pivot(pivot)
@@ -412,7 +501,6 @@ fn draw_hint(
         .always_auto_resize(true)
         .build(|| {
             let _f = font.map(|f| ui.push_font(f.0));
-            ui.set_window_font_scale(s);
             clicked = control_prompt(
                 ui,
                 icons,
@@ -697,6 +785,12 @@ struct Menu {
     /// Fuente de los títulos de sección (Palatino en negrita), si se pudo cargar.
     title_font: Option<TitleFont>,
     prompt_font: Option<TitleFont>,
+    /// Archivos de las fuentes (Palatino o Georgia, normal y negrita), para regenerarlas.
+    font_files: FontFiles,
+    /// Escala con la que están generadas las fuentes y el estilo (ver `View`).
+    font_scale: f32,
+    /// Estilo a 1080p, antes de escalarlo.
+    base_style: Option<imgui::Style>,
     /// Atlas leído del juego, esperando que el hilo de render lo suba a la GPU.
     pending_icons: Arc<Mutex<Option<IconAtlas>>>,
     icons: Option<Icons>,
@@ -726,6 +820,38 @@ struct Menu {
 }
 
 impl Menu {
+    /// Regenera las fuentes y el estilo a la escala `s` (1.0 = 1080p). No sube la textura.
+    fn build_fonts(&mut self, ctx: &mut imgui::Context, s: f32) {
+        let source = |data: &'static [u8], size_pixels: f32| imgui::FontSource::TtfData {
+            data,
+            size_pixels,
+            config: Some(imgui::FontConfig {
+                oversample_h: 2,
+                ..Default::default()
+            }),
+        };
+        let fonts = ctx.fonts();
+        fonts.clear();
+        self.prompt_font = None;
+        self.title_font = None;
+        // La primera es la fuente por defecto (sin ninguna, ImGui usa la suya).
+        if let Some(data) = self.font_files.regular {
+            fonts.add_font(&[source(data, 21.0 * s)]);
+            // Para los controles ("F7 :Forge relics"), del tamaño de los del juego.
+            self.prompt_font = Some(TitleFont(fonts.add_font(&[source(data, 24.0 * s)])));
+        }
+        if let Some(data) = self.font_files.bold {
+            self.title_font = Some(TitleFont(fonts.add_font(&[source(data, 24.0 * s)])));
+        }
+        if let Some(base) = self.base_style {
+            let style = ctx.style_mut();
+            *style = base;
+            style.scale_all_sizes(s);
+        }
+        self.font_scale = s;
+        UI_SCALE.store(s.to_bits(), Ordering::Relaxed);
+    }
+
     fn new(game: Game, data: Arc<GameData>, data_dir: PathBuf) -> Menu {
         let group_of = data
             .effect_filters
@@ -759,6 +885,9 @@ impl Menu {
             confirm: false,
             title_font: None,
             prompt_font: None,
+            font_files: FontFiles::default(),
+            font_scale: 0.0,
+            base_style: None,
             pending_icons: Arc::default(),
             icons: None,
             filters: Filters::default(),
@@ -1179,27 +1308,37 @@ impl Menu {
     /// más del mismo menú. Abajo lleva su propia barra de controles, como la del juego.
     fn draw(&mut self, ui: &Ui) {
         self.nav_begin(ui);
-        let [w, h] = ui.io().display_size;
-        let s = h / 1080.0;
+        // El fondo cubre todo el ancho; el menú va dentro del área 16:9 del juego (ver `View`).
+        let w = ui.io().display_size[0];
+        let v = View::of(ui);
+        let s = v.s;
+        let h = v.bottom();
         // Encabezado del juego ("Relic Rites", arriba a la izquierda): queda a la vista.
-        let top = (118.0 * s).round();
+        let top = v.y(118.0).round();
         let bg = ui.get_background_draw_list();
         bg.add_rect_filled_multicolor(
             [0.0, top],
             [w, h],
-            [0.05, 0.06, 0.10, 0.86],
-            [0.05, 0.06, 0.10, 0.86],
-            [0.02, 0.03, 0.05, 0.90],
-            [0.02, 0.03, 0.05, 0.90],
+            [0.05, 0.06, 0.10, 0.94],
+            [0.05, 0.06, 0.10, 0.94],
+            [0.02, 0.03, 0.05, 0.96],
+            [0.02, 0.03, 0.05, 0.96],
         );
         // La barra de controles del juego (más larga en español) se transparentaba detrás de la
         // nuestra: abajo el fondo se oscurece casi del todo, con un degradé para no marcar un corte.
-        let band = (995.0 * s).round();
+        let band = v.y(995.0).round();
         let fade = (45.0 * s).round();
         let clear = [0.02, 0.03, 0.05, 0.0];
         let dark = [0.02, 0.03, 0.05, 0.85];
         bg.add_rect_filled_multicolor([0.0, band - fade], [w, band], clear, clear, dark, dark);
         bg.add_rect_filled_multicolor([0.0, band], [w, h], dark, dark, dark, dark);
+        // Arriba se transparentaba el encabezado de la grilla del juego ("All Relics", "Order
+        // Found", a y ≈ 170-200 a 1080p): más oscuro hasta ahí y un degradé después.
+        let head = v.y(215.0).round();
+        let head_dark = [0.05, 0.06, 0.10, 0.6];
+        let head_clear = [0.05, 0.06, 0.10, 0.0];
+        bg.add_rect_filled_multicolor([0.0, top], [w, head], head_dark, head_dark, head_dark, head_dark);
+        bg.add_rect_filled_multicolor([0.0, head], [w, head + fade], head_dark, head_dark, head_clear, head_clear);
         bg.add_line([0.0, top], [w, top], [0.80, 0.82, 0.90, 0.18])
             .thickness(1.0)
             .build();
@@ -1212,7 +1351,7 @@ impl Menu {
                 relic_rules::lang::Lang::Es => 365.0,
                 relic_rules::lang::Lang::En => 290.0,
             };
-            let at = [slash_x * s, 67.0 * s - ui.text_line_height() * 0.5];
+            let at = [v.x(slash_x), v.y(67.0) - ui.text_line_height() * 0.5];
             bg.add_text(at, [0.55, 0.54, 0.50, 1.0], "/");
             bg.add_text([at[0] + 22.0 * s, at[1]], GOLD, title);
         }
@@ -1221,8 +1360,8 @@ impl Menu {
         let mut close = false;
         let _pad = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0, 0.0]));
         ui.window("##relics_reforged")
-            .position([0.0, top], Condition::Always)
-            .size([w, h - top], Condition::Always)
+            .position([v.x0, top], Condition::Always)
+            .size([v.w, h - top], Condition::Always)
             .no_decoration()
             .draw_background(false)
             .movable(false)
@@ -1231,14 +1370,13 @@ impl Menu {
                 // Mismos márgenes que los paneles de Relic Rites.
                 let margin = 45.0 * s;
                 let bar = 80.0 * s;
-                ui.set_cursor_screen_pos([margin, top + 16.0 * s]);
+                ui.set_cursor_screen_pos([v.x0 + margin, top + 16.0 * s]);
                 ui.child_window("contenido")
-                    .size([w - margin * 2.0, h - top - 16.0 * s - bar])
+                    .size([v.w - margin * 2.0, h - top - 16.0 * s - bar])
                     .build(|| self.draw_contents(ui));
                 // Barra de controles, a la altura de la del juego.
                 let _f = self.prompt_font.map(|f| ui.push_font(f.0));
-                ui.set_window_font_scale(s);
-                ui.set_cursor_screen_pos([48.0 * s, h - 80.0 * s]);
+                ui.set_cursor_screen_pos([v.x(48.0), h - 80.0 * s]);
                 // Un solo "volver": F7 y Esc hacen lo mismo que Q, pero no se muestran. Con el filtro
                 // abierto, Q lo cierra y 1 lo limpia (como en Relic Rites).
                 let (mut back, mut refresh, mut clear, mut reset) = (false, false, false, false);
@@ -1266,7 +1404,6 @@ impl Menu {
                     ui.same_line_with_spacing(0.0, 14.0 * s);
                     clear |= self.prompt(ui, &CTRL_CLEAR, tr("Empezar de nuevo", "Start over"), s);
                 }
-                ui.set_window_font_scale(1.0);
                 if back && !self.filter_back() {
                     close = true;
                 }
@@ -1350,9 +1487,9 @@ impl Menu {
         if self
             .icons
             .as_ref()
-            .is_some_and(|i| i.draw(ui, SEP_LINE, [p[0], p[1] + 1.0], [w, 3.0]))
+            .is_some_and(|i| i.draw(ui, SEP_LINE, [p[0], p[1] + px(1.0)], [w, px(3.0)]))
         {
-            ui.dummy([w, 8.0]);
+            ui.dummy([w, px(8.0)]);
         } else {
             ui.separator();
         }
@@ -1377,14 +1514,14 @@ impl Menu {
         // Columnas, como Relic Rites: la selección a la izquierda y la lista a la derecha.
         let [x0, y0] = ui.cursor_screen_pos();
         let avail = ui.content_region_avail();
-        let gap = 24.0;
-        let left_w = (avail[0] * 0.42).max(340.0);
+        let gap = px(24.0);
+        let left_w = (avail[0] * 0.42).max(px(340.0));
         let right_x = x0 + left_w + gap;
         let right_w = avail[0] - left_w - gap;
 
         // Encabezado izquierdo: murk y cantidad.
         ui.text_colored(GOLD, format!("Murk  {}", relic_rules::lang::number(murk)));
-        ui.same_line_with_spacing(0.0, 28.0);
+        ui.same_line_with_spacing(0.0, px(28.0));
         ui.text_disabled(format!("{}: {}", tr("Reliquias", "Relics"), relics.len()));
         // Encabezado derecho, arriba de la lista (como el de la grilla del juego): texto a
         // buscar, filtros (4) y orden (5).
@@ -1402,13 +1539,13 @@ impl Menu {
         let sort_label = format!("{}: {}", tr("Ordenar", "Sort"), self.sort.label());
         let (mut open, mut next, mut clear_search) = (false, false, false);
         if !self.filter.is_empty() && !self.show_filters {
-            ui.same_line_with_spacing(0.0, 12.0);
-            clear_search |= self.prompt(ui, &CTRL_CLEAR_SEARCH, tr("Borrar", "Clear"), 1.0);
+            ui.same_line_with_spacing(0.0, px(12.0));
+            clear_search |= self.prompt(ui, &CTRL_CLEAR_SEARCH, tr("Borrar", "Clear"), px(1.0));
         }
         ui.same_line_with_spacing(0.0, 20.0);
-        open |= self.prompt(ui, &CTRL_FILTER, &filter_label, 1.0);
+        open |= self.prompt(ui, &CTRL_FILTER, &filter_label, px(1.0));
         ui.same_line_with_spacing(0.0, 20.0);
-        next |= self.prompt(ui, &CTRL_SORT, &sort_label, 1.0);
+        next |= self.prompt(ui, &CTRL_SORT, &sort_label, px(1.0));
         if open {
             if self.show_filters {
                 crate::sound::cancel();
@@ -1447,7 +1584,7 @@ impl Menu {
             let usable = |h: &u32| {
                 by_handle
                     .get(h)
-                    .is_some_and(|r| r.locked.is_none())
+                    .is_some_and(|r| !r.locked())
             };
             if self.target.is_some_and(|h| !by_handle.contains_key(&h)) {
                 self.reset_selection();
@@ -1511,16 +1648,16 @@ impl Menu {
         if forging {
             ui.text_colored(GOLD, tr("Forjando...", "Forging..."));
         }
-        ui.dummy([0.0, 6.0]);
+        ui.dummy([0.0, px(6.0)]);
 
         // Paneles: el marco se dibuja atrás y el contenido va en ventanas hijas transparentes,
         // con margen para que los títulos no queden pegados al borde.
-        let [px, py] = ui.cursor_screen_pos();
+        let [fx, fy] = ui.cursor_screen_pos();
         let panel_h = ui.content_region_avail()[1];
-        self.panel_frame(ui, [px, py], [px + left_w, py + panel_h]);
-        self.panel_frame(ui, [right_x, py], [right_x + right_w, py + panel_h]);
+        self.panel_frame(ui, [fx, fy], [fx + left_w, fy + panel_h]);
+        self.panel_frame(ui, [right_x, fy], [right_x + right_w, fy + panel_h]);
         let _bg = ui.push_style_color(imgui::StyleColor::ChildBg, [0.0, 0.0, 0.0, 0.0]);
-        let _pad = ui.push_style_var(imgui::StyleVar::WindowPadding([20.0, 16.0]));
+        let _pad = ui.push_style_var(imgui::StyleVar::WindowPadding([px(20.0), px(16.0)]));
         ui.child_window("izquierda")
             .size([left_w, panel_h])
             .always_use_window_padding(true)
@@ -1593,19 +1730,22 @@ impl Menu {
             (Some(t), Some(d)) => {
                 let target_item = by_handle.get(&t).map(|t| t.item_id);
                 relic_title(ui, self.icons.as_ref(), d);
-                if let Some(why) = &d.locked {
-                    colored_wrapped(
-                        ui,
-                        GOLD,
-                        &match relic_rules::lang::get() {
-                            relic_rules::lang::Lang::Es => format!(
-                                "En uso: {why}. Si forjas, se destruye y se saca de ahí."
-                            ),
-                            relic_rules::lang::Lang::En => format!(
-                                "In use: {why}. Forging destroys it and removes it from there."
-                            ),
-                        },
-                    );
+                let es = relic_rules::lang::get() == relic_rules::lang::Lang::Es;
+                let notice = match (d.favorite, &d.in_use) {
+                    (_, Some(why)) if es => Some(format!(
+                        "{}En uso: {why}. Si forjas, se destruye y se saca de ahí.",
+                        if d.favorite { "Favorita. " } else { "" }
+                    )),
+                    (_, Some(why)) => Some(format!(
+                        "{}In use: {why}. Forging destroys it and removes it from there.",
+                        if d.favorite { "Favorite. " } else { "" }
+                    )),
+                    (true, None) if es => Some("Favorita. Si forjas, se destruye.".to_string()),
+                    (true, None) => Some("Favorite. Forging destroys it.".to_string()),
+                    (false, None) => None,
+                };
+                if let Some(notice) = notice {
+                    colored_wrapped(ui, GOLD, &notice);
                 }
                 if self.text_button(ui, "donante", tr("Cambiar", "Change"), true) {
                     self.donor = None;
@@ -1763,25 +1903,34 @@ impl Menu {
                     }
                 } else {
                     // Donante favorita o en uso: se avisa dónde está, antes de lo demás.
-                    if let Some(why) = self
-                        .donor
-                        .and_then(|h| by_handle.get(&h))
-                        .and_then(|d| d.locked.as_ref())
-                    {
-                        colored_wrapped(
-                            ui,
-                            RED,
-                            &match relic_rules::lang::get() {
-                                relic_rules::lang::Lang::Es => format!(
-                                    "¿Seguro que quieres donarla? La donante está en uso ({why}): \
-                                     se destruye igual y esos lugares quedan vacíos."
-                                ),
-                                relic_rules::lang::Lang::En => format!(
-                                    "Are you sure you want to donate it? The donor is in use \
-                                     ({why}): it is destroyed anyway and those places are left empty."
-                                ),
-                            },
-                        );
+                    if let Some(d) = self.donor.and_then(|h| by_handle.get(&h)) {
+                        let es = relic_rules::lang::get() == relic_rules::lang::Lang::Es;
+                        let warning = match (d.favorite, &d.in_use) {
+                            (fav, Some(why)) if es => Some(format!(
+                                "¿Seguro que quieres donarla? La donante {}está en uso ({why}): \
+                                 se destruye igual y esos lugares quedan vacíos.",
+                                if fav { "es favorita y " } else { "" }
+                            )),
+                            (fav, Some(why)) => Some(format!(
+                                "Are you sure you want to donate it? The donor {}is in use \
+                                 ({why}): it is destroyed anyway and those places are left empty.",
+                                if fav { "is a favorite and " } else { "" }
+                            )),
+                            (true, None) if es => Some(
+                                "¿Seguro que quieres donarla? La donante es favorita: se destruye \
+                                 igual."
+                                    .to_string(),
+                            ),
+                            (true, None) => Some(
+                                "Are you sure you want to donate it? The donor is a favorite: it \
+                                 is destroyed anyway."
+                                    .to_string(),
+                            ),
+                            (false, None) => None,
+                        };
+                        if let Some(warning) = warning {
+                            colored_wrapped(ui, RED, &warning);
+                        }
                     }
                     colored_wrapped(
                         ui,
@@ -1915,7 +2064,7 @@ impl Menu {
                     && r.deep == t.deep
                     && r.handle != t.handle
                     && r.handle != donor
-                    && r.locked.is_none()
+                    && !r.locked()
                     && (chosen.contains(&r.handle) || self.matches_filter(r))
             })
             .collect();
@@ -1983,10 +2132,10 @@ impl Menu {
     /// anterior.
     fn text_button(&self, ui: &Ui, id: &str, label: &str, inline: bool) -> bool {
         if inline {
-            ui.same_line_with_spacing(0.0, 12.0);
+            ui.same_line_with_spacing(0.0, px(12.0));
         }
         let size = ui.calc_text_size(label);
-        let pad = [10.0, 2.0];
+        let pad = [px(10.0), px(2.0)];
         let [x, y] = ui.cursor_screen_pos();
         let (w, h) = (size[0] + pad[0] * 2.0, size[1] + pad[1] * 2.0);
         let clicked = ui.invisible_button(format!("##btn_{id}"), [w, h]);
@@ -2036,7 +2185,7 @@ impl Menu {
         arrow: bool,
     ) -> RowClick {
         let line = ui.text_line_height();
-        let h = line + 16.0;
+        let h = line + px(16.0);
         let [x, y] = ui.cursor_screen_pos();
         let w = ui.content_region_avail()[0];
         let clicked = ui.invisible_button(format!("##{id}"), [w, h]);
@@ -2090,11 +2239,11 @@ impl Menu {
                 }
             }
         }
-        let mut tx = bx + b + 12.0;
+        let mut tx = bx + b + px(12.0);
         if let (Some(icons), Some(name)) = (self.icons.as_ref(), icon) {
             let size = (line * 1.25).round();
             if icons.draw(ui, &name, [tx, y + (h - size) * 0.5], [size, size]) {
-                tx += size + 10.0;
+                tx += size + px(10.0);
             }
         }
         let dl = ui.get_window_draw_list();
@@ -2109,7 +2258,7 @@ impl Menu {
         match clicked {
             _ if open => RowClick::Arrow,
             false => RowClick::None,
-            true if arrow && ui.io().mouse_pos[0] > bx + b + 6.0 => RowClick::Arrow,
+            true if arrow && ui.io().mouse_pos[0] > bx + b + px(6.0) => RowClick::Arrow,
             true => RowClick::Toggle,
         }
     }
@@ -2117,7 +2266,7 @@ impl Menu {
     /// Encabezado de grupo en franja, como "Characteristics" en el filtro del juego.
     fn band_header(&self, ui: &Ui, title: &str) {
         let line = ui.text_line_height();
-        let h = line + 12.0;
+        let h = line + px(12.0);
         let [x, y] = ui.cursor_screen_pos();
         let w = ui.content_region_avail()[0];
         ui.dummy([w, h]);
@@ -2133,7 +2282,7 @@ impl Menu {
         dl.add_text([x + 6.0, y + 6.0], [0.78, 0.80, 0.88, 1.0], title);
         drop(dl);
         if let Some(i) = self.icons.as_ref() {
-            i.draw(ui, SEP_LINE, [x, y + h - 2.0], [w, 2.0]);
+            i.draw(ui, SEP_LINE, [x, y + h - px(2.0)], [w, px(2.0)]);
         }
     }
 
@@ -2141,7 +2290,7 @@ impl Menu {
     /// filtro del juego. `true` si se hizo clic.
     fn cond_row(&self, ui: &Ui, k: usize) -> bool {
         let line = ui.text_line_height();
-        let h = line + 20.0;
+        let h = line + px(20.0);
         let [x, y] = ui.cursor_screen_pos();
         let w = ui.content_region_avail()[0];
         let clicked = ui.invisible_button(format!("##cond{k}"), [w, h]);
@@ -2161,7 +2310,7 @@ impl Menu {
             [0.09, 0.11, 0.17, 0.50]
         };
         let dl = ui.get_window_draw_list();
-        dl.add_rect([x, y + 2.0], [x + w, y + h - 2.0], band)
+        dl.add_rect([x, y + px(2.0)], [x + w, y + h - px(2.0)], band)
             .filled(true)
             .build();
         let ty = y + (h - line) * 0.5;
@@ -2320,7 +2469,7 @@ impl Menu {
                 }
             }
         }
-        ui.dummy([0.0, 6.0]);
+        ui.dummy([0.0, px(6.0)]);
         let f = self.filters.clone();
         if self.check_row(
             ui,
@@ -2400,8 +2549,8 @@ impl Menu {
                 .filled(true)
                 .build();
         }
-        let line_h = (w / icons.map_or(1.0, |i| i.aspect(PANEL_LINE))).min(56.0);
-        if !icons.is_some_and(|i| i.draw(ui, PANEL_LINE, [min[0], min[1] - 2.0], [w, line_h])) {
+        let line_h = (w / icons.map_or(1.0, |i| i.aspect(PANEL_LINE))).min(px(56.0));
+        if !icons.is_some_and(|i| i.draw(ui, PANEL_LINE, [min[0], min[1] - px(2.0)], [w, line_h])) {
             ui.get_window_draw_list()
                 .add_line(min, [max[0], min[1]], [0.80, 0.82, 0.90, 0.35])
                 .build();
@@ -2413,9 +2562,9 @@ impl Menu {
         let p = ui.cursor_screen_pos();
         let h = ui.text_line_height();
         let drawn = self.icons.as_ref().is_some_and(|icons| {
-            icon.is_some_and(|id| icons.draw(ui, &status_icon(id), [p[0] + 8.0, p[1]], [h, h]))
+            icon.is_some_and(|id| icons.draw(ui, &status_icon(id), [p[0] + px(8.0), p[1]], [h, h]))
         });
-        ui.dummy([if drawn { h + 8.0 } else { 14.0 }, h]);
+        ui.dummy([if drawn { h + px(8.0) } else { px(14.0) }, h]);
         ui.same_line();
         colored_wrapped(ui, color, text);
     }
@@ -2452,16 +2601,16 @@ impl Menu {
                 let relic_icon = icons.filter(|i| i.has(&item_icon(r.icon)));
                 let pic = if relic_icon.is_some() { 60.0 } else { 0.0 };
                 let name_x = if relic_icon.is_some() {
-                    x + pic + 8.0
+                    x + pic + px(8.0)
                 } else {
-                    x + 20.0
+                    x + px(20.0)
                 };
                 let effect_x = if relic_icon.is_some() {
-                    name_x + line + 6.0
+                    name_x + line + px(6.0)
                 } else {
-                    x + 32.0
+                    x + px(32.0)
                 };
-                let wrap_w = (x + width - effect_x - 6.0).max(80.0);
+                let wrap_w = (x + width - effect_x - px(6.0)).max(px(80.0));
                 // (sangría, color, texto, ícono del efecto en su primera línea)
                 let mut effect_lines: Vec<(f32, [f32; 4], String, Option<i32>)> = Vec::new();
                 for (i, e) in r.effects.iter().enumerate() {
@@ -2472,7 +2621,7 @@ impl Menu {
                     };
                     for (j, l) in wrap_text(ui, e, wrap_w).into_iter().enumerate() {
                         // Las continuaciones van un poco más adentro.
-                        let indent = if j == 0 { 0.0 } else { 14.0 };
+                        let indent = if j == 0 { 0.0 } else { px(14.0) };
                         let icon = if j == 0 {
                             r.effect_icons.get(i).copied()
                         } else {
@@ -2482,7 +2631,7 @@ impl Menu {
                     }
                 }
                 let lines = 1 + effect_lines.len().max(1);
-                let row_h = (line * lines as f32 + 6.0).max(pic + 4.0);
+                let row_h = (line * lines as f32 + px(6.0)).max(pic + px(4.0));
                 // Sin el relleno azul de ImGui: elegida = borde claro con brillo, como el cursor
                 // de Relic Rites; al pasar el mouse, un relleno tenue.
                 let is_selected = selected.contains(&r.handle);
@@ -2529,7 +2678,7 @@ impl Menu {
                 } else {
                     color_mark(ui, [x + 4.0, y + 3.0 + line * 0.5], r.color);
                 }
-                let y = y + 3.0;
+                let y = y + px(3.0);
                 for (i, (.., icon)) in effect_lines.iter().enumerate() {
                     if let (Some(icons), Some(id)) = (icons, icon) {
                         let at = [name_x, y + line * (i + 1) as f32];
@@ -2538,29 +2687,30 @@ impl Menu {
                 }
                 let draw = ui.get_window_draw_list();
                 draw.add_text([name_x, y], text, &r.name);
-                let mut tag_x = name_x + ui.calc_text_size(&r.name)[0] + 14.0;
+                let mut tag_x = name_x + ui.calc_text_size(&r.name)[0] + px(14.0);
                 if kind == ListKind::Sacrifices {
                     let tag = format!("[{}]", points_text(r));
                     draw.add_text([tag_x, y], POINTS, &tag);
-                    tag_x += ui.calc_text_size(&tag)[0] + 10.0;
+                    tag_x += ui.calc_text_size(&tag)[0] + px(10.0);
                 }
                 if r.forged_count() > 0 {
                     let tag = format!("[{} {}]", tr("forjada", "forged"), r.forged_count());
                     draw.add_text([tag_x, y], GOLD, &tag);
-                    tag_x += ui.calc_text_size(&tag)[0] + 10.0;
+                    tag_x += ui.calc_text_size(&tag)[0] + px(10.0);
                 }
                 // En la lista de receptoras: si ya llegó al límite de forjas.
                 if kind == ListKind::Targets && r.at_forge_limit() {
                     let tag = format!("[{}]", tr("límite de forjas", "forge limit reached"));
                     draw.add_text([tag_x, y], RED, &tag);
-                    tag_x += ui.calc_text_size(&tag)[0] + 10.0;
+                    tag_x += ui.calc_text_size(&tag)[0] + px(10.0);
                 }
                 // Dónde está en uso: informativo en las receptoras; en las donantes avisa que
                 // forjar la saca de ahí.
                 if kind != ListKind::Sacrifices {
-                    if let Some(why) = &r.locked {
-                        let tag = format!("[{}: {why}]", tr("en uso", "in use"));
-                        draw.add_text([tag_x, y], RED, &tag);
+                    if let Some(tag) = r.lock_tag() {
+                        // Solo favorita: dato, no advertencia.
+                        let color = if r.in_use.is_some() { RED } else { PROMPT_TEXT };
+                        draw.add_text([tag_x, y], color, &tag);
                     }
                 }
                 for (i, (indent, color, l, _)) in effect_lines.iter().enumerate() {
@@ -2624,7 +2774,7 @@ impl Menu {
                 // efecto entero.
                 let max = ui.item_rect_max();
                 let right = ui.window_pos()[0] + ui.window_content_region_max()[0];
-                glow_frame(ui, [row_min[0] - 4.0, row_min[1] - 2.0], [right, max[1] + 2.0]);
+                glow_frame(ui, [row_min[0] - px(4.0), row_min[1] - px(2.0)], [right, max[1] + px(2.0)]);
                 self.hover(&format!("radio_{id}{i}"));
             }
             // Con la versión nueva del tipo de la receptora también vale (se convierte al forjar).
@@ -2671,7 +2821,7 @@ fn relic_color(color: u8) -> [f32; 4] {
 /// Rombo de color centrado verticalmente en `at` (borde izquierdo).
 fn color_mark(ui: &Ui, at: [f32; 2], color: u8) {
     let c = relic_color(color);
-    let (x, y, r) = (at[0] + 5.0, at[1], 5.0);
+    let (x, y, r) = (at[0] + px(5.0), at[1], px(5.0));
     let draw = ui.get_window_draw_list();
     draw.add_triangle([x - r, y], [x, y - r], [x + r, y], c)
         .filled(true)
@@ -2716,13 +2866,13 @@ fn relic_title(ui: &Ui, icons: Option<&Icons>, r: &RelicView) {
     let p = ui.cursor_screen_pos();
     let h = ui.text_line_height();
     let s = (h * 1.6).round();
-    if icons.is_some_and(|i| i.draw(ui, &item_icon(r.icon), [p[0] - 4.0, p[1]], [s, s])) {
-        ui.dummy([s - 4.0, s]);
+    if icons.is_some_and(|i| i.draw(ui, &item_icon(r.icon), [p[0] - px(4.0), p[1]], [s, s])) {
+        ui.dummy([s - px(4.0), s]);
         ui.same_line();
-        ui.set_cursor_screen_pos([p[0] + s + 2.0, p[1] + (s - h) * 0.5]);
+        ui.set_cursor_screen_pos([p[0] + s + px(2.0), p[1] + (s - h) * 0.5]);
     } else {
         color_mark(ui, [p[0], p[1] + h * 0.5], r.color);
-        ui.dummy([14.0, h]);
+        ui.dummy([px(14.0), h]);
         ui.same_line();
     }
     ui.text(&r.name);
@@ -2742,6 +2892,7 @@ impl ImguiRenderLoop for Menu {
         _render_context: &'a mut dyn hudhook::RenderContext,
     ) {
         apply_theme(ctx.style_mut());
+        self.base_style = Some(*ctx.style());
         // Palatino, parecida a la tipografía de los menús del juego; Georgia si no está.
         let fonts_dir = std::env::var("WINDIR")
             .map_or(PathBuf::from(r"C:\Windows"), PathBuf::from)
@@ -2752,27 +2903,17 @@ impl ImguiRenderLoop for Menu {
                 .find_map(|n| std::fs::read(fonts_dir.join(n)).ok())?;
             Some(Box::leak(bytes.into_boxed_slice()))
         };
-        let source = |data: &'static [u8], size_pixels: f32| imgui::FontSource::TtfData {
-            data,
-            size_pixels,
-            config: Some(imgui::FontConfig {
-                oversample_h: 2,
-                ..Default::default()
-            }),
+        self.font_files = FontFiles {
+            regular: load(&["pala.ttf", "georgia.ttf"]),
+            bold: load(&["palab.ttf", "georgiab.ttf"]),
         };
-        match load(&["pala.ttf", "georgia.ttf"]) {
-            Some(data) => {
-                ctx.fonts().add_font(&[source(data, 21.0)]);
-                // Para el control "F7 :Forge relics", del tamaño de los controles del juego a 1080p.
-                self.prompt_font = Some(TitleFont(ctx.fonts().add_font(&[source(data, 24.0)])));
-            }
-            None => {
-                crate::log_event("Menú: no encontré Palatino ni Georgia, uso la fuente de ImGui")
-            }
+        if self.font_files.regular.is_none() {
+            crate::log_event("Menú: no encontré Palatino ni Georgia, uso la fuente de ImGui");
         }
-        if let Some(data) = load(&["palab.ttf", "georgiab.ttf"]) {
-            self.title_font = Some(TitleFont(ctx.fonts().add_font(&[source(data, 24.0)])));
-        }
+        // hudhook sube el atlas después de `initialize`; los cambios de resolución, en
+        // `before_render`.
+        let scale = ui_scale(ctx.io().display_size);
+        self.build_fonts(ctx, scale);
     }
 
     fn render(&mut self, ui: &mut Ui) {
@@ -2854,6 +2995,21 @@ impl ImguiRenderLoop for Menu {
     ) {
         // Con el menú abierto, ImGui dibuja su propio cursor (el juego suele esconder el de Windows).
         ctx.io_mut().mouse_draw_cursor = self.visible.load(Ordering::Relaxed);
+        // Cambió la resolución: fuentes y estilo se regeneran a la nueva escala, así el texto se
+        // ve nítido y del mismo tamaño relativo que la interfaz del juego. La textura anterior
+        // queda en la GPU (hudhook no las libera); solo pasa al cambiar la resolución.
+        let scale = ui_scale(ctx.io().display_size);
+        if (scale - self.font_scale).abs() > 0.01 {
+            self.build_fonts(ctx, scale);
+            let uploaded = {
+                let tex = ctx.fonts().build_rgba32_texture();
+                render_context.load_texture(tex.data, tex.width, tex.height)
+            };
+            match uploaded {
+                Ok(id) => ctx.fonts().tex_id = id,
+                Err(e) => crate::log_event(&format!("Menú: no pude subir las fuentes: {e:?}")),
+            }
+        }
         // El atlas de íconos llega de otro hilo; se sube a la GPU una sola vez.
         if self.icons.is_none() {
             let atlas = self
@@ -2930,10 +3086,6 @@ fn load(
         order.insert(entry[0], entry[3]);
         if is_favorite(&entry) {
             favorites.insert(entry[0]);
-            locks
-                .entry(entry[0])
-                .or_default()
-                .push(tr("favorita", "favorite").into());
         }
     }
 
@@ -2992,7 +3144,7 @@ fn load(
                 effects,
                 effect_icons,
                 families,
-                locked: locks.get(&r.handle).map(|p| p.join(", ")),
+                in_use: locks.get(&r.handle).map(|p| p.join(", ")),
                 unverified,
                 order: order.get(&r.handle).copied().unwrap_or(u32::MAX),
                 favorite: favorites.contains(&r.handle),
