@@ -80,5 +80,5 @@ español para la sección en español.
 - [x] Sesión de Seamless con un amigo, los dos con el mod (2026-11-17): sin errores, incluso con una versión distinta del mod en cada PC.
 - [x] Sesión de Seamless con un jugador sin el mod (2026-11-17): el que lo tenía forjó sin problemas.
 - [x] Probar en otra PC: la del amigo, en la misma sesión de Seamless (2026-11-17).
-- [ ] Etiquetar la versión (`v1.0.0`) en `main`.
+- [x] Etiquetar la versión (`v1.0.0`) en `main` (subido a GitHub el 2026-11-17).
 - [ ] Sacar las capturas.
