@@ -16,9 +16,9 @@ modo BBCode).
 | Idioma | English (con sección en español) |
 | Contenido para adultos | No |
 
-**Resumen** (Nexus lo limita a unos 350 caracteres; este tiene 265):
+**Resumen** (Nexus lo limita a unos 350 caracteres; este tiene 333):
 
-> Transfer one effect from a relic you don't need onto one you want to keep, inside Relic Rites. The result is always a relic the game could have rolled. Costs murk and 3 sacrifices. Mouse, keyboard and controller. Works offline and with Seamless Co-op. Requires me3; ME3 Manager ready.
+> Rolled the effect you wanted on a relic with two useless ones? Relics Reforged lets you take that one good effect and move it onto a relic that will actually use it, right in Relic Rites. Always a relic the game could have rolled. Costs murk and 3 sacrifices. Mouse, keyboard and controller. Offline and Seamless Co-op. Requires me3.
 
 **Requisitos** (sección "Requirements" de Nexus):
 

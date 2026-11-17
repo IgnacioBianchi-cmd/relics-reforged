@@ -3,7 +3,8 @@ RELICS REFORGED - ELDEN RING NIGHTREIGN
 
 (Español más abajo)
 
-Move one effect from a relic you don't need onto a relic you want to keep. The donor relic and
+Got the effect you wanted on a relic with two useless ones? Take that one good effect off the
+bad relic (the donor) and move it onto a relic that will actually use it. The donor and
 3 sacrifices are destroyed and you pay murk. The result is always a relic the game itself could
 have rolled: the mod never creates impossible relics, it just cuts down the RNG.
 
@@ -135,7 +136,8 @@ Source code (MIT license): https://github.com/IgnacioBianchi-cmd/relics-reforged
 ESPAÑOL
 -----------------------------------------------------------------------------------------------
 
-Pasá un efecto de una reliquia que no te sirve a una que querés conservar. La donante y 3
+¿Te salió el efecto que buscabas en una reliquia con otros dos que no sirven? Sacale ese efecto
+bueno a la reliquia mala (la donante) y pasáselo a una que sí lo aproveche. La donante y 3
 sacrificios se destruyen y pagás murk. El resultado siempre es una reliquia que el juego podría
 haber generado: el mod no crea reliquias imposibles, solo reduce cuánto azar hace falta.
 
