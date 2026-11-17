@@ -255,14 +255,33 @@ struct RelicView {
     forged: Vec<bool>,
     /// Cuántas veces se forjó la reliquia.
     forge_count: usize,
-    /// Por qué no se puede sacrificar (favorita, equipada, preset, recipiente). Como donante sí
-    /// sirve, con un aviso: la forja la saca de esos lugares.
-    locked: Option<String>,
+    /// Dónde está en uso (equipada, preset, recipiente), sin contar si es favorita. Como donante
+    /// sí sirve, con un aviso: la forja la saca de esos lugares.
+    in_use: Option<String>,
     /// No se pudo leer dónde está en uso: tampoco sirve como donante (no se la podría sacar).
     unverified: bool,
     /// Orden en que se encontró (el del inventario del juego); `u32::MAX` si no se sabe.
     order: u32,
     favorite: bool,
+}
+
+impl RelicView {
+    /// No se puede sacrificar: es favorita o está en uso.
+    fn locked(&self) -> bool {
+        self.favorite || self.in_use.is_some()
+    }
+
+    /// Etiqueta de la lista: favorita y en uso por separado (una favorita no está "en uso").
+    fn lock_tag(&self) -> Option<String> {
+        let fav = tr("favorita", "favorite");
+        let use_ = tr("en uso", "in use");
+        match (self.favorite, &self.in_use) {
+            (false, None) => None,
+            (true, None) => Some(format!("[{fav}]")),
+            (false, Some(p)) => Some(format!("[{use_}: {p}]")),
+            (true, Some(p)) => Some(format!("[{fav} · {use_}: {p}]")),
+        }
+    }
 }
 
 /// Qué lista muestra `relic_list`: cambia las etiquetas de cada reliquia.
@@ -1447,7 +1466,7 @@ impl Menu {
             let usable = |h: &u32| {
                 by_handle
                     .get(h)
-                    .is_some_and(|r| r.locked.is_none())
+                    .is_some_and(|r| !r.locked())
             };
             if self.target.is_some_and(|h| !by_handle.contains_key(&h)) {
                 self.reset_selection();
@@ -1593,19 +1612,22 @@ impl Menu {
             (Some(t), Some(d)) => {
                 let target_item = by_handle.get(&t).map(|t| t.item_id);
                 relic_title(ui, self.icons.as_ref(), d);
-                if let Some(why) = &d.locked {
-                    colored_wrapped(
-                        ui,
-                        GOLD,
-                        &match relic_rules::lang::get() {
-                            relic_rules::lang::Lang::Es => format!(
-                                "En uso: {why}. Si forjas, se destruye y se saca de ahí."
-                            ),
-                            relic_rules::lang::Lang::En => format!(
-                                "In use: {why}. Forging destroys it and removes it from there."
-                            ),
-                        },
-                    );
+                let es = relic_rules::lang::get() == relic_rules::lang::Lang::Es;
+                let notice = match (d.favorite, &d.in_use) {
+                    (_, Some(why)) if es => Some(format!(
+                        "{}En uso: {why}. Si forjas, se destruye y se saca de ahí.",
+                        if d.favorite { "Favorita. " } else { "" }
+                    )),
+                    (_, Some(why)) => Some(format!(
+                        "{}In use: {why}. Forging destroys it and removes it from there.",
+                        if d.favorite { "Favorite. " } else { "" }
+                    )),
+                    (true, None) if es => Some("Favorita. Si forjas, se destruye.".to_string()),
+                    (true, None) => Some("Favorite. Forging destroys it.".to_string()),
+                    (false, None) => None,
+                };
+                if let Some(notice) = notice {
+                    colored_wrapped(ui, GOLD, &notice);
                 }
                 if self.text_button(ui, "donante", tr("Cambiar", "Change"), true) {
                     self.donor = None;
@@ -1763,25 +1785,34 @@ impl Menu {
                     }
                 } else {
                     // Donante favorita o en uso: se avisa dónde está, antes de lo demás.
-                    if let Some(why) = self
-                        .donor
-                        .and_then(|h| by_handle.get(&h))
-                        .and_then(|d| d.locked.as_ref())
-                    {
-                        colored_wrapped(
-                            ui,
-                            RED,
-                            &match relic_rules::lang::get() {
-                                relic_rules::lang::Lang::Es => format!(
-                                    "¿Seguro que quieres donarla? La donante está en uso ({why}): \
-                                     se destruye igual y esos lugares quedan vacíos."
-                                ),
-                                relic_rules::lang::Lang::En => format!(
-                                    "Are you sure you want to donate it? The donor is in use \
-                                     ({why}): it is destroyed anyway and those places are left empty."
-                                ),
-                            },
-                        );
+                    if let Some(d) = self.donor.and_then(|h| by_handle.get(&h)) {
+                        let es = relic_rules::lang::get() == relic_rules::lang::Lang::Es;
+                        let warning = match (d.favorite, &d.in_use) {
+                            (fav, Some(why)) if es => Some(format!(
+                                "¿Seguro que quieres donarla? La donante {}está en uso ({why}): \
+                                 se destruye igual y esos lugares quedan vacíos.",
+                                if fav { "es favorita y " } else { "" }
+                            )),
+                            (fav, Some(why)) => Some(format!(
+                                "Are you sure you want to donate it? The donor {}is in use \
+                                 ({why}): it is destroyed anyway and those places are left empty.",
+                                if fav { "is a favorite and " } else { "" }
+                            )),
+                            (true, None) if es => Some(
+                                "¿Seguro que quieres donarla? La donante es favorita: se destruye \
+                                 igual."
+                                    .to_string(),
+                            ),
+                            (true, None) => Some(
+                                "Are you sure you want to donate it? The donor is a favorite: it \
+                                 is destroyed anyway."
+                                    .to_string(),
+                            ),
+                            (false, None) => None,
+                        };
+                        if let Some(warning) = warning {
+                            colored_wrapped(ui, RED, &warning);
+                        }
                     }
                     colored_wrapped(
                         ui,
@@ -1915,7 +1946,7 @@ impl Menu {
                     && r.deep == t.deep
                     && r.handle != t.handle
                     && r.handle != donor
-                    && r.locked.is_none()
+                    && !r.locked()
                     && (chosen.contains(&r.handle) || self.matches_filter(r))
             })
             .collect();
@@ -2558,9 +2589,10 @@ impl Menu {
                 // Dónde está en uso: informativo en las receptoras; en las donantes avisa que
                 // forjar la saca de ahí.
                 if kind != ListKind::Sacrifices {
-                    if let Some(why) = &r.locked {
-                        let tag = format!("[{}: {why}]", tr("en uso", "in use"));
-                        draw.add_text([tag_x, y], RED, &tag);
+                    if let Some(tag) = r.lock_tag() {
+                        // Solo favorita: dato, no advertencia.
+                        let color = if r.in_use.is_some() { RED } else { PROMPT_TEXT };
+                        draw.add_text([tag_x, y], color, &tag);
                     }
                 }
                 for (i, (indent, color, l, _)) in effect_lines.iter().enumerate() {
@@ -2930,10 +2962,6 @@ fn load(
         order.insert(entry[0], entry[3]);
         if is_favorite(&entry) {
             favorites.insert(entry[0]);
-            locks
-                .entry(entry[0])
-                .or_default()
-                .push(tr("favorita", "favorite").into());
         }
     }
 
@@ -2992,7 +3020,7 @@ fn load(
                 effects,
                 effect_icons,
                 families,
-                locked: locks.get(&r.handle).map(|p| p.join(", ")),
+                in_use: locks.get(&r.handle).map(|p| p.join(", ")),
                 unverified,
                 order: order.get(&r.handle).copied().unwrap_or(u32::MAX),
                 favorite: favorites.contains(&r.handle),
