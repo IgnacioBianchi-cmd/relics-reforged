@@ -13,7 +13,7 @@ modo BBCode).
 | Versión | 1.0.0 |
 | Autor | Ignacio |
 | Categoría | QoL. Las de Nightreign son Armour, Elden Right Nightreign, Gameplay, Miscellaneous, QoL y Skins. Gameplay agrupa mods que cambian las partidas (combate, escalado, movesets) y Miscellaneous es el cajón de sastre; este no toca las partidas, recorta el farmeo de reliquias con un costo, como Free Reign (volver a pelear jefes desde la Roundtable), que también está en QoL |
-| Idioma | English (con sección en español) |
+| Idioma | English (la página y el README, solo en inglés; el mod habla inglés y español) |
 | Contenido para adultos | No |
 
 **Resumen** (Nexus lo limita a unos 350 caracteres; este tiene 333):
@@ -69,8 +69,7 @@ Nexus usa la primera como portada; formato 16:9, sin el contador de FPS de arrib
 5. Antes y después: la reliquia en Relic Rites antes y después de forjar.
 6. Opcional: el menú con los botones del mando.
 
-Conviene sacarlas con el juego en inglés (la mayoría del público de Nexus) y repetir alguna en
-español para la sección en español.
+Conviene sacarlas con el juego en inglés: la página está solo en inglés.
 
 ## Antes de publicar
 

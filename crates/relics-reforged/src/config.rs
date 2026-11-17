@@ -137,6 +137,8 @@ fn parse(text: &str) -> (Config, Vec<String>) {
     let mut c = Config::default();
     let mut warnings = Vec::new();
     let mut section = String::new();
+    // Algunos editores guardan UTF-8 con BOM: sin sacarlo, la primera línea no se entiende.
+    let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
     for (n, raw) in text.lines().enumerate() {
         let line = strip_comment(raw).trim();
         if line.is_empty() {
@@ -371,6 +373,13 @@ mod tests {
         let d = Config::default();
         assert_eq!(c.open_key.0, d.open_key.0);
         assert_eq!(c.rules, d.rules);
+    }
+
+    #[test]
+    fn utf8_bom_is_ignored() {
+        let (c, warnings) = parse("\u{FEFF}[General]\nsave_backups = 2\n");
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(c.save_backups, 2);
     }
 
     #[test]
