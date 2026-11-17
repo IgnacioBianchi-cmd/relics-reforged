@@ -22,30 +22,24 @@ direction; the design, balance and in-game testing are the author's.
 
 ## Status
 
-| Part | Status |
+All of this is tested in game unless noted. Details of each test are in
+[`docs/relevamiento.md`](docs/relevamiento.md).
+
+| Feature | Status |
 |---|---|
-| Research on the save format, params and game memory | ✔ ([docs/relevamiento.md](docs/relevamiento.md)) |
-| Rules engine (`crates/relic-rules`) | ✔ with tests against a real save |
-| In-game DLL (`crates/relics-reforged`, me3) | Reads and validates the inventory. Hook on the game's main thread |
-| Full forge (`forge` from the command file) | ✔ tested in game and saved to the save file |
-| Favorites, equipped relics, presets and vessels can't be sacrificed | ✔ tested in game |
-| Donor that is a favorite or in use: warning when picking it and when confirming; forging removes it from equipped slots, presets and vessels (left empty) | ✔ tested in game with a donor in a vessel, also in the saved file (2026-11-16); equipped and preset donors not tested in game yet |
-| In-game menu (F7 in Relic Rites, ImGui through hudhook, full screen and in the game's style) | ✔ tested: forging from the menu is saved |
-| Game icons (relics, effects and keys), read from the installed `data*.bdt` | ✔ tested in game |
-| "F7 :Forge relics" button in the Relic Rites controls bar | ✔ tested in English; position in Spanish measured from screenshots, not seen in game yet |
-| Game keyboard and mouse blocked while the forge is open (DirectInput) | ✔ tested in game |
-| Game mouse blocked (DirectInput mouse and cursor through user32) | ✔ tested in game |
-| Forge with keyboard and controller (own cursor; controller through Steam Input, XInput, DirectInput or HID, blocked for the game while the forge is open) | ✔ tested with keyboard and a PlayStation controller through Steam Input |
-| Expedition relics (types `100xxxx`, group 250) in the forge | ✔ they can be sold in game (2026-11-11); the forge accepts them (tests) |
-| The game's own menu sounds (cursor, confirm, cancel, open and close) | ✔ tested in game |
-| Search, filter like the game's (color, size, type, favorites) and sorting | ✔ tested, with an effect filter (up to 3 conditions, the game's categories) |
-| Params from `regulation.bin` and names from the game's texts (no CSV) | ✔ tested in game |
-| Only at the Roundtable (with Relic Rites open) | ✔ tested in game |
-| Seamless Co-op (profile `me3/relics-reforged-seamless.me3`, with `load_early`) | ✔ tested: forge saved to the Seamless save. Session with a friend on another PC, both with the mod and with different versions of it, no errors (2026-11-17). Also with a player without the mod: the one who had it forged without problems |
-| Mod data in `%APPDATA%\RelicsReforged`: forge record (moved there from the DLL folder) and a save backup before the first forge of each session (last 10) | ✔ tested: record moved, one backup per session |
-| On-screen notice if the game version isn't supported, in one language: the one in the settings; otherwise the one in the game's Steam manifest (`appmanifest_2622380.acf`, the language the game is installed in); otherwise Windows' (`crates/relics-reforged/src/notice.rs`). In development it is forced with `probar_aviso_version.txt` next to the DLL | ✔ tested (forced): English from Steam and Spanish from the settings (2026-11-17) |
-| Player settings in `RelicsReforged\relics_reforged.ini` next to the DLL (created with the defaults if missing; the zip doesn't ship it, so an update never overwrites it): open key and button, balance rules, language and save backups (`crates/relics-reforged/src/config.rs`) | ✔ tested in game (2026-11-17): Deep murk multiplier and sacrifices set to 0, the forge follows both |
-| Release (`tools/package.ps1`) like the other Nightreign DLL mods (surveyed on Nexus, me3 and ME3 Manager on 2026-11-17): main zip with `RelicsReforged.dll` + `RelicsReforged\` at the root and no `.me3` (ME3 Manager imports any zip with one as a profile), for ME3 Manager or the player's own profile (Seamless stays in `Game\SeamlessCoop` as an external mod with `load_early`); optional standalone zip with `RelicsReforged.me3` (offline, save copy) | ✔ tested in ME3 Manager 1.5.2 with Seamless 1.1.3 (2026-11-17): the dragged zip is installed as a DLL mod in its own folder and added to the profile; installing it again asks to overwrite and works. Seamless as an external mod with `load_early`. The DLL creates `RelicsReforged\` there with the `.ini` and the log, and the forge was saved to the Seamless save with its backup (other saves untouched). Also tested: the standalone (double-click its `.me3`: forge on `NR0000_RelicsReforged.sl2`) and the zip in `nightreign-default.me3` through the "NIGHTREIGN (me3)" shortcut (DLL in `nightreign-mods`, `RelicsReforged\` next to it). There, `natives = []` has to be **replaced** by the `[[natives]]` block: adding the block without deleting that line makes me3 reject the profile with "duplicate key" |
+| Forge: move an effect between relics, with sacrifices, murk and forge limits | ✔ |
+| Only legal relics (same slot tables, exclusive effects, curses and sort order as the game) | ✔ |
+| Favorites and relics in use can't be sacrificed; as donors they are removed from where they were | ✔ vessels; equipped and preset donors not tested yet |
+| In-game menu in Relic Rites (F7 / R2), in the game's style, with its icons and sounds | ✔ |
+| Search, filter (including by effect) and sorting | ✔ |
+| Mouse, keyboard and controller; the game gets no input while the forge is open | ✔ PlayStation controller through Steam Input; Xbox not tested |
+| English and Spanish, following the game's language | ✔ (Spanish button position in the controls bar not seen in game yet) |
+| Settings file (`RelicsReforged\relics_reforged.ini`) | ✔ |
+| Save backup before the first forge of each session; forge record in `%APPDATA%\RelicsReforged` | ✔ |
+| Notice when the game version isn't supported (the mod turns itself off) | ✔ |
+| Seamless Co-op, also with players without the mod | ✔ |
+| Mods that change relics through their own `regulation.bin` (More Map Variations) | ✔ offline |
+| Install with ME3 Manager, the player's own me3 profile or the standalone profile | ✔ |
 
 ## Layout
 
