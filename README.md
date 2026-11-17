@@ -43,8 +43,8 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Seamless Co-op (perfil `me3/relics-reforged-seamless.me3`, con `load_early`) | ✔ probado: forja guardada en el save de Seamless |
 | Datos del mod en `%APPDATA%\RelicsReforged`: registro de forjas (se mueve solo desde la carpeta de la DLL) y copia del save antes de la primera forja de cada sesión (últimas 10) | ✔ probado: registro movido, una copia por sesión |
 | Aviso en pantalla (inglés y español) si la versión del juego no es compatible; en desarrollo se fuerza con `probar_aviso_version.txt` junto a la DLL | ✔ probado (forzado) |
-| Configuración del jugador en `RelicsReforgedelics_reforged.ini` junto a la DLL (se crea con los valores por defecto si falta; el zip no lo trae, así una actualización no lo pisa): tecla y botón de apertura, reglas de balance, idioma y copias del save (`crates/relics-reforged/src/config.rs`) | Tests del archivo; falta probarlo en el juego |
-| Publicación (`tools/package.ps1`) como los demás mods DLL de Nightreign (relevado en Nexus, me3 y ME3 Manager el 2026-11-17): zip principal con `RelicsReforged.dll` + `RelicsReforged\` en la raíz y sin `.me3` (ME3 Manager importa como perfil cualquier zip con uno), para ME3 Manager o el perfil propio del jugador (Seamless queda en `Game\SeamlessCoop` como mod externo con `load_early`); zip opcional standalone con `RelicsReforged.me3` (sin conexión, copia del save) | Zips armados y la DLL crea `RelicsReforged\` con el `.ini` y el log (cargada fuera del juego). Falta probarlos en el juego: ME3 Manager con Seamless, `nightreign-default.me3` y el standalone. El perfil sin conexión anterior (mismo `.me3`) ya estaba probado |
+| Configuración del jugador en `RelicsReforged\relics_reforged.ini` junto a la DLL (se crea con los valores por defecto si falta; el zip no lo trae, así una actualización no lo pisa): tecla y botón de apertura, reglas de balance, idioma y copias del save (`crates/relics-reforged/src/config.rs`) | Tests del archivo; falta probarlo en el juego |
+| Publicación (`tools/package.ps1`) como los demás mods DLL de Nightreign (relevado en Nexus, me3 y ME3 Manager el 2026-11-17): zip principal con `RelicsReforged.dll` + `RelicsReforged\` en la raíz y sin `.me3` (ME3 Manager importa como perfil cualquier zip con uno), para ME3 Manager o el perfil propio del jugador (Seamless queda en `Game\SeamlessCoop` como mod externo con `load_early`); zip opcional standalone con `RelicsReforged.me3` (sin conexión, copia del save) | ✔ probado en ME3 Manager 1.5.2 con Seamless 1.1.3 (2026-11-17): el zip arrastrado se instala como mod DLL en su carpeta (`RelicsReforged-v0.1.0\`) y queda en el perfil; reinstalarlo pide sobrescribir y no rompe nada. Seamless como mod externo con `load_early`. La DLL crea ahí `RelicsReforged\` con el `.ini` y el log, y la forja se guardó en el save de Seamless con su respaldo (los demás saves intactos). Falta probar `nightreign-default.me3` sin ME3 Manager y el standalone (es el mismo `.me3` sin conexión ya probado) |
 
 ## Estructura
 
@@ -108,7 +108,7 @@ Con teclado o mando, un cursor recorre botones y filas: arriba/abajo dentro de u
 
 ## Reglas de balance (por defecto)
 
-Están en `Rules` (`crates/relic-rules/src/transfer.rs`). El jugador las cambia en `RelicsReforgedelics_reforged.ini` (sección `[Rules]`; ver `crates/relics-reforged/src/config.rs`, que también tiene el archivo por defecto).
+Están en `Rules` (`crates/relic-rules/src/transfer.rs`). El jugador las cambia en `RelicsReforged\relics_reforged.ini` (sección `[Rules]`; ver `crates/relics-reforged/src/config.rs`, que también tiene el archivo por defecto).
 
 | Regla | Valor |
 |---|---|

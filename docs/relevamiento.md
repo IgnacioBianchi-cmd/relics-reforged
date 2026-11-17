@@ -296,6 +296,7 @@ Relevado en Nexus (Seamless Co-op, ME3 Manager, Storm Control, Boss Arena, FPS U
 - **Seamless se queda en `Game\SeamlessCoop`.** ME3 Manager recomienda agregarlo como mod externo con `load_early`. El autor de Seamless pide que no se lo empaquete.
 - **Solo traen su propio `.me3` los mods grandes** (Boss Arena, More Map Variations), que cambian assets o regulation y quieren un save aparte.
 - Por eso el zip principal es `RelicsReforged.dll` + `RelicsReforged\` (README y licencia; la DLL crea ahí el `.ini` y el log), sin `.me3`, y el perfil sin conexión va en un zip opcional (`tools/package.ps1`).
+- **Probado en ME3 Manager 1.5.2** (portable en `herramientas/me3-manager`, perfil aparte `RelicsReforgedTest` en `herramientas/me3-manager-test`, fuera de git): el zip arrastrado quedó en `RelicsReforged-v0.1.0\` (el nombre del zip; bajado de Nexus usa el del mod) con `[[natives]] path = "RelicsReforged-v0.1.0/RelicsReforged.dll"`. Seamless 1.1.3 de prueba (`herramientas/seamless-test`, `.rrtest`) agregado como mod externo con `load_early` (pestaña Advanced; la casilla casi no se ve con el tema oscuro). Forja guardada en `NR0000.rrtest`, respaldo antes de forjar, 0 ilegales; `.co2` y `.sl2` sin cambios. ME3 Manager no toca los perfiles de me3 que ya existen: agrega `manager_settings.json` y `profiles/.me3_manager`.
 
 ### Sonidos de menú del juego ✔ (2026-11-05)
 
