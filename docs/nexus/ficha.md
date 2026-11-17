@@ -16,15 +16,17 @@ modo BBCode).
 | Idioma | English (la página y el README, solo en inglés; el mod habla inglés y español) |
 | Contenido para adultos | No |
 
-**Resumen** (Nexus lo limita a unos 350 caracteres; este tiene 333):
+**Resumen** (Nexus lo limita a unos 350 caracteres; este tiene 337):
 
-> Rolled the effect you wanted on a relic with two useless ones? Relics Reforged lets you take that one good effect and move it onto a relic that will actually use it, right in Relic Rites. Always a relic the game could have rolled. Costs murk and 3 sacrifices. Mouse, keyboard and controller. Offline and Seamless Co-op. Requires me3.
+> Rolled the effect you wanted on a relic with two useless ones? Relics Reforged lets you take that one good effect and move it onto a relic that will actually use it, right in Relic Rites. Always a relic the game could have rolled. Costs murk and 3 sacrifices. Mouse, keyboard and controller. Offline or online through mods. Requires me3.
 
 **Requisitos** (sección "Requirements" de Nexus):
 
 - me3 (https://me3.help; no tiene página en Nexus).
-- Opcional: Mod Engine 3 Manager (https://www.nexusmods.com/eldenringnightreign/mods/213).
-- Opcional: Seamless Co-op para Nightreign (enlace a su página en Nexus).
+
+ME3 Manager y Seamless Co-op no van acá: son opcionales y listarlos como requisitos daba a entender
+que se recomienda ME3 Manager o que el juego en línea es solo con Seamless. Se mencionan en la
+instalación.
 
 **Permisos** (decisión tuya; lo habitual para un mod con código abierto):
 
