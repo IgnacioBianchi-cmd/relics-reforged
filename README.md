@@ -40,7 +40,7 @@ Pensado para jugar offline o con Seamless Co-op. **No usar online.**
 | Búsqueda, filtro como el del juego (color, tamaño, tipo, favoritas) y orden | ✔ probado, con filtro por efecto (hasta 3 condiciones, categorías del juego) |
 | Params desde `regulation.bin` y nombres desde los textos del juego (sin CSV) | ✔ probado en el juego |
 | Solo en la Roundtable (con Relic Rites abierto) | ✔ probado en el juego |
-| Seamless Co-op (perfil `me3/relics-reforged-seamless.me3`, con `load_early`) | ✔ probado: forja guardada en el save de Seamless. Sesión con un amigo en otra PC, los dos con el mod y con versiones distintas del mod, sin errores (2026-11-17). Falta una sesión con un jugador sin el mod |
+| Seamless Co-op (perfil `me3/relics-reforged-seamless.me3`, con `load_early`) | ✔ probado: forja guardada en el save de Seamless. Sesión con un amigo en otra PC, los dos con el mod y con versiones distintas del mod, sin errores (2026-11-17). También con un jugador sin el mod: el que lo tenía forjó sin problemas |
 | Datos del mod en `%APPDATA%\RelicsReforged`: registro de forjas (se mueve solo desde la carpeta de la DLL) y copia del save antes de la primera forja de cada sesión (últimas 10) | ✔ probado: registro movido, una copia por sesión |
 | Aviso en pantalla (inglés y español) si la versión del juego no es compatible; en desarrollo se fuerza con `probar_aviso_version.txt` junto a la DLL | ✔ probado (forzado) |
 | Configuración del jugador en `RelicsReforged\relics_reforged.ini` junto a la DLL (se crea con los valores por defecto si falta; el zip no lo trae, así una actualización no lo pisa): tecla y botón de apertura, reglas de balance, idioma y copias del save (`crates/relics-reforged/src/config.rs`) | Tests del archivo; falta probarlo en el juego |

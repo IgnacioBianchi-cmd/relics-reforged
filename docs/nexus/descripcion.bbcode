@@ -56,7 +56,7 @@ path = 'nightreign-mods/RelicsReforged.dll'[/code]
 The savefile line keeps the mod off your normal save. With Seamless in the same profile you can leave it out (Seamless uses its own save) and add another [[natives]] block with its nrsc.dll (your own game path) and [b]load_early = true[/b]. In any other .me3, add the [[natives]] block and delete its natives = [] line if it has one.
 [*][b]No other mods:[/b] download the optional [b]Standalone[/b] file, unzip it anywhere (not inside the game folder) and double-click [b]RelicsReforged.me3[/b]. It plays offline on a copy of your save.
 [/list]
-Only players who want to forge need the mod. Other DLL loaders (like Elden Mod Loader) should work too, but haven't been tested.
+Only players who want to forge need the mod (tested in Seamless Co-op with a player without it). Other DLL loaders (like Elden Mod Loader) should work too, but haven't been tested.
 
 [size=4][b]Saves and safety[/b][/size]
 The mod works on whatever save the game loads.
@@ -81,7 +81,6 @@ The forge follows the game's language: Spanish if the game is in Spanish, Englis
 [list]
 [*]Tested at 1920x1080. The menu scales with the screen height; other resolutions and aspect ratios haven't been tested yet.
 [*]Controllers: tested with a PlayStation controller through Steam Input. Xbox controllers should work but haven't been tested.
-[*]Co-op was tested with both players using the mod (even with different versions of it); a session with a player without the mod hasn't been tested yet.
 [/list]
 Found a bug? Please attach [b]RelicsReforged\relics_reforged.log[/b] (next to the DLL) to your report.
 
@@ -149,7 +148,7 @@ path = 'nightreign-mods/RelicsReforged.dll'[/code]
 La línea savefile hace que el mod no trabaje sobre tu save normal. Con Seamless en el mismo perfil podés no ponerla (Seamless usa su propio save) y agregar otro bloque [[natives]] con su nrsc.dll (con la ruta de tu juego) y [b]load_early = true[/b]. En cualquier otro .me3, agregá el bloque [[natives]] y borrá su línea natives = [] si la tiene.
 [*][b]Sin otros mods:[/b] descargá el archivo opcional [b]Standalone[/b], descomprimilo donde quieras (no dentro de la carpeta del juego) y hacé doble clic en [b]RelicsReforged.me3[/b]. Juega sin conexión sobre una copia de tu save.
 [/list]
-Solo necesitan el mod los jugadores que quieran forjar. Otros loaders de DLLs (como Elden Mod Loader) deberían funcionar, pero no se probaron.
+Solo necesitan el mod los jugadores que quieran forjar (probado en Seamless Co-op con un jugador sin el mod). Otros loaders de DLLs (como Elden Mod Loader) deberían funcionar, pero no se probaron.
 
 [b]Saves[/b]
 El mod trabaja sobre el save que cargue el juego: con el perfil standalone, una copia de tu save (NR0000_RelicsReforged.sl2); con Seamless, el save de Seamless; con tu propio perfil sin Seamless, tu save normal, salvo que agregues [b]savefile = "NR0000_RelicsReforged.sl2"[/b] al .me3, antes de su primera línea que empieza con [ (recomendado). Antes de la primera forja de cada sesión se guarda una copia en %APPDATA%\RelicsReforged\backups. No uses este mod online.

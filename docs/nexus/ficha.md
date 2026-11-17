@@ -78,7 +78,7 @@ español para la sección en español.
 - [x] Instalar el zip principal en ME3 Manager (arrastrándolo) con Seamless como mod externo con `load_early`, y forjar (ME3 Manager 1.5.2, Seamless 1.1.3, 2026-11-17).
 - [x] Probar el zip principal en `nightreign-default.me3` (sin ME3 Manager) y el standalone (2026-11-17).
 - [x] Sesión de Seamless con un amigo, los dos con el mod (2026-11-17): sin errores, incluso con una versión distinta del mod en cada PC.
-- [ ] Sesión de Seamless con un jugador sin el mod.
+- [x] Sesión de Seamless con un jugador sin el mod (2026-11-17): el que lo tenía forjó sin problemas.
 - [x] Probar en otra PC: la del amigo, en la misma sesión de Seamless (2026-11-17).
 - [ ] Pasar la rama a `main` y etiquetar la versión (`v0.1.0`).
 - [ ] Sacar las capturas.
