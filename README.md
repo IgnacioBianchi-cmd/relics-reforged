@@ -9,7 +9,8 @@ rolled.
 - The result is always a combination **the game could have rolled**: the mod never creates
   impossible relics, it only cuts down the RNG needed to get a good one.
 
-Made for offline play and Seamless Co-op. **Do not use online.**
+Works offline and online through mods with their own connection (Seamless Co-op, the More Map
+Variations server). **Never use it on FromSoftware's official servers.**
 
 Download, installation and the full description are on Nexus Mods
 ([`docs/nexus/descripcion.bbcode`](docs/nexus/descripcion.bbcode) has the same text); the
@@ -38,7 +39,7 @@ All of this is tested in game unless noted. Details of each test are in
 | Save backup before the first forge of each session; forge record in `%APPDATA%\RelicsReforged` | ✔ |
 | Notice when the game version isn't supported (the mod turns itself off) | ✔ |
 | Seamless Co-op, also with players without the mod | ✔ |
-| Mods that change relics through their own `regulation.bin` (More Map Variations) | ✔ offline |
+| Mods that change relics through their own `regulation.bin` (More Map Variations) | ✔ offline and on its online server |
 | Install with ME3 Manager, the player's own me3 profile or the standalone profile | ✔ |
 
 ## Layout
